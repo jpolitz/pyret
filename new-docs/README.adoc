@@ -1,0 +1,49 @@
+= README
+
+Goal: Converting pyret-docs from Scribble to Pollen.
+
+Also: Controlling https://getbootstrap.com[Bootstrap Web Framework] elements from Pollen.
+
+== Where (repos)
+
+- https://github.com/ds26gte/pollenboots
+- https://github.com/ds26gte/pyret-docs-pb
+
+== Pyret doc
+
+The Pollen version (WIP) of the pyret documentation source is in this
+repo.
+
+To browse source directly in GitHub:
+https://github.com/ds26gte/pyret-docs-pb.
+
+The HTML-rendered version of the Pollenized Pyret doc is at
+https://ds26gte.github.io/pyret-docs-pb/index.html. It should be
+viewable on both large screen and phones.
+
+== How
+
+- Clone this repo: `git clone
+https://github.com/ds26gte/pyret-docs-pb`
+- Ensure you have Racket installed on your computer.
+- Ensure you have the Pollen package installed: `raco pkg install
+--auto pollen`
+- Type `make` to create the HTML pages locally.
+- Browse the created `index.html`
+
+== What
+
+https://docs.racket-lang.org/pollen[Pollen] allows the use of
+Racket to create complicated Web pages in particular, and also
+other outputs. Since Bootstrap seems to be HTML only, we'll
+restrict ourselves to HTML. However, our source is in `poly`
+format, so we could go to other output formats if needed.
+
+We will use the Pollen enhancement files from
+https://github.com/ds26gte/pollenboots to allow a more flexible
+input style, viz., with blank lines signifying paragraph separation,
+automatic conversion to smart quotes and dashes, automatic
+creation of external title. (Very likely others as we learn more.)
+
+The file index.ptree is a _page tree_ of the various document
+files, in the preferred order.
