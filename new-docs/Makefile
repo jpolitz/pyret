@@ -16,7 +16,8 @@ pollenboots:
 
 clean:
 	find . -name compiled -type d -exec rm -fr {} \; || true
-	find . -name \*.html -delete || true
+	find [^p]* -name \*.html -delete || true
+	find pl* -name \*.html -delete || true
 	make cleanglob
 
 cleanglob:
