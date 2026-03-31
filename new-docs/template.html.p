@@ -16,7 +16,7 @@
   <script src="◊(prefix-dir (point-to-project-root here) (symbol->string './pollenboots/scribble-common.js))"></script>
   <link rel="stylesheet" type="text/css" href="◊(prefix-dir (point-to-project-root here) (symbol->string './pollenboots/codemirror.css))" title="default"/>
   <link rel="stylesheet" type="text/css" href="◊(prefix-dir (point-to-project-root here) (symbol->string './pollenboots/pyret.css))" title="default"/>
-  <link rel="stylesheet" type="text/css" href="◊(prefix-dir (point-to-project-root here) (symbol->string './pollenboots/styles.css))" title="default"/>
+  <link rel="stylesheet" type="text/css" href="◊(prefix-dir (point-to-project-root here) (symbol->string './styles.css))" title="default"/>
   <head>
     <title>◊(doc-title doc)</title>
   </head>
