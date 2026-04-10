@@ -68,6 +68,7 @@ If the string is not found, this raises an exception. Therefore, use this functi
 If you aren't sure, use ◊pyret{string-find-opt}.
   
 ◊examples{
+include global
 check:
   string-find("Hello", "ello") is 1
   string-find("Hello", "H") is 0

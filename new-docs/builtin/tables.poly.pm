@@ -465,6 +465,7 @@ of defaulting to 0.
 
 ◊examples{
 # calculates velocity of a dropping ball
+import tables at T
 ball-info = table: pos-y
   row: 25
   row: 24
@@ -525,6 +526,7 @@ or minimum value in the selected column in the current row or
 above.
 
 ◊examples{
+import tables as T
 some-numbers = table: n :: Number
   row: 4
   row: 9
@@ -767,6 +769,7 @@ The type of all tables.
 A collection constructor that creates tables from ◊pyret-id["Row"] values.
 
 ◊examples{
+include tables
 check:
   t = [table-from-rows:
     [raw-row: {"A"; 5}, {"B"; 7}, {"C"; 8}],

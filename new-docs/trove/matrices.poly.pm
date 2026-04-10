@@ -75,6 +75,7 @@ Vectors are defined to permit using addition and subtraction operators on them,
 whenever the lengths of the vectors are the same:
 
 ◊examples{
+include matrices
 check:
   [vector: 1, 2, 3] + [vector: 4, 5, 6] is [vector: 5, 7, 9]
   [vector: 1] + [vector: 1, 2] raises "vectors of different lengths"
@@ -90,6 +91,7 @@ corresponding elements are equal, and obeys the same restrictions on comparing
 exact and rough numbers for equality:
 
 ◊examples{
+include matrices
 check:
   ([vector: 1] == [vector: 1, 2]) is false
   ([vector: 1, 2] == [vector: 1, 2]) is true
@@ -952,6 +954,7 @@ Matrices are defined to permit using addition, subtraction, and multiplication
 operators on them, whenever the dimensions are compatible:
 
 ◊examples{
+include matrices
 check:
   [matrix(2,2): 1, 2, 3, 4] + [matrix(2,2): 1, 2, 3, 4]
     is [matrix(2,2): 2, 4, 6, 8]
@@ -972,6 +975,7 @@ end
 }
 
 ◊examples{
+include matrices
 check:
   [matrix(2,2): 1, 2, 3, 4] * [matrix(2,2): 3, 0, 0, 3]
     is [matrix(2,2): 3, 6, 9, 12]
@@ -1168,6 +1172,7 @@ Adds, subtracts, or multiplies the two matrices.  See ◊secref{s:matrix-binary-
 ◊function["is-row-matrix"]
 Returns whether the matrix has exactly one row:
 ◊examples{
+include matrices
 check:
   is-row-matrix([matrix(1, 3): 10, 20, 10]) is true
   is-row-matrix([matrix(3, 1): 10, 20, 10]) is false
@@ -1178,6 +1183,7 @@ end
 ◊function["is-col-matrix"]
 Returns whether the matrix has exactly one column:
 ◊examples{
+include matrices
 check:
   is-row-matrix([matrix(1, 3): 10, 20, 10]) is false
   is-row-matrix([matrix(3, 1): 10, 20, 10]) is true
@@ -1185,6 +1191,7 @@ end
 }
 ◊function["is-square-matrix"]{Returns true if the given matrix has the same number of rows and columns.}
 ◊examples{
+include matrices
 check:
   is-square-matrix([matrix(2, 2): 10, 20, 30, 40]) is true
   is-square-matrix([matrix(4, 1): 10, 20, 30, 40]) is false
