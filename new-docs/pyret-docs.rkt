@@ -380,8 +380,22 @@
   "<<BNF pending>>"
   )
 
-(define (nd elem)
-  `(span () ,(make-gloss (format "~a-~a" *bnf-type* elem)) "‹" ,elem "›"))
+; (define (nd elem)
+;   `(span () ,(make-gloss (format "~a-~a" *bnf-type* elem)) "‹" ,elem "›"))
+
+(define (nt elem)
+  ; (printf "### nt ~s\n" elem)
+  ; `(span () ,(ref-gloss (format "~a-~a" *bnf-type* elem) (string-append "‹" elem "›")))
+  (ref-gloss (format "~a-~a" *bnf-type* elem) (string-append "‹" elem "›"))
+  )
+
+(define (anchor-nt? s)
+  (and (list? s) (eq? (car s) 'ref-gloss-1)))
+
+(define (anchor-nt s)
+  (let ([name (third s)]
+        [term (fifth s)])
+    `(span () ,(make-gloss name) ,term)))
 
 (define (tk str)
   ; standard Pyret token names
@@ -472,11 +486,6 @@
             [else "UNDEFINED_TOKEN"]
             )))
 
-(define (nt elem)
-  ; (printf "### nt ~s\n" elem)
-  ; `(span () ,(ref-gloss (format "~a-~a" *bnf-type* elem) (string-append "‹" elem "›")))
-  (ref-gloss (format "~a-~a" *bnf-type* elem) (string-append "‹" elem "›"))
-  )
 
 (define (py-prod elem)
   ; (printf "### py-prod ~s\n" elem)
@@ -494,15 +503,21 @@
   ; (printf "\n\nBNF\n\n")
   ; (for ([elem elems])
   ;   (printf "elemX = ~s\n" elem))
-  ; (set! *bnf-type* type)
-  (set! elems (map (lambda (s)
-                     (if (string? s)
-                         (if (string=? s "\n") `(br ())
-                             s)
-                         s))
-                   elems))
-  `(div ([class "bnf"])
-        ,@elems))
+  (set! *bnf-type* type)
+  (let ([out-elems #f]
+        [lhs? #t])
+    (set! out-elems (map (lambda (s)
+                           (cond [(not (string? s))
+                                  (cond [(not lhs?) s]
+                                        [(anchor-nt? s) (set! lhs? #f) (anchor-nt s)]
+                                        [else s])]
+                                 [(string=? s "\n") (set! lhs? #t) `(br ())]
+                                 [(and lhs? (regexp-match "^ *: *$" s))
+                                  (set! lhs? #f) s]
+                                 [else s]))
+                         elems))
+    `(div ([class "bnf"])
+          ,@out-elems)))
 
 (define (lbrace)
   `(span () "{"))

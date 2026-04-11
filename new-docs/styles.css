@@ -50,6 +50,13 @@ ul.toclist {
   background-color: #ffeeee;
 }
 
+.bad-ex::before {
+   content: "✘";
+   font-size: 2rem;
+   color: #880000;
+   float: right;
+}
+
 .margin-note {
   /* background-color: #fbfb88; */
   background-color: hsl(60, 29%, 94%);
