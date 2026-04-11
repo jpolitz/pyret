@@ -383,9 +383,100 @@
 (define (nd elem)
   `(span () ,(make-gloss (format "~a-~a" *bnf-type* elem)) "‹" ,elem "›"))
 
+(define (tk str)
+  ; standard Pyret token names
+  `(b () ,(case str
+
+            [("AS") "as"]
+            [("ASK") "ask"]
+            [("BANG") "!"]
+            [("BAR") "|"]
+            [("BLOCK") "block"]
+            [("BLOCKCOLON") "block:"]
+            [("CASES") "cases"]
+            [("COLON") ":"]
+            [("COLON-EQUALS") ":="]
+            [("COLONCOLON") "::"]
+            [("COMMA") ","]
+            [("CARET") "^"]
+            [("LAM") "lam"]
+            [("DATA") "data"]
+            [("DOC") "doc:"]
+            [("DOT") "."]
+            [("DOTS") "..."]
+            [("ELSE") "else"]
+            [("ELSECOLON") "else:"]
+            [("ELSEIF") "else if"]
+            [("END") "end"]
+            [("EQUALS") "="]
+            [("FOR") "for"]
+            [("FROM") "from"]
+            [("FUN") "fun"]
+            [("HIDING") "hiding"]
+            [("IF") "if"]
+            [("IMPORT") "import"]
+            [("INCLUDE") "include"]
+            [("LANGLE") "<"]
+            [("LBRACE") "{"]
+            [("LOAD_TABLE") "load-table"]
+            [("LPAREN") "("]
+            [("METHOD") "method"]
+            [("MODULE") "module"]
+            [("NEWTYPE") "newtype"]
+            [("OF") "of"]
+            [("OTHERWISECOLON") "otherwise:"]
+            [("PARENNOSPACE") "("]
+            [("PARENSPACE") "("]
+            [("PERCENT") "%"]
+            [("PIPE") "|"]
+            [("PROVIDE") "provide"]
+            [("PROVIDE-TYPES") "provide-types"]
+            [("PROVIDECOLON") "provide:"]
+            [("RANGLE") ">"]
+            [("RBRACE") "}"]
+            [("REC") "rec"]
+            [("REACTOR") "reactor"]
+            [("INIT") "init"]
+            [("REF") "ref"]
+            [("RPAREN") ")"]
+            [("SANITIZE") "sanitize"]
+            [("SEMI") ";"]
+            [("SHADOW") "shadow"]
+            [("SHARING") "sharing:"]
+            [("SOURCECOLON") "source:"]
+            [("SPY") "spy"]
+            [("LET") "let"]
+            [("TYPE-LET") "type-let"]
+            [("LETREC") "letrec"]
+            [("STAR") "*"]
+            [("TABLE-EXTEND") "extend"]
+            [("TABLE-EXTRACT") "extract"]
+            [("TABLE-SELECT") "select"]
+            [("TABLE-FILTER") "sieve"]
+            [("TABLE-TRANSFORM") "transform"]
+            [("TABLE-ORDER") "order"]
+            [("TABLE") "table:"]
+            [("ASCENDING") "ascending"]
+            [("DESCENDING") "descending"]
+            [("ROW") "row:"]
+            [("THENCOLON") "then:"]
+            [("THICKARROW") "=>"]
+            [("THINARROW") "->"]
+            [("TYPE") "type"]
+            [("USING") "using"]
+            [("VAR") "var"]
+            [("WHEN") "when"]
+            [("WHERE") "where:"]
+            [("WITH") "with"]
+
+            [else "UNDEFINED_TOKEN"]
+            )))
+
 (define (nt elem)
   ; (printf "### nt ~s\n" elem)
-  `(span () ,(ref-gloss (format "~a-~a" *bnf-type* elem) (string-append "‹" elem "›"))))
+  ; `(span () ,(ref-gloss (format "~a-~a" *bnf-type* elem) (string-append "‹" elem "›")))
+  (ref-gloss (format "~a-~a" *bnf-type* elem) (string-append "‹" elem "›"))
+  )
 
 (define (py-prod elem)
   ; (printf "### py-prod ~s\n" elem)
@@ -400,6 +491,9 @@
 (define *bnf-type* 'Pyret)
 
 (define (ebnf type . elems)
+  ; (printf "\n\nBNF\n\n")
+  ; (for ([elem elems])
+  ;   (printf "elemX = ~s\n" elem))
   ; (set! *bnf-type* type)
   (set! elems (map (lambda (s)
                      (if (string? s)
