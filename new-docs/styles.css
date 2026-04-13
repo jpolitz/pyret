@@ -1,79 +1,5 @@
 /* CSS used by the Pollenized Pyret docs */
 
-li.indent2 {
-  text-indent: 2em;
-}
-
-li.indent3 {
-  text-indent: 4em;
-}
-
-li.indent4 {
-  text-indent: 6em;
-}
-
-ul.toclist {
-  list-style-type: none;
-}
-
-.pyretexpr {
-  /* color: cornflowerblue; */
-}
-
-.uncolored-code {
-  color: unset;
-}
-
-.pyret-display {
-  /* border-top: 0.055em solid black; */
-  border-top: 1px solid #99b;
-  font-style: monospace;
-  /* background-color: #f2f2f2; */
-  background-color: hsl(216, 78%, 95%);
-}
-
-.pyret-content {
-  font-style: monospace;
-}
-
-.function {
-  /* font-family: monospace; */
-  /* background-color: #6bccdf; */
-  /* background-color: #ffeeee; */
-}
-
-.good-ex {
-  background-color: #eeffee;
-}
-
-.bad-ex {
-  background-color: #ffeeee;
-}
-
-.bad-ex::before {
-   content: "✘";
-   font-size: 2rem;
-   color: #880000;
-   float: right;
-}
-
-.margin-note {
-  /* background-color: #fbfb88; */
-  background-color: hsl(60, 29%, 94%);
-  float: right;
-  width: 25%;
-  margin: 0 0 1em 1em;
-  font-size: 0.9em;
-  color: #555;
-  padding-left: 0.75em;
-  padding-right: 1em;
-  border: 1px solid #ccb;
-  border-left: 0.4rem solid #ccb;
-}
-
-.author {
-  font-family: sans-serif;
-}
 
 .VSCode {
   position: relative;
@@ -139,24 +65,36 @@ ul.toclist {
   height: 2em;
 }
 
-.nested {
-  margin-top: 1em;
-  margin-bottom: 1em;
+.pyret-highlight {
+  font-family: 'Source Code Pro', monospace;
+  font-size: 1rem;
 }
 
-.insetpara {
-  margin-left: 1em;
-  margin-right: 1em;
+.pyret-highlight.good-ex::before {
+   content: "✔";
+   font-size: 2rem;
+   color: #008800;
+   float: right;
 }
 
-.glossary-sep {
-  margin-top: 1em;
+.pyret-highlight.good-ex {
+  background-color: #eeffee;
 }
 
-ul.glossary {
-  list-style-type: none;
+.pyret-highlight.bad-ex {
+  background-color: #ffeeee;
 }
 
+.pyret-highlight.bad-ex::before {
+   content: "✘";
+   font-size: 2rem;
+   color: #880000;
+   float: right;
+}
+
+.pyret-highlight.ok-ex {
+   background-color: #ffffee;
+}
 
 .repl-example  {
   margin-left: 1.5em;
@@ -282,4 +220,83 @@ h4 {
 
 .searchbox::placeholder {
   text-align: center;
+}
+
+li.indent2 {
+  text-indent: 2em;
+}
+
+li.indent3 {
+  text-indent: 4em;
+}
+
+li.indent4 {
+  text-indent: 6em;
+}
+
+ul.toclist {
+  list-style-type: none;
+}
+
+.pyretexpr {
+  /* color: cornflowerblue; */
+}
+
+.uncolored-code {
+  color: unset;
+}
+
+.pyret-display {
+  /* border-top: 0.055em solid black; */
+  border-top: 1px solid #99b;
+  font-style: monospace;
+  /* background-color: #f2f2f2; */
+  background-color: hsl(216, 78%, 95%);
+}
+
+.pyret-content {
+  font-style: monospace;
+}
+
+.function {
+  /* font-family: monospace; */
+  /* background-color: #6bccdf; */
+  /* background-color: #ffeeee; */
+}
+
+
+.margin-note {
+  /* background-color: #fbfb88; */
+  background-color: hsl(60, 29%, 94%);
+  float: right;
+  width: 25%;
+  margin: 0 0 1em 1em;
+  font-size: 0.9em;
+  color: #555;
+  padding-left: 0.75em;
+  padding-right: 1em;
+  border: 1px solid #ccb;
+  border-left: 0.4rem solid #ccb;
+}
+
+.author {
+  font-family: sans-serif;
+}
+
+.nested {
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+.insetpara {
+  margin-left: 1em;
+  margin-right: 1em;
+}
+
+.glossary-sep {
+  margin-top: 1em;
+}
+
+ul.glossary {
+  list-style-type: none;
 }
