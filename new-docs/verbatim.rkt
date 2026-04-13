@@ -28,7 +28,7 @@
       (let ()
         (define file (format ".examples-~a.arr" (get-examples-count)))
         (save-example-to-file elems file)
-        `(div ()
+        `(div ([class "SIntrapara"])
               (p () (b () "Examples:"))
               (pre ([class "pyret-highlight"]) ,@elems)
               (a ([class "show-embed"]
@@ -37,7 +37,7 @@
       (let ()
         (define elem-string (apply string-append elems))
         (printf "WARNING: examples ~s missing try-it in ~a\n" elem-string (calc-here-path-from-project-root))
-        `(div ()
+        `(div ([class "SIntrapara"])
               (p () (b () "Examples:"))
               (pre ([class "pyret-highlight"]) ,@elems)))))
 

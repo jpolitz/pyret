@@ -1,6 +1,3 @@
-/* CSS used by the Pollenized Pyret docs */
-
-
 .VSCode {
   position: relative;
   border: 1px dashed #54a4ec;
@@ -8,7 +5,7 @@
 }
 
 .VSCode .vscode-icon::after {
-  content: url(platforms/code-stable-small.png);
+  content: url(code-stable-small.png);
   float: right;
   margin-top: -1em;
   margin-right: -1em;
@@ -24,7 +21,7 @@
 }
 
 .VSCodeCLI .vscode-cli-icon::after {
-  content: url(platforms/terminal-vscode.png);
+  content: url(terminal-vscode.png);
   float: right;
   margin-top: -1em;
   margin-right: -1em;
@@ -40,7 +37,7 @@
 }
 
 .CLI .cli-icon::after {
-  content: url(platforms/GNOME_Terminal-small.png);
+  content: url(GNOME_Terminal-small.png);
   float: right;
   margin-top: -1em;
   margin-right: -1em;
@@ -56,13 +53,31 @@
 }
 
 .CPO .cpo-icon::after {
-  content: url(platforms/pyret-logo-small.png);
+  content: url(pyret-logo-small.png);
   float: right;
   margin-top: -1em;
   margin-right: -1em;
   position: relative;
   width: 2em;
   height: 2em;
+}
+
+/* New styles just for Pyret */
+
+.boxed .SIntrapara {
+  margin: 0;
+}
+
+.indent-arg {
+  margin-left: 1.5em;
+}
+
+.boxed blockquote {
+  margin-bottom: 0;
+}
+
+.pyret-header {
+  margin-bottom: 1rem;
 }
 
 .pyret-highlight {
@@ -78,11 +93,11 @@
 }
 
 .pyret-highlight.good-ex {
-  background-color: #eeffee;
+   background-color: #eeffee;
 }
 
 .pyret-highlight.bad-ex {
-  background-color: #ffeeee;
+   background-color: #ffeeee;
 }
 
 .pyret-highlight.bad-ex::before {
@@ -96,9 +111,13 @@
    background-color: #ffffee;
 }
 
-.repl-example  {
-  margin-left: 1.5em;
+.repl-example .pyret-highlight {
+    margin-left: 1.5em;
   background-color: hsl(0,0%,95%);
+}
+
+.repl-examples .SIntrapara {
+    margin: 0;
 }
 
 .repl-example::before{
@@ -124,8 +143,8 @@
    z-index: 1;
    vertical-align: baseline;
    display: inline-block;
-   -webkit-mask-image: url(trove/paint.svg);
-   mask-image: url(trove/paint.svg);
+   -webkit-mask-image: url(./paint.svg);
+   mask-image: url(./paint.svg);
    -webkit-mask-size: contain;
    mask-size: 100% 100%;
    mask-type: luminance;
@@ -135,168 +154,44 @@
    width: 2.5em;
    height: 1.5em;
    position: absolute;
-   background-image: url(trove/checkers.svg);
+   background-image: url(./checkers.svg);
    background-size: 2.5em 1.5em;
    display: inline-block;
 }
 
-.container {
-  width: 100%;
+
+pre.pyret-block {
+   padding-bottom: 1rem;
+   margin: 0;
 }
 
-@media (min-width: 800px) {
-  .container {
-    max-width: 72ch;
-    margin: 0 auto;
-  }
-  h1,h2,h3,h4,h5,h6 {
-    margin-left: -1em;
-  }
+
+
+.bnf-meta {
+  color: gray;
+  font-size: 115%;
 }
 
-.floatleft {
-  float: left;
+.bnf-lit {
+  font-family: monospace;
+  font-weight: bold;
 }
 
-.floatright {
-  float: right;
-}
+.bnf-lit.bnf-unknown {
+  background-color: unset;
+  border: unset;
+  font-style: italic;
+}                      
 
-p {
-  margin-top: 1em;
-  margin-bottom: 1em;
-}
-
-ul.list-group {
-  margin-top: 1em;
-  margin-bottom: 1em;
-}
-
-ul.toclist {
-  margin-top: 1em;
-  margin-bottom: 1em;
-}
-
-h1 {
-  font-size: 35px;
-}
-
-h2 {
-  margin-top: 1em;
-  font-size: 25px;
-}
-
-h3 {
-  margin-top: 1em;
-  font-size: 20px;
-}
-
-h4 { 
-  margin-top: 1em;
-  font-size: 20px;
-}
-
-.bnf {
-  margin-top: .8em;
-  margin-bottom: .8em;
-  border-left: 2px solid gray;
-  padding-left: 1em;
-  white-space: pre;
+.bnf-phantom::before {
+   content: attr(data-prod);
+   color: transparent;
 }
 
 .hide {
-  display: none;
+    display: none;
 }
 
-.searchbox {
-  width: 16em;
-  margin-top: 1em;
-  margin-left: 1em;
-  padding: 0px;
-  background-color: #eee;
-  border: 1px solid #ddd;
-  vertical-align: middle;
-}
-
-.searchbox::placeholder {
-  text-align: center;
-}
-
-li.indent2 {
-  text-indent: 2em;
-}
-
-li.indent3 {
-  text-indent: 4em;
-}
-
-li.indent4 {
-  text-indent: 6em;
-}
-
-ul.toclist {
-  list-style-type: none;
-}
-
-.pyretexpr {
-  /* color: cornflowerblue; */
-}
-
-.uncolored-code {
-  color: unset;
-}
-
-.pyret-display {
-  /* border-top: 0.055em solid black; */
-  border-top: 1px solid #99b;
-  font-style: monospace;
-  /* background-color: #f2f2f2; */
-  background-color: hsl(216, 78%, 95%);
-}
-
-.pyret-content {
-  font-style: monospace;
-}
-
-.function {
-  /* font-family: monospace; */
-  /* background-color: #6bccdf; */
-  /* background-color: #ffeeee; */
-}
-
-
-.margin-note {
-  /* background-color: #fbfb88; */
-  background-color: hsl(60, 29%, 94%);
-  float: right;
-  width: 25%;
-  margin: 0 0 1em 1em;
-  font-size: 0.9em;
-  color: #555;
-  padding-left: 0.75em;
-  padding-right: 1em;
-  border: 1px solid #ccb;
-  border-left: 0.4rem solid #ccb;
-}
-
-.author {
-  font-family: sans-serif;
-}
-
-.nested {
-  margin-top: 1em;
-  margin-bottom: 1em;
-}
-
-.insetpara {
-  margin-left: 1em;
-  margin-right: 1em;
-}
-
-.glossary-sep {
-  margin-top: 1em;
-}
-
-ul.glossary {
-  list-style-type: none;
+.searchbox.large {
+    width: 24rem;
 }

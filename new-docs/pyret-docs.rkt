@@ -95,7 +95,8 @@
 (define link hyperlink)
 
 (define (image #:scale [scale 1] file)
-  `(img ([src ,file])))
+  (let ([pct (format "~a%" (inexact->exact (* scale 100)))])
+    `(img ([src ,file] [width ,pct]))))
 
 (define pyret-method
   (case-lambda
@@ -319,7 +320,7 @@
 
 (define (repl-examples . elems)
   ; (printf "### repl-examples ~s\n" elems)
-  `(div ()
+  `(div ([class "repl-examples"])
         ,@(map (lambda (elem)
                  ; (printf "### elem = ~s\n" elem)
                  (define kar (car elem))
@@ -332,8 +333,8 @@
                         kar))
                  ; (printf "### car elem = ~s\n" kar)
                  ; (printf "### cdr elem = ~s\n" (cdr elem))
-                 `(div ()
-                      (pre ([class "repl-example pyret-highlight"])
+                 `(div ([class "repl-example"])
+                      (pre ([class "pyret-highlight"])
                            ,@kar)
                       ,@(cdr elem)))
                elems)))

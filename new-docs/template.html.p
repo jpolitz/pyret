@@ -17,6 +17,7 @@
   <link rel="stylesheet" type="text/css" href="◊(prefix-dir (point-to-project-root here) (symbol->string './pollenboots/codemirror.css))" title="default"/>
   <link rel="stylesheet" type="text/css" href="◊(prefix-dir (point-to-project-root here) (symbol->string './pollenboots/pyret.css))" title="default"/>
   <link rel="stylesheet" type="text/css" href="◊(prefix-dir (point-to-project-root here) (symbol->string './styles.css))" title="default"/>
+  <link rel="stylesheet" type="text/css" href="◊(prefix-dir (point-to-project-root here) (symbol->string './pollen-styles.css))" title="default"/>
   <head>
     <title>◊(doc-title doc)</title>
   </head>
