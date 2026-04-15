@@ -336,7 +336,7 @@ want to explore ◊emph{why} a particular function works the way it does.
 Consider the following two test cases: when reading them, what meaning do they
 convey?
 
-◊examples{
+◊examples[#:show-try-it #f]{
 check:
   distance-to-origin(3, 4) is 5
   distance-to-origin(3, 4) is num-sqrt(num-sqr(3) + num-sqr(4))
@@ -355,7 +355,7 @@ tests are about the same input scenario.
 Pyret allows us to write test cases in a slightly different way, that addresses
 both of these concerns:
 
-◊examples{
+◊examples[#:show-try-it #f]{
 check:
   distance-to-origin(3, 4) is-roughly 5
     because num-sqrt(num-sqr(3) + num-sqr(4))

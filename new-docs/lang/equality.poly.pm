@@ -913,13 +913,14 @@ We define three parallel functions to the equality predicates that return
   ◊function["identical3" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) T)]
 
 ◊examples{
+include equality
 check:
   f = lam(): 5 end
-  equal-always3(f, f) is Unknown
+  equal-always3(f, f) satisfies is-Unknown
   equal-always3(f, 5) satisfies is-NotEqual
-  equal-now3(f, f) is Unknown
+  equal-now3(f, f) satisfies is-Unknown
   equal-now3("a", f) satisfies is-NotEqual
-  identical3(f, f) is Unknown
+  identical3(f, f) satisfies is-Unknown
   identical3("a", f) satisfies is-NotEqual
 end
 }

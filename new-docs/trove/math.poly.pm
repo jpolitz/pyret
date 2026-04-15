@@ -28,6 +28,7 @@
   contains at least one RoughNum, then the output will be a RoughNum.
 
   ◊examples{
+    include math
     check:
       sum([list: ]) is 0
       sum([list: 0, 2, 4]) is 6
@@ -47,6 +48,7 @@
   Calculates the maximal element of the set of Numbers in ◊pyret{l}.
   
   ◊examples{
+    include math
     check:
       max([list: ]) raises "Empty List"
       max([list: 10]) is 10
@@ -63,6 +65,7 @@
   Calculates the minimal element of the set of Numbers in ◊pyret{l}.
 
   ◊examples{
+    include math
     check:
       min([list: ]) raises "Empty List"
       min([list: 2]) is 2
@@ -79,6 +82,7 @@
   Calculates the index of the maximal element within ◊pyret{l}.
   
   ◊examples{
+    include math
     check:
       arg-max([list: ]) raises "Empty List"
       arg-max([list: 2]) is 0
@@ -94,6 +98,7 @@
   Calculates the index of the minimal element within ◊pyret{l}.
   
   ◊examples{
+    include math
     check:
       arg-max([list: ]) raises "Empty List"
       arg-max([list: 8]) is 0

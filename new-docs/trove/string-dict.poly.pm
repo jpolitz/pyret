@@ -40,6 +40,7 @@ functions below.
 Creates a string-dict with the given ◊pyret{elt}s.
 
 ◊examples{
+  include string-dict
   sd1 = [string-dict: "a", 5, "b", 10]
 }
 
@@ -56,6 +57,7 @@ Returns ◊pyret-id["none" "option"] if the key is not in the dictionary, and a
 if the key is in the dictionary.
 
 ◊examples{
+include string-dict
 check:
   [string-dict: "a", 5].get("a") is some(5)
   [string-dict: "a", 5].get("b") is none
@@ -72,6 +74,7 @@ Returns the value that ◊pyret{key} maps to if it is present, and throws an
 exception otherwise.
 
 ◊examples{
+include string-dict
 check:
   [string-dict: "a", 5].get-value("a") is 5
   [string-dict: "a", 5].get-value("b") raises "Key b not found"
@@ -88,6 +91,7 @@ Returns a new string-dict that maps ◊pyret{key} to ◊pyret{value}
 and is otherwise similar to the original string-dict.
 
 ◊examples{
+include string-dict
 check:
   sd1 = [string-dict: "a", 5, "b", 10]
   sd1.get-value("a") is 5
@@ -101,6 +105,7 @@ end
 Setting a value is not restricted to existing keys.
 
 ◊examples{
+include string-dict
 check:
   s1 = [string-dict: ]
   s2 = s1.set("Hello", "World")
@@ -118,6 +123,7 @@ end
 Returns ◊pyret{true} if ◊pyret{key} is in the string-dict; ◊pyret{false} if not.
 
 ◊examples{
+include string-dict
 check:
   sd1 = [string-dict: "a", 5]
   sd1.has-key("a") is true
@@ -134,6 +140,7 @@ end
 Returns the set of keys in the string-dict.
 
 ◊examples{
+include string-dict
 check:
   sd1 = [string-dict: "a", 5, "b", 10]
   sd1.keys() is [tree-set: "a", "b"]
@@ -151,6 +158,7 @@ Returns a new string-dict that doesn't have the argument key but
 is otherwise similar to the original string-dict.
 
 ◊examples{
+include string-dict
 check:
   sd1 = [string-dict: "a", 5, "b", 10]
   sd1.has-key("a") is true
@@ -170,6 +178,7 @@ end
 Returns the number of keys in the string-dict.
 
 ◊examples{
+include string-dict
 check:
   sd1 = [string-dict: "a", 5, "b", 10]
   sd1.count() is 2
@@ -190,6 +199,7 @@ Returns a mutable string-dict that has the same keys and values
 as the original string-dict.
 
 ◊examples{
+include string-dict
 check:
   sd1 = [string-dict: "a", 5, "b", 10]
   msd1 = sd1.unfreeze()
@@ -223,7 +233,7 @@ functions below.
 
 Creates an mutable string-dict with the given ◊pyret{elt}s.
 
-◊examples{
+◊examples[#:show-try-it #f]{
   msd1 = [mutable-string-dict: "a", 5, "b", 10]
 }
 
@@ -240,6 +250,7 @@ Returns ◊pyret-id["none" "option"] if the key is not in the dictionary, and a
 if the key is in the dictionary.
 
 ◊examples{
+include string-dict
 check:
   [mutable-string-dict: "a", 5].get-now("a") is some(5)
   [mutable-string-dict: "a", 5].get-now("b") is none
@@ -256,6 +267,7 @@ Returns the value that ◊pyret{key} maps to if it is present, and throws an
 exception otherwise.
 
 ◊examples{
+include string-dict
 check:
   [mutable-string-dict: "a", 5].get-value-now("a") is 5
   [mutable-string-dict: "a", 5].get-value-now("b") raises "Key b not found"
@@ -273,6 +285,7 @@ to ◊pyret{value}. This method is called only for its side-effect
 and so returns ◊pyret{nothing}
 
 ◊examples{
+include string-dict
 check:
   msd1 = [mutable-string-dict: "a", 5, "b", 10]
   msd1.get-value-now("a") is 5
@@ -292,6 +305,7 @@ end
 Returns ◊pyret{true} if ◊pyret{key} is in the string-dict; ◊pyret{false} if not.
 
 ◊examples{
+include string-dict
 check:
   msd1 = [mutable-string-dict: "a", 5]
   msd1.has-key-now("a") is true
@@ -308,6 +322,7 @@ end
 Returns the set of keys in the string-dict.
 
 ◊examples{
+include string-dict
 check:
   msd1 = [mutable-string-dict: "a", 5, "b", 10]
   msd1.keys-now() is [tree-set: "a", "b"]
@@ -325,6 +340,7 @@ Modifies the mutable-string-dict so that it no longer has the
 argument ◊pyret{key}.
 
 ◊examples{
+include string-dict
 check:
   msd1 = [mutable-string-dict: "a", 5, "b", 10]
   msd1.has-key-now("a") is true
@@ -344,6 +360,7 @@ end
 Returns the number of keys in the mutable-string-dict.
 
 ◊examples{
+include string-dict
 check:
   msd1 = [mutable-string-dict: "a", 5, "b", 10]
   msd1.count-now() is 2
@@ -364,6 +381,7 @@ Returns an immutable string-dict that has the same keys and
 values as the mutable one.
 
 ◊examples{
+include string-dict
 check:
   msd1 = [mutable-string-dict: "a", 5, "b", 10]
   sd1 = msd1.freeze()
@@ -385,6 +403,7 @@ original mutable-string-dict continues to be modifiable, and such
 modifications will be visible in the sealed one.
 
 ◊examples{
+include string-dict
 check:
   msd1 = [mutable-string-dict: "a", 5, "b", 10]
   smsd1 = msd1.seal()

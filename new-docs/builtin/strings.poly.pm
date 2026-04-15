@@ -84,6 +84,7 @@ This always returns an ◊pyret{Option} value. Therefore, this is useful when yo
 If you are confident it will be present, consider using ◊pyret{string-find}, which returns the number that you can directly use.
 
 ◊examples{
+include global
 check:
   string-find("Hello", "ello") is some(1)
   string-find("Hello", "H") is some(0)

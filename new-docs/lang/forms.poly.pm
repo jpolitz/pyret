@@ -2272,7 +2272,15 @@ end
 To update a reference value, we use syntax similar to ◊py-prod{extend-expr},
 likewise made more emphatic:
 
-◊examples{
+◊example-preamble{
+data MutX:
+  | mut-x(ref x, y)
+end
+
+ex1 = mut-x(1, 2)
+}
+
+◊examples[#:load-preamble #t]{
 ex1!{x: 42}
 check:
   ex1!x is 42
@@ -2326,7 +2334,19 @@ When Pyret encounters a construction expression, it will call the
 appropriately-numbered method on the constructor objects, depending on the
 number of arguments it received.
 
-◊examples{
+◊example-preamble{
+type Constructor<A> = {
+  make0 :: ( -> A),
+  make1 :: (Any -> A),
+  make2 :: (Any, Any -> A),
+  make3 :: (Any, Any, Any -> A),
+  make4 :: (Any, Any, Any, Any -> A),
+  make5 :: (Any, Any, Any, Any, Any -> A),
+  make  :: (RawArray<Any> -> A),
+}
+}
+
+◊examples[#:load-preamble #t]{
 weird :: Constructor<String> = {
   make0: lam(): "nothing at all" end,
   make1: lam(a): "just " + tostring(a) end,

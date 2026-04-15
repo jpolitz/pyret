@@ -13,30 +13,61 @@
 (define (tt . elems)
   `(tt () ,@elems))
 
-(define (save-example-to-file strs file)
+(define (save-example-to-file code file)
   (call-with-output-file file
     (lambda (o)
       (fprintf o "# example in ~s, saved to ~s\n" (calc-here-path-from-project-root) file)
-      (for ([str strs])
-        (display str o)))
+      (display code o))
     #:exists 'replace))
 
 (define get-examples-count (make-counter))
 
-(define (examples #:show-try-it [show-try-it #t] . elems)
+(define *example-preamble-string* "")
+
+(define *functions-defined* '())
+
+(define (prune-functions-tried code)
+  (let ([updated-functions-defined '()])
+    (for ([f *functions-defined*])
+      (unless (regexp-match f code)
+        (set! updated-functions-defined (cons f updated-functions-defined))))
+    (set! *functions-defined* updated-functions-defined))
+  (let ([functions-without-examples-file (build-path *project-root* "_functions.rkt")])
+    (call-with-output-file functions-without-examples-file
+      (lambda (o)
+        (let ([i 0])
+          (for ([f *functions-defined*])
+            (display f o) (display " " o)
+            (set! i (+ i 1))
+            (when (>= i 6) (newline o) (set! i 0)))
+          (newline o)))
+      #:exists 'replace)))
+
+(define (example-preamble . elems)
+  (set! *example-preamble-string* (string-join elems " "))
+  "")
+
+(define (examples #:show-try-it [show-try-it #t] #:load-preamble [load-preamble #f] . elems)
+  (define code (string-join elems " "))
+  (when (and show-try-it
+             (not (or (regexp-match "check:" code) (regexp-match "examples:" code))))
+    (set! show-try-it #f))
   (if show-try-it
       (let ()
         (define file (format ".examples-~a.arr" (get-examples-count)))
-        (save-example-to-file elems file)
+        (when load-preamble
+          (set! code (string-append *example-preamble-string* "\n" code)))
+        (prune-functions-tried code)
+        (save-example-to-file code file)
         `(div ([class "SIntrapara"])
               (p () (b () "Examples:"))
               (pre ([class "pyret-highlight"]) ,@elems)
               (a ([class "show-embed"]
-                  [code ,(string-join elems " ")])
+                  [code ,code])
                  "(Try it!)")))
       (let ()
-        (define elem-string (apply string-append elems))
-        (printf "WARNING: examples ~s missing try-it in ~a\n" elem-string (calc-here-path-from-project-root))
+        ; (define elem-string (apply string-append elems))
+        ; (printf "WARNING: examples ~s missing try-it in ~a\n" elem-string (calc-here-path-from-project-root))
         `(div ([class "SIntrapara"])
               (p () (b () "Examples:"))
               (pre ([class "pyret-highlight"]) ,@elems)))))
@@ -164,6 +195,7 @@
                   #:alt-docstrings [alt-docstrings "alt-docstrings"]
                   name . elems)
   ; (printf "function ~a args are ~s, contract = ~s\n" name args contract)
+  (set! *functions-defined* (cons name *functions-defined*))
   `(div ()
         ,(make-gloss name)
         (pre ([class "pyret-display"])
