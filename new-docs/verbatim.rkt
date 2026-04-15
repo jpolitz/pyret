@@ -27,9 +27,11 @@
 (define *functions-defined* '())
 
 (define (prune-functions-tried code)
+  ; (printf "*** doing prune-functions-tried ~s\n" code)
   (let ([updated-functions-defined '()])
     (for ([f *functions-defined*])
       (unless (regexp-match f code)
+        ; (printf "~s not found in code\n" f)
         (set! updated-functions-defined (cons f updated-functions-defined))))
     (set! *functions-defined* updated-functions-defined))
   (let ([functions-without-examples-file (build-path *project-root* "_functions.rkt")])
@@ -59,18 +61,20 @@
           (set! code (string-append *example-preamble-string* "\n" code)))
         (prune-functions-tried code)
         (save-example-to-file code file)
-        `(div ([class "SIntrapara"])
-              (p () (b () "Examples:"))
-              (pre ([class "pyret-highlight"]) ,@elems)
-              (a ([class "show-embed"]
-                  [code ,code])
-                 "(Try it!)")))
+        `(div ([class "examples"])
+              (div ([class "SIntrapara"])
+                   (p () (b () "Examples:"))
+                   (pre ([class "pyret-highlight"]) ,@elems)
+                   (a ([class "show-embed"]
+                       [code ,code])
+                      "(Try it!)"))))
       (let ()
         ; (define elem-string (apply string-append elems))
         ; (printf "WARNING: examples ~s missing try-it in ~a\n" elem-string (calc-here-path-from-project-root))
-        `(div ([class "SIntrapara"])
-              (p () (b () "Examples:"))
-              (pre ([class "pyret-highlight"]) ,@elems)))))
+        `(div ([class "examples"])
+              (div ([class "SIntrapara"])
+                   (p () (b () "Examples:"))
+                   (pre ([class "pyret-highlight"]) ,@elems))))))
 
 (define (verbatim #:style [style "nothing_special"] #:show-try-it [show-try-it #f] . elems)
   ; (printf "@@@ doing verbatim ~s\n" elems)
@@ -189,13 +193,23 @@
     ; (printf "### x= ~s\n" x)
     x))
 
+(define (contains-examples? s)
+  (if (list? s)
+      (if (and (>= (length s) 3)
+               (eq? (car s) 'div)
+               (equal? (cadr s) '((class "examples"))))
+          #t
+          (ormap contains-examples? s))
+      #f))
+
 (define (function #:contract [contract #f] #:args [args #f]
                   #:return [return "return"]
                   #:examples [examples "examples"]
                   #:alt-docstrings [alt-docstrings "alt-docstrings"]
                   name . elems)
-  ; (printf "function ~a args are ~s, contract = ~s\n" name args contract)
-  (set! *functions-defined* (cons name *functions-defined*))
+  ; (printf "function ~a, elems = ~s\n" name elems)
+  (unless (contains-examples? elems)
+    (set! *functions-defined* (cons name *functions-defined*)))
   `(div ()
         ,(make-gloss name)
         (pre ([class "pyret-display"])
