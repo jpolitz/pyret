@@ -14,6 +14,9 @@ once:
 debug-examples:
 	./debug-examples.sh
 
+debug-tests:
+	./debug-tests.sh
+
 pollenboots:
 	git clone https://github.com/ds26gte/pollenboots
 

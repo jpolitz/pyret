@@ -204,10 +204,13 @@
 
 (define (function #:contract [contract #f] #:args [args #f]
                   #:return [return "return"]
-                  #:examples [examples "examples"]
+                  #:examples [examples #f]
                   #:alt-docstrings [alt-docstrings "alt-docstrings"]
                   name . elems)
-  ; (printf "function ~a, elems = ~s\n" name elems)
+  ; (printf "function ~a, elems = ~s, examples = ~s\n" name elems examples)
+  (when examples
+    (set! elems (append elems (list examples))))
+  ; (printf "function ~a, elems = ~s, examples = ~s\n" name elems examples)
   (unless (contains-examples? elems)
     (set! *functions-defined* (cons name *functions-defined*)))
   `(div ()
