@@ -24,8 +24,8 @@ clean:
 	find . -name compiled -type d -exec rm -fr {} \; || true
 	find [^p]* -name \*.html -delete || true
 	find pl* -name \*.html -delete || true
-	find . -name .image\*png -delete || true
-	find . -name .examples\*arr -delete || true
+	find . -name .image\*.png -delete || true
+	find . -name .examples\*.arr -delete || true
 	make cleanglob
 
 cleanglob:

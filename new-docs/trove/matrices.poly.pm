@@ -577,9 +577,8 @@ end
 ◊matrix-method["transpose" #:contract (a-arrow mtx-type)]
 
 Returns the transposition of the matrix. For example,
-◊math-disp{\begin{bmatrix}1 & 2 & 3 \\ 4 & 5 & 6\end{bmatrix}
-                 \overrightarrow{Transpose}
-                 \begin{bmatrix}1 & 4 \\ 2 & 5 \\ 3 & 6\end{bmatrix}}
+
+◊(image "matrix-transpose.png")
 
 ◊examples[#:load-preamble #t]{
 check:
@@ -862,12 +861,18 @@ meaning that all rows (when treated as vectors) each have
 quite likely, this check is performed using ◊pyret-id["roughly-equal"
 "equality"].
 
+◊examples[#:load-preamble #t]{
+A = [matrix(2,2): 0, -1, 1, 0]
+check:
+  A.is-orthonormal() is true
+end
+}
+
 ◊matrix-method["rref" #:contract (a-arrow mtx-type)]
 
 Returns the Reduced Row Echelon Form of the matrix. For example:
-◊math-disp{\begin{bmatrix}1 & 2 & 3 \\ 4 & 5 & 6\end{bmatrix}
-                 \overrightarrow{RREF}
-                 \begin{bmatrix}1 & 0 & -1\\ 0 & 1 & 2\end{bmatrix}}
+
+◊(image "matrix-rref.png")
 
 ◊examples[#:load-preamble #t]{
 check:
@@ -910,22 +915,27 @@ of this matrix, if possible.  This returns a pair of matrices, ◊pyret{L} and
 "upper-triangle")]{lower-triangular} and ◊seclink[(pyret-method-ref "Matrix"
 "upper-triangle")]{upper-triangular}, and whose product is this matrix:
 
-◊math-disp{
-  \begin{bmatrix}
-    a_{11} & a_{12} & a_{13} \\
-    a_{21} & a_{22} & a_{23} \\
-    a_{31} & a_{32} & a_{33}
-  \end{bmatrix} =
-  \begin{bmatrix}
-    \ell_{11} &         0 & 0         \\
-    \ell_{21} & \ell_{22} & 0         \\
-    \ell_{31} & \ell_{32} & \ell_{33}
-  \end{bmatrix}
-  \begin{bmatrix}
-    u_{11} & u_{12} & u_{13} \\
-         0 & u_{22} & u_{23} \\
-         0 &      0 & u_{33}
-  \end{bmatrix}
+◊(image "matrix-decomp.png")
+
+◊examples[#:load-preamble #t]{
+check:
+  M = [matrix(4,4):
+    1, 1, 0, 3,
+    2, 1, -1, 1,
+    3, -1, -1, 2,
+    -1, 2, 3, -1]
+  LU = M.lu-decomposition()
+  LU.L is [matrix(4,4):
+    1, 0, 0, 0,
+    2, 1, 0, 0,
+    3, 4, 1, 0,
+    -1, -3, 0, 1]
+  LU.U is [matrix(4,4):
+    1, 1, 0, 3,
+    0, -1, -1, -5,
+    0, 0, 3, 13,
+    0, 0, 0, -13]
+end
 }
 
 ◊matrix-method["lp-norm" #:contract (a-ftype (a-var-type "power" N) N)]
@@ -1347,6 +1357,14 @@ end
 Returns the Frobenius Product of the two matrices.  See ◊pyret-method["Matrix"
 "dot"].
 
+◊examples[#:load-preamble #t]{
+A = [matrix(2, 3): 1, -2, 3, -4, 5, -6]
+B = [matrix(2, 3): -1, 2, -3, 4, -5, 6]
+check:
+  mtx-dot(A, B) is (1 * -1) + (-2 * 2) + (3 * -3) + (-4 * 4) + (5 * -5) + (-6 * 6)
+end
+}
+
 ◊function["mtx-expt" #:contract (a-ftype (a-var-type "m" mtx-type) (a-var-type "power" Nat) mtx-type)]
 
 Multiplies the matrix by itself the given number of times.  See
@@ -1392,6 +1410,13 @@ end
 
 Returns true if the matrix is orthonormal.  See ◊pyret-method["Matrix" "is-orthonormal"]. 
 
+◊examples[#:load-preamble #t]{
+A = [matrix(2,2): 0, -1, 1, 0]
+check:
+  mtx-is-orthonormal(A) is true
+end
+}
+
 ◊function["mtx-rref" #:contract (a-ftype (a-var-type "m" mtx-type) mtx-type)]
 
 Returns the Reduced Row Echelon Form of the matrix. See ◊pyret-method["Matrix"
@@ -1425,11 +1450,19 @@ end
 Returns the matrix which, when multiplied on the right of the first matrix,
 results in the second matrix.  See ◊pyret-method["Matrix" "solve"].
 
+◊examples[#:load-preamble #t]{
+M = [matrix(2,2): 1, 4, 5, 2]
+B = [matrix(2,2): 3, 6, 2, 0]
+X = mtx-solve(M, B)
+check:
+  X is [matrix(2,2): 1/9, -2/3, 13/18, 5/3]
+end
+}
+
 ◊function["mtx-least-squares-solve" #:contract (a-ftype (a-var-type "m1" mtx-type) (a-var-type "m2" mtx-type) mtx-type)]
 
 Returns the least squares solution for the first and the second matrix, calculated
 using QR decomposition.  See ◊pyret-method["Matrix" "least-squares-solve"].
-
 
 ◊examples[#:load-preamble #t]{
 check:
@@ -1639,5 +1672,13 @@ end
              #:contract (a-ftype (a-var-type "delta" N)
                                  (p-a-ftype mtx-type mtx-type B))
              ]{Returns a comparison predicate which returns true if each entry in both matrices is within ◊pyret{delta} of each other.}
+
+◊examples[#:load-preamble #t]{
+A = [matrix(2,2): 1, 4, 5, 2]
+B = [matrix(2,2): 1.02, 3.99, 5.01, 1.97]
+check:
+  matrix-within(0.05)(A, B) is true
+end
+}
 
 }

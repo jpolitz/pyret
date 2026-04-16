@@ -34,7 +34,7 @@
         ; (printf "~s not found in code\n" f)
         (set! updated-functions-defined (cons f updated-functions-defined))))
     (set! *functions-defined* updated-functions-defined))
-  (let ([functions-without-examples-file (build-path *project-root* "_functions.rkt")])
+  (let ([functions-without-examples-file (build-path *project-root* "_untested-functions.rkt")])
     (call-with-output-file functions-without-examples-file
       (lambda (o)
         (let ([i 0])
