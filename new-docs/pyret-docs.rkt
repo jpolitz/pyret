@@ -306,18 +306,6 @@
     ; (printf "x = ~s\n" x)
     x))
 
-(define (method-doc #:alt-docstrings [alt-docstrings #f] #:contract [contract #f]
-                    #:args [args "args"] #:return [return "return"]
-                    data-name var-name name
-                    . elems)
-  ; (printf "### method-doc\n")
-  (define methname (string-append "." name))
-  (unless contract (set! contract "unspecified_contract"))
-  `(div ()
-        ,(make-gloss methname)
-        (pre ([class "pyret-display"])
-             ,methname " :: " ,contract)))
-
 (define (repl-examples . elems)
   ; (printf "### repl-examples ~s\n" elems)
   `(div ([class "repl-examples"])

@@ -247,3 +247,16 @@
                   (or contract "unspecified_contract")
                   ))
         ,@elems))
+
+(define (method-doc #:alt-docstrings [alt-docstrings #f] #:contract [contract #f]
+                    #:args [args "args"] #:return [return "return"]
+                    data-name var-name name
+                    . elems)
+  ; (printf "### method-doc\n")
+  (define methname (string-append "." name))
+  (set! *functions-defined* (cons methname *functions-defined*))
+  (unless contract (set! contract "unspecified_contract"))
+  `(div ()
+        ,(make-gloss methname)
+        (pre ([class "pyret-display"])
+             ,methname " :: " ,contract)))

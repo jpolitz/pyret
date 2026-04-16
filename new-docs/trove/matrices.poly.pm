@@ -11,7 +11,6 @@
 ◊(define vec3d-type (a-id "Vector3D" (xref "matrices" "Vector3D")))
 ◊(define Nat (a-id "Nat" (xref "matrices" "Nat")))
 ◊(define NonZeroNat (a-id "NonZeroNat" (xref "matrices" "NonZeroNat")))
-◊(define (L-of typ) `(a-app (a-id "List" (xref "lists" "List")) ,typ))
 
 ◊; Creates a LaTeX inline environment
 ◊(define (math-in-env name . strs)
@@ -42,6 +41,10 @@ operations.
 This library defines both the ◊pyret-id["Vector"] datatype and the
 ◊pyret-id["Matrix"] datatype.  All functionality in this library is defined
 both as methods on the data values and as analogous functions.
+
+◊example-preamble{
+include matrices
+}
 
 ◊section{The Vector Datatype}
 
@@ -74,8 +77,7 @@ Vector constructor which only creates three-dimensional vector instances.
 Vectors are defined to permit using addition and subtraction operators on them,
 whenever the lengths of the vectors are the same:
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [vector: 1, 2, 3] + [vector: 4, 5, 6] is [vector: 5, 7, 9]
   [vector: 1] + [vector: 1, 2] raises "vectors of different lengths"
@@ -90,8 +92,7 @@ Two vectors are considered equal when their lengths are the same and their
 corresponding elements are equal, and obeys the same restrictions on comparing
 exact and rough numbers for equality:
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   ([vector: 1] == [vector: 1, 2]) is false
   ([vector: 1, 2] == [vector: 1, 2]) is true
@@ -102,69 +103,63 @@ end
 
 ◊section{Vector Methods}
 
-◊vector-method["get"]
+◊vector-method["get" #:contract (a-ftype (a-var-type "index" Nat) N)]
 
 Returns the item at the given index in this vector.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [vector: 3, 5].get(1) is 5
 end
 }
 
-◊vector-method["length"]
+◊vector-method["length" #:contract (a-arrow N)]
 
 Returns the length of this vector.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [vector: 1, 2, 3, 4].length() is 4
 end
 }
 
-◊vector-method["dot"]
+◊vector-method["dot" #:contract (a-ftype (a-var-type "other" vec-type) N)]
 
 Returns the dot product of this vector with the given vector.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [vector: 1, 2, 3].dot([vector: 3, 2, 1]) is 10
 end
 }
 
-◊vector-method["magnitude"]
+◊vector-method["magnitude" #:contract (a-arrow N)]
 
 Returns the magnitude of this vector.
 
-◊examples{
-  include matrices
+◊examples[#:load-preamble #t]{
   check:
     [vector: 3, 4].magnitude() is 5
     [vector: 4, 0].magnitude() is 4
   end
   }
 
-◊vector-method["cross"]
+◊vector-method["cross" #:contract (a-ftype (a-var-type "other" vec3d-type) vec3d-type)]
 
 Returns the cross product of this 3D vector and the given 3D vector.
 (Raises an error if either this or that vector are not 3-dimensional)
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [vector: 2, -3, 1].cross([vector: -2, 1, 1]) is [vector: -4, -4, -4]
 end
 }
 
-◊vector-method["normalize"]
+◊vector-method["normalize" #:contract (a-arrow vec-type)]
 
 Normalizes this vector into a unit vector.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [vector: 1, 2, 3].normalize()
     is [vector: (1 / num-sqrt(14)), (2 / num-sqrt(14)), (3 / num-sqrt(14))]
@@ -172,34 +167,31 @@ end
 }
 
 
-◊vector-method["scale"]
+◊vector-method["scale" #:contract (a-ftype (a-var-type "scalar" N) vec-type)]
 
 Scales this vector by the given constant.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [vector: 1, 2, 3].scale(2) is [vector: 2, 4, 6]
 end
 }
 
-◊vector-method["to-row-matrix"]
+◊vector-method["to-row-matrix" #:contract (a-arrow mtx-type)]
 
 Converts this vector to a one-row matrix.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [vector: 4, 5, 6].to-row-matrix() is [matrix(1, 3): 4, 5, 6]
 end
 }
 
-◊vector-method["to-col-matrix"]
+◊vector-method["to-col-matrix" #:contract (a-arrow mtx-type)]
 
 Converts this vector to a one-column matrix.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [vector: 4, 5, 6].to-row-matrix() is [matrix(3, 1): 4, 5, 6]
 end
@@ -207,12 +199,11 @@ end
 
 ◊section{Vector Functions}
 
-◊function["vec-get"]
+◊function["vec-get" #:contract (a-ftype (a-var-type "v" vec-type) (a-var-type "index" Nat) N)]
 
 Returns the item at the given index in the given vector.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   vec-get([vector: 3, 5], 1) is 5
 end
@@ -220,12 +211,11 @@ end
 
 See ◊pyret-method["Vector" "get"].
 
-◊function["vec-length"]
+◊function["vec-length" #:contract (a-ftype (a-var-type "v" vec-type) N)]
 
 Returns the length of the given vector.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   vec-length([vector: 1, 2, 3, 4]) is 4
 end
@@ -233,12 +223,11 @@ end
 
 See ◊pyret-method["Vector" "length"].
 
-◊function["vec-dot"]
+◊function["vec-dot" #:contract (a-ftype (a-var-type "v1" vec-type) (a-var-type "v2" vec-type) N)]
 
 Returns the dot product of the first vector with the second vector.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   vec-dot[vector: 1, 2, 3], ([vector: 3, 2, 1]) is 10
 end
@@ -246,12 +235,11 @@ end
 
 See ◊pyret-method["Vector" "dot"].
 
-◊function["vec-magnitude"]
+◊function["vec-magnitude" #:contract (a-ftype (a-var-type "v" vec-type) N)]
 
 Returns the magnitude of the given vector.
 
-◊examples{
-  include matrices
+◊examples[#:load-preamble #t]{
   check:
     vec-magnitude([vector: 3, 4]) is 5
     vec-magnitude([vector: 4, 0]) is 4
@@ -260,13 +248,12 @@ Returns the magnitude of the given vector.
 
 See ◊pyret-method["Vector" "magnitude"].
 
-◊function["vec-cross"]
+◊function["vec-cross" #:contract (a-ftype (a-var-type "v1" vec3d-type) (a-var-type "v2" vec3d-type) vec3d-type)]
 
 Returns the cross product of the two given 3D vectors.
 (Raises an error if either vector is not 3-dimensional)
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   vec-cross([vector: 2, -3, 1], [vector: -2, 1, 1]) is [vector: -4, -4, -4]
 end
@@ -274,12 +261,11 @@ end
 
 See ◊pyret-method["Vector" "cross"].
 
-◊function["vec-normalize"]
+◊function["vec-normalize" #:contract (a-ftype (a-var-type "v" vec-type) vec-type)]
 
 Normalizes the given vector into a unit vector.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   vec-normalize([vector: 1, 2, 3])
     is [vector: (1 / num-sqrt(14)), (2 / num-sqrt(14)), (3 / num-sqrt(14))]
@@ -289,12 +275,11 @@ end
 
 See ◊pyret-method["Vector" "normalize"].
 
-◊function["vec-scale"]
+◊function["vec-scale" #:contract (a-ftype (a-var-type "vec" vec-type) (a-var-type "factor" N) vec-type)]
 
 Scales the given vector by the given constant.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   vec-scale([vector: 1, 2, 3], 2) is [vector: 2, 4, 6]
 end
@@ -303,12 +288,11 @@ end
 See ◊pyret-method["Vector" "scale"].
 
 
-◊function["vec-add"]
+◊function["vec-add" #:contract (a-ftype (a-var-type "v1" vec-type) (a-var-type "v2" vec-type) vec-type)]
 
 Adds the second vector to first one.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   vec-add([vector: 1, 2, 3], [vector: 4, 5, 6]) is [vector: 5, 7, 9]
   vec-add([vector: 1], [vector: 1, 2]) raises "vectors of different lengths"
@@ -316,12 +300,11 @@ end
 }
 
 
-◊function["vec-sub"]
+◊function["vec-sub" #:contract (a-ftype (a-var-type "v1" vec-type) (a-var-type "v2" vec-type) vec-type)]
 
 Subtracts the second vector from first one.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   vec-sub([vector: 1, 2, 3], [vector: 4, 5, 6]) is [vector: -3, -3, -3]
   vec-sub([vector: 1], [vector: 1, 2]) raises "vectors of different lengths"
@@ -335,15 +318,21 @@ The ◊pyret{Matrix} type represents mathematical matrices.
 
 ◊nested[#:style 'inset]{
 
-◊function["is-matrix" #:alt-docstrings ""]
+◊function["is-matrix" #:contract (a-ftype (a-var-type "val" A) B) #:alt-docstrings ""]
+#:examples
+◊examples[#:load-preamble #t]{
+check:
+  is-matrix([matrix(2, 2): 1, 1, 1, 2]) is true
+  is-matrix(1) is false
+end
+}
 
 }
 
 Every matrix has a ◊pyret{rows} field and a ◊pyret{cols} field, which are the
 dimensions of the matrix.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2, 3): 10, 20, 30, 40, 50, 60].rows is 2
   [matrix(2, 3): 10, 20, 30, 40, 50, 60].cols is 3
@@ -363,15 +352,14 @@ Publicly exposed constructor which constructs a matrix of size
 
 The following example represents the matrix ◊math-imtx{1 & 2 & 3 \\ 4 & 5 & 6}:
 
-◊examples{
+◊examples[#:load-preamble #t]{
 [matrix(2,3): 1, 2, 3, 4, 5, 6]
 }
 
 Supplying an inconsistent quantity of elements for a given matrix dimension
 will produce an error:
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(4, 2): 100] raises "Invalid 1x2 Matrix"
 end
@@ -384,8 +372,7 @@ Constructor which returns a one-row matrix containing the given entries.
 
 The following will construct the matrix ◊math-imtx{1 & 2 & 3}:
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [row-matrix: 1, 2, 3] is [matrix(1,3): 1, 2, 3]
 end
@@ -398,19 +385,17 @@ Constructor which returns a one-column matrix containing the given entries.
 
 The following will construct the matrix ◊math-imtx{1 \\ 2 \\ 3}:
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [col-matrix: 1, 2, 3] is [matrix(3,1): 1, 2, 3]
 end
 }
 
-◊function["identity-matrix"]
+◊function["identity-matrix" #:contract (a-ftype (a-var-type "n" NonZeroNat) mtx-type)]
 
 Constructs an ◊math-in{n \times n} identity matrix.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   identity-matrix(2) is [matrix(2,2): 1, 0,
                                       0, 1]
@@ -420,13 +405,12 @@ check:
 end
 }
 
-◊function["make-matrix"]
+◊function["make-matrix" #:contract (a-ftype (a-var-type "rows" NonZeroNat) (a-var-type "cols" NonZeroNat) (a-var-type "elt" N) mtx-type)]
 
 Constructs a matrix of the given size using only the given element.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
-include matrices
   make-matrix(2, 3, 1) is [matrix(2,3): 1, 1, 1,
                                         1, 1, 1]
   make-matrix(3, 2, 5) is [matrix(3,2): 5, 5,
@@ -435,12 +419,11 @@ include matrices
 end
 }
 
-◊function["zero-matrix"]
+◊function["zero-matrix" #:contract (a-ftype (a-var-type "rows" NonZeroNat) (a-var-type "cols" NonZeroNat) (a-var-type "elt" N) mtx-type)]
 
 Constructs a matrix of the given size containing only zeroes.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   zero-matrix(2, 3) is [matrix(2,3): 0, 0, 0,
                                      0, 0, 0]
@@ -448,12 +431,11 @@ end
 }
 
 
-◊function["build-matrix"]
+◊function["build-matrix" #:contract (a-ftype (a-var-type "rows" NonZeroNat) (a-var-type "cols" NonZeroNat) (a-var-type "proc" (a-ftype N N N)) mtx-type)]
 
 Constructs a matrix of the given size, where entry ◊math{(i,j)} is the result of ◊pyret{proc(i,j)}.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   build-matrix(2, 3, lam(i,j): i + j end) is [matrix(3,2): 0, 1, 1, 2, 2, 3]
 end
@@ -463,12 +445,11 @@ end
 
 These methods are available on all matrices.
 
-◊matrix-method["get"]
+◊matrix-method["get" #:contract (a-ftype (a-var-type "i" Nat) (a-var-type "j" Nat) N)]
 
 Returns the matrix's entry in the ◊math{i^th} row and the ◊math{j^th} column.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(3,2): 1, 2, 3, 4, 5, 6].get(1,1) is 4
   [matrix(3,2): 1, 2, 3, 4, 5, 6].get(2,0) is 5
@@ -476,14 +457,13 @@ check:
 end
 }
 
-◊matrix-method["to-list"]
+◊matrix-method["to-list" #:contract (a-arrow (L-of N))]
 
 Returns the matrix as a list of numbers in row-major order.
 
 For example, given the matrix ◊math-imtx{2 & 4 & 6 \\ 8 & 10 & 12 \\ 14 & 16 & 18}:
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(3,3): 2, 4, 6,
                 8, 10, 12,
@@ -492,12 +472,11 @@ check:
 end
 }
 
-◊matrix-method["to-vector"]
+◊matrix-method["to-vector" #:contract (a-arrow vec-type)]
 
 Returns a one-row/one-column matrix as a vector.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,1): 4, 5].to-vector() is [vector: 4, 5]
   [matrix(1,2): 4, 5].to-vector() is [matrix(2,1): 4, 5].to-vector()
@@ -506,13 +485,12 @@ check:
 end
 }
 
-◊matrix-method["to-lists"]
+◊matrix-method["to-lists" #:contract (a-arrow (L-of (L-of N)))]
 
 Returns the matrix as a list of lists of numbers, with each list
 corresponding to one row.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,3): 1, 2, 3, 4, 5, 6].to-lists()
     is [list: [list: 1, 2, 3],
@@ -520,7 +498,7 @@ check:
 end
 }
 
-◊matrix-method["to-vectors"]
+◊matrix-method["to-vectors" #:contract (a-arrow (L-of vec-type))]
 
 Returns the matrix as a list of lists of numbers (i.e. a list of
 ◊pyret-id["Vector" "matrices"]s), 
@@ -529,8 +507,7 @@ with each list corresponding to one column.
 For example, the matrix ◊math-imtx{1 & 2 & 3 \\ 4 & 5 & 6} corresponds to the
 vectors ◊math-imtx{1 \\ 4}, ◊math-imtx{2 \\ 5}, and ◊math-imtx{3 \\ 6}: 
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,3): 1, 2, 3, 4, 5, 6].to-vectors()
     is [list: [vector: 1, 4],
@@ -539,12 +516,11 @@ check:
 end
 }
 
-◊matrix-method["row"]
+◊matrix-method["row" #:contract (a-ftype (a-var-type "i" Nat) mtx-type)]
 
 Returns a one-row matrix with the matrix's given row.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,3): 1, 2, 3, 4, 5, 6].row(2)
     is [matrix(1,3): 4, 5, 6]
@@ -554,12 +530,11 @@ check:
 end
 }
 
-◊matrix-method["col"]
+◊matrix-method["col" #:contract (a-ftype (a-var-type "j" Nat) mtx-type)]
 
 Returns a one-column matrix with the matrix's given column.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,3): 1, 2, 3, 4, 5, 6].col(2)
     is [matrix(2,1): 2, 5]
@@ -569,7 +544,7 @@ check:
 end
 }
 
-◊matrix-method["submatrix"]
+◊matrix-method["submatrix" #:contract (a-ftype (a-var-type "loi" (L-of Nat)) (a-var-type "loj" (L-of Nat)) mtx-type)]
 
 Returns the submatrix of the matrix comprised of the intersection
 of the given list of rows and the given list of columns.
@@ -592,40 +567,37 @@ a_{22} & a_{23}\end{matrix}\right]}
 
 This is shown in the below example:
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(3,3): 1, 2, 3, 4, 5, 6, 7, 8, 9].submatrix([list: 1, 2], [list: 2, 3])
     is [matrix(2,2): 2, 3, 4, 5]
 end
 }
 
-◊matrix-method["transpose"]
+◊matrix-method["transpose" #:contract (a-arrow mtx-type)]
 
 Returns the transposition of the matrix. For example,
 ◊math-disp{\begin{bmatrix}1 & 2 & 3 \\ 4 & 5 & 6\end{bmatrix}
                  \overrightarrow{Transpose}
                  \begin{bmatrix}1 & 4 \\ 2 & 5 \\ 3 & 6\end{bmatrix}}
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,3): 1, 2, 3, 4, 5, 6].transpose()
     is [matrix(3,2): 1, 4, 2, 5, 3, 6]
 end
 }
 
-◊matrix-method["hermitian"]
+◊matrix-method["hermitian" #:contract (a-arrow mtx-type)]
 
 Computes the conjugate-transpose of this matrix.  Since Pyret does not have
 complex numbers, this is synonymous with ◊pyret-method["Matrix" "transpose"].
 
-◊matrix-method["diagonal"]
+◊matrix-method["diagonal" #:contract (a-arrow mtx-type)]
 
 Returns a one-row matrix containing the matrix's diagonal entries.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(3,3): 1, 2, 3, 4, 5, 6, 7, 8, 9].diagonal()
     is [matrix(1,3): 1, 5, 9]
@@ -635,15 +607,14 @@ check:
 end
 }
 
-◊matrix-method["upper-triangle"]
+◊matrix-method["upper-triangle" #:contract (a-arrow mtx-type)]
 
 Returns the ◊emph{upper triangle} of the matrix, if the matrix is square.  This
 consists of all the values on or above the main diagonal, and zeroes below it.
 For example, the upper triangle of ◊math-imtx{1 & 2 & 3\\ 4 & 5 & 6\\ 7 & 8 & 9}
 would be ◊math-imtx{1 & 2 & 3\\ 0 & 5 & 6 \\ 0 & 0 & 9}.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,2): 1, 2,
                 3, 4].upper-triangle()
@@ -659,15 +630,14 @@ check:
 end
 }
 
-◊matrix-method["lower-triangle"]
+◊matrix-method["lower-triangle" #:contract (a-arrow mtx-type)]
 
 Returns the ◊emph{lower triangle} of the matrix, if the matrix is square.  This
 consists of all the values on or below the main diagonal, and zeroes above it.
 For example, the upper triangle of ◊math-imtx{1 & 2 & 3\\ 4 & 5 & 6\\ 7 & 8 & 9}
 would be ◊math-imtx{1 & 0 & 0\\ 4 & 5 & 0\\ 7 & 8 & 9}.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,2): 1, 2,
                 3, 4].lower-triangle()
@@ -683,14 +653,13 @@ check:
 end
 }
 
-◊matrix-method["row-list"]
+◊matrix-method["row-list" #:contract (a-arrow (L-of mtx-type))]
 
 Returns the matrix as a list of one-row matrices.
 (Very similar to ◊pyret-method["Matrix" "to-lists"], except this method
 returns a list of matrices instead.)
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,3): 1, 2, 3, 4, 5, 6].row-list()
     is [list: [matrix(1,3): 1, 2, 3],
@@ -698,14 +667,13 @@ check:
 end
 }
 
-◊matrix-method["col-list"]
+◊matrix-method["col-list" #:contract (a-arrow (L-of mtx-type))]
 
 Returns the matrix as a list of one-column matrices.
 (Very similar to ◊pyret-method["Matrix" "to-vectors"], except this method
 returns a list of matrices instead.)
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,3): 1, 2, 3, 4, 5, 6].col-list()
     is [list: [matrix(2,1): 1, 4],
@@ -714,12 +682,11 @@ check:
 end
 }
 
-◊matrix-method["map"]
+◊matrix-method["map" #:contract (a-ftype (a-var-type "func" (p-a-ftype N N)) mtx-type)]
 
 Maps the given function entrywise over the matrix.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   multTwo = lam(x): x * 2 end
   [matrix(2,2): 1, 2, 3, 4].map(multTwo)
@@ -727,12 +694,11 @@ check:
 end
 }
 
-◊matrix-method["map2"]
+◊matrix-method["map2" #:contract (a-ftype (a-var-type "other" mtx-type) (a-var-type "func" (p-a-ftype N N N)) mtx-type)]
 Maps the given function entrywise over corresponding elements of this and the
 given matrix.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   m1 = [matrix(2,2): 10, 20, 30, 40]
   m2 = [matrix(2,2): 4, 3, 2, 1]
@@ -742,12 +708,11 @@ check:
 end
 }
 
-◊matrix-method["row-map"]
+◊matrix-method["row-map" #:contract (a-ftype (a-var-type "func" (p-a-ftype mtx-type mtx-type)) mtx-type)]
 
 Maps the given function over each row in the matrix.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   # sumRow :: 1*n matrix
   # Computes the total sum of all entries in the given row
@@ -756,12 +721,11 @@ check:
 end
 }
 
-◊matrix-method["col-map"]
+◊matrix-method["col-map" #:contract (a-ftype (a-var-type "func" (p-a-ftype mtx-type mtx-type)) mtx-type)]
 
 Maps the given function over each column in the matrix.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   # sumCol :: m*1 matrix
   # Computes the total sum of all entries in the given column
@@ -770,15 +734,14 @@ check:
 end
 }
 
-◊matrix-method["augment"]
+◊matrix-method["augment" #:contract (a-ftype (a-var-type "other" mtx-type) mtx-type)]
 
 Returns the matrix augmented with the given matrix. For
 example, augmenting the matrix ◊math-imtx{1 & 2\\4 & 5} with
 the matrix ◊math-imtx{3\\ 6} yields the matrix
 ◊math-imtx{1 & 2 & 3\\ 4 & 5 & 6}.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,2): 1, 2,
                 4, 5].augment([matrix(2,1): 3,
@@ -788,15 +751,14 @@ check:
 end
 }
 
-◊matrix-method["stack"]
+◊matrix-method["stack" #:contract (a-ftype (a-var-type "other" mtx-type) mtx-type)]
 
 Returns the matrix stacked on top of the given matrix. For
 example, stacking the matrix ◊math-imtx{1 & 2 & 3} on top of
 the matrix ◊math-imtx{4 & 5 & 6} gives the matrix
 ◊math-imtx{1 & 2 & 3\\ 4 & 5 & 6}.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(1,3): 1, 2, 3].stack([matrix(1,3): 4, 5, 6])
     is [matrix(2,3): 1, 2, 3,
@@ -804,12 +766,11 @@ check:
 end
 }
 
-◊matrix-method["trace"]
+◊matrix-method["trace" #:contract (a-arrow N)]
 
 Returns the trace of the matrix (i.e. the sum of its diagonal values).
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(3,3): 1, 2, 3,
                 4, 5, 6,
@@ -819,12 +780,11 @@ check:
 end
 }
 
-◊matrix-method["scale"]
+◊matrix-method["scale" #:contract (a-ftype (a-var-type "factor" N) mtx-type)]
 
 Multiplies each entry in the matrix by the given value.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,2): 1, 2, 3, 4].scale(2) is [matrix(2,2): 2, 4, 6, 8]
 
@@ -832,7 +792,7 @@ check:
 end
 }
 
-◊matrix-method["dot"]
+◊matrix-method["dot" #:contract (a-ftype (a-var-type "other" mtx-type) N)]
 
 Returns the Frobenius Product of the matrix with the given matrix (for
 1-dimensional matrices, this is simply the dot product). This is done by
@@ -846,20 +806,18 @@ denotes matrix multiplication):
 \underbrace{\left[\begin{smallmatrix}(1\cdot 4)+(2\cdot 2)+(3\cdot \frac{4}{3})\end{smallmatrix}\right]}_{
 1\times 1 \text{ matrix}}}◊pyret{.trace()}◊math-in{=12}
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(1,3): 1, 2, 3].dot([matrix(1,3): 4, 2, 4/3]) is 12
   [matrix(1,3): 1, 2, 3].dot([matrix(1,3): 1, 1, 1]) is 6
 end
 }
 
-◊matrix-method["expt"]
+◊matrix-method["expt" #:contract (a-ftype (a-var-type "power" N) mtx-type)]
 
 Multiplies the matrix by itself the given number of times.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   a = [matrix(2,2): 1, 2, 3, 4]
   a.expt(1) is a
@@ -868,13 +826,12 @@ check:
 end
 }
 
-◊matrix-method["determinant"]
+◊matrix-method["determinant" #:contract (a-arrow N)]
 
 Returns the determinant of the matrix, calculated via a recursive
 implementation of Laplace expansion.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(5,5): 1, 2, 1, 2, 3,
                 2, 3, 1, 0, 1,
@@ -884,11 +841,19 @@ check:
 end
 }
 
-◊matrix-method["is-invertible"]
+◊matrix-method["is-invertible" #:contract (a-arrow B)]
+
+◊examples[#:load-preamble #t]{
+check:
+  [matrix(2,2): 1,4, 5,3].is-invertible() is true
+end
+}
 
 Returns true if the matrix is invertible, that is, it has a nonzero determinant.
 
-◊matrix-method["is-orthonormal"] Returns true if the matrix is
+◊matrix-method["is-orthonormal"
+                  #:contract (a-arrow B)
+                  ] Returns true if the matrix is
 ◊hyperlink["https://en.wikipedia.org/wiki/Orthogonal_matrix"]{orthonormal},
 meaning that all rows (when treated as vectors) each have
 ◊pyret-method["Vector" "magnitude"] 1, are all distinct, and distinct rows
@@ -897,21 +862,20 @@ meaning that all rows (when treated as vectors) each have
 quite likely, this check is performed using ◊pyret-id["roughly-equal"
 "equality"].
 
-◊matrix-method["rref"]
+◊matrix-method["rref" #:contract (a-arrow mtx-type)]
 
 Returns the Reduced Row Echelon Form of the matrix. For example:
 ◊math-disp{\begin{bmatrix}1 & 2 & 3 \\ 4 & 5 & 6\end{bmatrix}
                  \overrightarrow{RREF}
                  \begin{bmatrix}1 & 0 & -1\\ 0 & 1 & 2\end{bmatrix}}
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,3): 1, 2, 3, 4, 5, 6].rref() is [matrix(2,3): 1, 0,-1, 0, 1, 2]
 end
 }
 
-◊matrix-method["inverse"]
+◊matrix-method["inverse" #:contract (a-arrow mtx-type)]
 
 Returns the inverse of the matrix, if it is invertible (found
 by augmenting the matrix with itself and finding the reduced-row
@@ -919,27 +883,27 @@ echelon form). For example:
 ◊math-disp{\begin{bmatrix}1 & 0 & 4\\ 1 & 1 & 6\\ -3 & 0 & -10\end{bmatrix}^{-1}
                  = \begin{bmatrix}-5 & 0 & -2\\ -4 & 1 & -1\\ ^3/_2 & 0 & ^1/_2\end{bmatrix}}
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(3,3): 1, 0, 4, 1, 1, 6, -3, 0, -10].inverse()
     is [matrix(3,3): -5, 0, -2, -4, 1, -1, 3/2, 0, 1/2]
 end
 }
 
-◊matrix-method["solve"]
+◊matrix-method["solve" #:contract (a-ftype (a-var-type "other" mtx-type) mtx-type)]
 
 Returns the matrix which, when multiplied on the right of this matrix, results in the given matrix.
 In other words, this returns the solution to the system of equations represented by this and the given matrix.
 This method only works on invertible matrices (Calculated by inverting itself and multiplying the given
 matrix on the right side of this inverse).
 
-◊matrix-method["least-squares-solve"]
+◊matrix-method["least-squares-solve" #:contract (a-ftype (a-var-type "other" mtx-type) mtx-type)]
 
 Returns the least squares solution for this and the given matrix, calculated
 using QR decomposition.
 
-◊matrix-method["lu-decomposition"] Computes the
+◊matrix-method["lu-decomposition" #:contract (a-arrow (a-record (a-var-type "L" mtx-type) (a-var-type "U" mtx-type)))]
+Computes the
 ◊hyperlink["https://en.wikipedia.org/wiki/LU_decomposition"]{LU decomposition}
 of this matrix, if possible.  This returns a pair of matrices, ◊pyret{L} and
 ◊pyret{U}, that are respectively ◊seclink[(pyret-method-ref "Matrix"
@@ -964,18 +928,17 @@ of this matrix, if possible.  This returns a pair of matrices, ◊pyret{L} and
   \end{bmatrix}
 }
 
-◊matrix-method["lp-norm"]
+◊matrix-method["lp-norm" #:contract (a-ftype (a-var-type "power" N) N)]
 
 Computes the ◊math{L^p} norm of the matrix using the given number.
 
-◊matrix-method["l1-norm"]
-◊matrix-method["l2-norm"]
-◊matrix-method["l-inf-norm"]
+◊matrix-method["l1-norm" #:contract (a-arrow N)]
+◊matrix-method["l2-norm" #:contract (a-arrow N)]
+◊matrix-method["l-inf-norm" #:contract (a-arrow N)]
 
 Computes the ◊math{L^1}, ◊math{L^2}, and ◊math{L}◊superscript{∞} norms of the matrix, respectively.
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   a = [matrix(3,1): 1, 2, 3]
   b = [matrix(3,3): 1, 0, 0, 2, 0, 0, 3, 0, 0]
@@ -989,7 +952,7 @@ check:
 end
 }
 
-◊matrix-method["qr-decomposition"]
+◊matrix-method["qr-decomposition" #:contract (a-arrow (a-record (a-var-type "Q" mtx-type) (a-var-type "R" mtx-type)))]
 
 Returns the ◊hyperlink["https://en.wikipedia.org/wiki/QR_decomposition"]{QR
 decomposition} of this matrix, if possible.  This returns a pair of matrices,
@@ -997,7 +960,7 @@ decomposition} of this matrix, if possible.  This returns a pair of matrices,
 "is-orthonormal")]{orthogonal} and ◊pyret{R} is ◊seclink[(pyret-method-ref
 "Matrix" "upper-triangle")]{upper-triangular}, whose product is this matrix.
 
-◊matrix-method["gram-schmidt"]
+◊matrix-method["gram-schmidt" #:contract (a-arrow mtx-type)]
 
 Returns an orthogonal matrix whose image is the same as the span of the matrix's columns.
 (The same as the first result of ◊pyret-method["Matrix" "qr-decomposition"])
@@ -1007,8 +970,7 @@ Returns an orthogonal matrix whose image is the same as the span of the matrix's
 Matrices are defined to permit using addition, subtraction, and multiplication
 operators on them, whenever the dimensions are compatible:
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,2): 1, 2, 3, 4] + [matrix(2,2): 1, 2, 3, 4]
     is [matrix(2,2): 2, 4, 6, 8]
@@ -1018,8 +980,7 @@ check:
 end
 }
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,2): 1, 2, 3, 4] - [matrix(2,2): 0, 2, 3, 3]
     is [matrix(2,2): 1, 0, 0, 1]
@@ -1029,8 +990,7 @@ check:
 end
 }
 
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,2): 1, 2, 3, 4] * [matrix(2,2): 3, 0, 0, 3]
     is [matrix(2,2): 3, 6, 9, 12]
@@ -1041,193 +1001,542 @@ end
 
 The following functions are available to be performed on matrices.
 
-◊function["mtx-get"]
+◊function["mtx-get" #:contract (a-ftype (a-var-type "m" mtx-type) (a-var-type "i" Nat) (a-var-type "j" Nat) N)]
 
 Returns the matrix's entry in the ◊math{i^th} row and the ◊math{j^th} column.
 See ◊pyret-method["Matrix" "get"].
 
-◊function["mtx-to-list"]
+◊examples[#:load-preamble #t]{
+mtx1 = [matrix(2,3): 1, 2, 3,
+                     4, 5, 6]
+check:
+  mtx-get(mtx1, 1,1) is 5
+  mtx-get(mtx1, 0,2) is 3
+end
+}
+
+◊function["mtx-to-list" #:contract (a-ftype (a-var-type "m" mtx-type) (L-of N))]
 
 Returns the matrix as a list of numbers in row-major order.  See
 ◊pyret-method["Matrix" "to-list"].
 
-◊function["mtx-to-vector"]
+◊examples[#:load-preamble #t]{
+mtx1 = [matrix(2,3): 1, 2, 3,
+                     4, 5, 6]
+check:
+  mtx-to-list(mtx1) is [list: 1,2,3,4,5,6]
+end
+}
+
+◊function["mtx-to-vector" #:contract (a-ftype (a-var-type "m" mtx-type) vec-type)]
 
 Returns a one-row/one-column matrix as a vector.  See ◊pyret-method["Matrix" "to-vector"].
 
-◊function["mtx-to-lists"]
+◊examples[#:load-preamble #t]{
+mtx2 = [matrix(1,3): 1, 2, 3]
+mtx3 = [matrix(3,1): 1, 2, 3]
+check:
+  mtx-to-vector(mtx2) is [vector: 1,2,3]
+  mtx-to-vector(mtx3) is [vector: 1,2,3]
+end
+}
+
+◊function["mtx-to-lists" #:contract (a-ftype (a-var-type "m" mtx-type) (L-of (L-of N)))]
 
 Returns the matrix as a list of lists of numbers, with each list
 corresponding to one row.  See ◊pyret-method["Matrix" "to-lists"].
 
-◊function["mtx-to-vectors"]
+◊examples[#:load-preamble #t]{
+mtx1 = [matrix(2,3): 1, 2, 3,
+                     4, 5, 6]
+check:
+  mtx-to-lists(mtx1) is [list: [list: 1,2,3], [list: 4,5,6]]
+end
+}
+
+◊function["mtx-to-vectors" #:contract (a-ftype (a-var-type "m" mtx-type) (L-of vec-type))]
 
 Returns the matrix as a list of lists of numbers (i.e. a list of
 ◊pyret-id["Vector" "matrices"]s), 
 with each list corresponding to one column.  See ◊pyret-method["Matrix" "to-vectors"].
 
-◊function["mtx-row"]
+◊examples[#:load-preamble #t]{
+mtx1 = [matrix(2,3): 1, 2, 3,
+                     4, 5, 6]
+check:
+  mtx-to-vectors(mtx1) is [list: [vector: 1,4], [vector: 2,5], [vector: 3,6]]
+end
+}
+
+◊function["mtx-row" #:contract (a-ftype (a-var-type "m" mtx-type) (a-var-type "i" Nat) mtx-type)]
 
 Returns a one-row matrix with the matrix's given row.  See
 ◊pyret-method["Matrix" "row"].
 
-◊function["mtx-col"]
+◊examples[#:load-preamble #t]{
+mtx1 = [matrix(2,3): 1, 2, 3,
+                     4, 5, 6]
+check:
+  mtx-row(mtx1, 1) is [matrix(1,3): 4,5,6]
+end
+}
+
+◊function["mtx-col" #:contract (a-ftype (a-var-type "m" mtx-type) (a-var-type "j" Nat) mtx-type)]
 
 Returns a one-column matrix with the matrix's given column.  See
 ◊pyret-method["Matrix" "col"].
 
-◊function["mtx-submatrix"]
+◊examples[#:load-preamble #t]{
+mtx1 = [matrix(2,3): 1, 2, 3,
+                     4, 5, 6]
+check:
+  mtx-col(mtx1, 1) is [matrix(2,1): 2,5]
+end
+}
+
+◊function["mtx-submatrix" #:contract (a-ftype (a-var-type "m" mtx-type) (a-var-type "loi" (L-of Nat)) (a-var-type "loj" (L-of Nat)) mtx-type)]
 
 Returns the submatrix of the matrix comprised of the intersection
 of the given list of rows and the given list of columns.  See
 ◊pyret-method["Matrix" "submatrix"].
 
-◊function["mtx-transpose"]
+◊examples[#:load-preamble #t]{
+mtx4 = [matrix(3,3): 1, 2, 3,
+                     4, 5, 6,
+                     7, 8, 9]
+check:
+  mtx-submatrix(mtx4, [list: 0,2], [list: 0,2]) is [matrix(2,2): 1,3, 7,9]
+end
+}
+
+◊function["mtx-transpose" #:contract (a-ftype (a-var-type "m" mtx-type) mtx-type)]
 
 See ◊pyret-method["Matrix" "transpose"].
 
-◊function["mtx-hermitian"]
+◊examples[#:load-preamble #t]{
+mtx1 = [matrix(2,3): 1, 2, 3,
+                     4, 5, 6]
+check:
+  mtx-transpose(mtx1) is [matrix(3,2): 1,4,
+                                       2,5,
+                                       3,6]
+end
+}
+
+
+◊function["mtx-hermitian" #:contract (a-ftype (a-var-type "m" mtx-type) mtx-type)]
 
 See ◊pyret-method["Matrix" "hermitian"].
 
-◊function["mtx-diagonal"]
+◊examples[#:load-preamble #t]{
+mtx1 = [matrix(2,3): 1, 2, 3,
+                     4, 5, 6]
+check:
+  mtx-hermitian(mtx1) is [matrix(3,2): 1,4,
+                                       2,5,
+                                       3,6]
+end
+}
+
+◊function["mtx-diagonal" #:contract (a-ftype (a-var-type "m" mtx-type) mtx-type)]
 
 Returns a one-row matrix containing the matrix's diagonal entries.  See
 ◊pyret-method["Matrix" "diagonal"].
 
-◊function["mtx-upper-triangle"]
+◊examples[#:load-preamble #t]{
+mtx4 = [matrix(3,3): 1,2,3
+                     4,5,6
+                     7,8,9]
+check:
+  mtx-diagonal(mtx4) is [matrix(1,3): 1,5,9]
+end
+}
+
+◊function["mtx-upper-triangle" #:contract (a-ftype (a-var-type "m" mtx-type) mtx-type)]
 
 Returns the ◊emph{upper triangle} of the matrix, if the matrix is square.  See
 ◊pyret-method["Matrix" "upper-triangle"].
 
-◊function["mtx-lower-triangle"]
+◊examples[#:load-preamble #t]{
+mtx4 = [matrix(3,3): 1,2,3,
+                     4,5,6,
+                     7,8,9]
+check:
+  mtx-upper-triangle(mtx4) is [matrix(3,3): 1,2,3,
+                                            0,5,6,
+                                            0,0,9]
+end
+}
+
+◊function["mtx-lower-triangle" #:contract (a-ftype (a-var-type "m" mtx-type) mtx-type)]
 
 Returns the ◊emph{lower triangle} of the matrix, if the matrix is square.  See
 ◊pyret-method["Matrix" "lower-triangle"].
 
-◊function["mtx-row-list"]
+◊examples[#:load-preamble #t]{
+mtx4 = [matrix(3,3): 1,2,3,
+                     4,5,6,
+                     7,8,9]
+check:
+  mtx-lower-triangle(mtx4) is [matrix(3,3): 1,0,0,
+                                            4,5,0,
+                                            7,8,9]
+end
+}
+
+◊function["mtx-row-list" #:contract (a-ftype (a-var-type "m" mtx-type) (L-of mtx-type))]
+
 
 Returns the matrix as a list of one-row matrices.  See ◊pyret-method["Matrix" "row-list"].
 
-◊function["mtx-col-list"]
+◊examples[#:load-preamble #t]{
+mtx1 = [matrix(2,3): 1, 2, 3,
+                     4, 5, 6]
+check:
+  mtx-row-list(mtx1) is [list: [matrix(1,3): 1,2,3], [matrix(1,3): 4,5,6]]
+end
+}
+
+◊function["mtx-col-list" #:contract (a-ftype (a-var-type "m" mtx-type) (L-of mtx-type))]
 
 Returns the matrix as a list of one-column matrices.  See
 ◊pyret-method["Matrix" "col-list"].
 
-◊function["mtx-map"]
+◊examples[#:load-preamble #t]{
+mtx3 = [matrix(3,2): 1, 2,
+                     3, 4,
+                     5, 6]
+check:
+  mtx-col-list(mtx3) is [list: [matrix(3,1): 1,3,5], [matrix(3,1): 2,4,6]]
+end
+}
+
+◊function["mtx-map" #:contract (a-ftype (a-var-type "func" (p-a-ftype N N)) (a-var-type "m" mtx-type) mtx-type)]
 
 Maps the given function entrywise over the matrix.  See ◊pyret-method["Matrix" "map"].
 
-◊function["mtx-map2"]
+◊examples[#:load-preamble #t]{
+mtx1 = [matrix(2,3): 1,2,3,
+                     4,5,6]
+check:
+  mtx-map(num-sqr, mtx1) is
+      [matrix(2,3): 1,4,9,
+                    16,25,36]
+end
+}
+
+◊function["mtx-map2" #:contract (a-ftype (a-var-type "func" (p-a-ftype N N N)) (a-var-type "m" mtx-type) (a-var-type "n" mtx-type) mtx-type)]
 
 Maps the given function over the corresponding entries of the two given
 matrices.  See ◊pyret-method["Matrix" "map2"].
 
-◊function["mtx-row-map"]
+◊examples[#:load-preamble #t]{
+mtx1 = [matrix(2,3): 1,2,3,
+                     4,5,6]
+mtx-B = [matrix(2,3): 2,2,2,
+                      2,2,2]
+check:
+  mtx-map2(num-expt, mtx1, mtx-B) is
+      [matrix(2,3): 1,4,9,
+                    16,25,36]
+end
+}
+
+◊function["mtx-row-map" #:contract (a-ftype (a-var-type "func" (p-a-ftype mtx-type mtx-type)) (a-var-type "m" mtx-type) mtx-type)]
 
 Maps the given function over each row in the matrix.  See
 ◊pyret-method["Matrix" "row-map"].
 
-◊function["mtx-col-map"]
+◊examples[#:load-preamble #t]{
+mtx1 = [matrix(2,3): 1,2,3,
+                     4,5,6]
+check:
+  mtx-row-map(lam(r): r.scale(2) end, mtx1) is
+       [matrix(2,3): 2,4,6,
+                     8,10,12]
+end
+}
+
+
+◊function["mtx-col-map" #:contract (a-ftype (a-var-type "func" (p-a-ftype mtx-type mtx-type)) (a-var-type "m" mtx-type) mtx-type)]
 
 Maps the given function over each column in the matrix.  See
 ◊pyret-method["Matrix" "col-map"].
 
-◊function["mtx-augment"]
+◊examples[#:load-preamble #t]{
+mtx1 = [matrix(2,3): 1,2,3,
+                     4,5,6]
+check:
+  mtx-col-map(lam(c): [matrix(1,1): c.dot(c)] end, mtx1) is
+        [matrix(1,3): 17, 29, 45]
+end
+}
+
+◊function["mtx-augment" #:contract (a-ftype (a-var-type "m1" mtx-type) (a-var-type "m2" mtx-type) mtx-type)]
 
 Returns the first matrix augmented with the second matrix. See
 ◊pyret-method["Matrix" "augment"].
 
-◊function["mtx-stack"]
+◊examples[#:load-preamble #t]{
+mtx2 = [matrix(3,3): 1, 1, 1,
+                     2, 2, 2,
+                     3, 3, 3]
+mtx3 = [matrix(3,2): 1, 2,
+                     3, 4,
+                     5, 6]
+check:
+  mtx-augment(mtx2, mtx3) is
+  [matrix(3,5): 1, 1, 1, 1, 2,
+                2, 2, 2, 3, 4,
+                3, 3, 3, 5, 6]
+end
+}
+
+◊function["mtx-stack" #:contract (a-ftype (a-var-type "m1" mtx-type) (a-var-type "m2" mtx-type) mtx-type)]
 
 Returns the first matrix stacked on top of the second matrix. See
 ◊pyret-method["Matrix" "stack"].
 
-◊function["mtx-trace"]
+◊examples[#:load-preamble #t]{
+mtx1 = [matrix(2,3): 1, 2, 3,
+                     4, 5, 6]
+mtx2 = [matrix(3,3): 1, 1, 1,
+                     2, 2, 2,
+                     3, 3, 3]
+check:
+  mtx-stack(mtx1, mtx2) is
+  [matrix(5, 3): 1, 2, 3,
+                 4, 5, 6,
+                 1, 1, 1,
+                 2, 2, 2,
+                 3, 3, 3]
+end
+}
+
+◊function["mtx-trace" #:contract (a-ftype (a-var-type "m" mtx-type) N)]
 
 Returns the trace of the matrix (i.e. the sum of its diagonal values).  See
 ◊pyret-method["Matrix" "trace"].
 
-◊function["mtx-scale"]
+◊examples[#:load-preamble #t]{
+mtx2 = [matrix(3,3): 1, 1, 1,
+                     2, 2, 2,
+                     3, 3, 3]
+check:
+  mtx-trace(mtx2) is 6
+end
+}
+
+◊function["mtx-scale" #:contract (a-ftype (a-var-type "m" mtx-type) (a-var-type "factor" N) mtx-type)]
 
 Multiplies each entry in the matrix by the given value.  See
 ◊pyret-method["Matrix" "scale"].
 
-◊function["mtx-dot"]
+◊examples[#:load-preamble #t]{
+mtx1 = [matrix(2,3): 1, 2, 3,
+                     4, 5, 6]
+check:
+  mtx-scale(mtx1, 2) is
+    [matrix(2,3): 2,  4,  6,
+                  8, 10, 12]
+end
+}
+
+◊function["mtx-dot" #:contract (a-ftype (a-var-type "m1" mtx-type) (a-var-type "m2" mtx-type) N)]
 
 Returns the Frobenius Product of the two matrices.  See ◊pyret-method["Matrix"
 "dot"].
 
-◊function["mtx-expt"]
+◊function["mtx-expt" #:contract (a-ftype (a-var-type "m" mtx-type) (a-var-type "power" Nat) mtx-type)]
 
 Multiplies the matrix by itself the given number of times.  See
 ◊pyret-method["Matrix" "expt"].
 
-◊function["mtx-determinant"]
+◊examples[#:load-preamble #t]{
+mtx2 = [matrix(3,3): 1, 1, 1,
+                     2, 2, 2,
+                     3, 3, 3]
+check:
+  mtx-expt(mtx2, 2) is mtx-mult(mtx2, mtx2)
+end
+}
+
+
+◊function["mtx-determinant" #:contract (a-ftype (a-var-type "m" mtx-type) N)]
 
 Returns the determinant of the matrix.  See ◊pyret-method["Matrix"
 "determinant"].
 
-◊function["mtx-is-invertible"]
+◊examples[#:load-preamble #t]{
+check:
+  mtx-determinant([matrix(5,5): 1, 2,1,2, 3,
+                                2, 3,1,0, 1,
+                                2, 2,1,0, 0,
+                                1, 1,1,1, 1,
+                                0,-2,0,2,-2]) is -2
+end
+}
+
+
+◊function["mtx-is-invertible" #:contract (a-ftype (a-var-type "m" mtx-type) B)]
 
 Returns true if the matrix is invertible.  See ◊pyret-method["Matrix" "is-invertible"].
 
-◊function["mtx-is-orthonormal"]
+◊examples[#:load-preamble #t]{
+check:
+  mtx-is-invertible([matrix(2,2): 1,4, 5,3]) is true
+end
+}
+
+◊function["mtx-is-orthonormal" #:contract (a-ftype (a-var-type "m" mtx-type) B)]
 
 Returns true if the matrix is orthonormal.  See ◊pyret-method["Matrix" "is-orthonormal"]. 
 
-◊function["mtx-rref"]
+◊function["mtx-rref" #:contract (a-ftype (a-var-type "m" mtx-type) mtx-type)]
 
 Returns the Reduced Row Echelon Form of the matrix. See ◊pyret-method["Matrix"
 "rref"].
 
-◊function["mtx-inverse"]
+◊examples[#:load-preamble #t]{
+mtx1 = [matrix(2,3): 1, 2, 3,
+                     4, 5, 6]
+check:
+  mtx-rref(mtx1) is
+    [matrix(2,3): 1, 0, -1,
+                  0, 1,  2]
+end
+}
+
+◊function["mtx-inverse" #:contract (a-ftype (a-var-type "m" mtx-type) mtx-type)]
 
 Returns the inverse of the matrix, if it is invertible.  See
 ◊pyret-method["Matrix" "inverse"].
 
-◊function["mtx-solve"]
+◊examples[#:load-preamble #t]{
+check:
+  mtx-inverse([matrix(3,3): 1, 0, 4, 1, 1, 6, -3, 0, -10]) is
+    [matrix(3,3): -5, 0, -2, -4, 1, -1, 3/2, 0, 1/2]
+end
+}
+
+
+◊function["mtx-solve" #:contract (a-ftype (a-var-type "m1" mtx-type) (a-var-type "m2" mtx-type) mtx-type)]
 
 Returns the matrix which, when multiplied on the right of the first matrix,
 results in the second matrix.  See ◊pyret-method["Matrix" "solve"].
 
-◊function["mtx-least-squares-solve"]
+◊function["mtx-least-squares-solve" #:contract (a-ftype (a-var-type "m1" mtx-type) (a-var-type "m2" mtx-type) mtx-type)]
 
 Returns the least squares solution for the first and the second matrix, calculated
 using QR decomposition.  See ◊pyret-method["Matrix" "least-squares-solve"].
 
-◊function["mtx-lp-norm"]
+
+◊examples[#:load-preamble #t]{
+check:
+  mtx-least-squares-solve([matrix(3,2): 3, -6, 4, -8, 0, 1], [matrix(3,1): -1, 7, 2]) is
+    [matrix(2,1): 5, 2]
+end
+}
+
+◊function["mtx-lp-norm" #:contract (a-ftype (a-var-type "m" mtx-type) (a-var-type "power" N) N)]
 
 Computes the ◊math{L^p} norm of the matrix using the given number.  See
 ◊pyret-method["Matrix" "lp-norm"].
 
-◊function["mtx-l1-norm"]
-◊function["mtx-l2-norm"]
-◊function["mtx-l-inf-norm"]
+◊examples[#:load-preamble #t]{
+mtx4 = [matrix(3,1): 1,
+                     2,
+                     3]
+mtx5 = [matrix(3,3): 1, 0, 0,
+                     2, 0, 0,
+                     3, 0, 0]
+check:
+  mtx-lp-norm(mtx4, 3) is%(within(0.00001)) num-expt(6, 2/3)
+  mtx-lp-norm(mtx5, 3) is%(within(0.00001)) mtx-lp-norm(mtx5 * mtx4, 3)
+end
+}
+
+◊function["mtx-l1-norm" #:contract (a-ftype (a-var-type "m" mtx-type) N)]
+◊function["mtx-l2-norm" #:contract (a-ftype (a-var-type "m" mtx-type) N)]
+◊function["mtx-l-inf-norm" #:contract (a-ftype (a-var-type "m" mtx-type) N)]
 
 Computes the ◊math{L^1}, ◊math{L^2}, and ◊math{L}◊superscript{∞} norms of the
 matrix, respectively.  See ◊pyret-method["Matrix" "l1-norm"].
 
-◊function["mtx-qr-decomposition"]
+◊examples[#:load-preamble #t]{
+mtx4 = [matrix(3,1): 1,
+                     2,
+                     3]
+mtx5 = [matrix(3,3): 1, 0, 0,
+                     2, 0, 0,
+                     3, 0, 0]
+check:
+  mtx-l1-norm(mtx4) is%(within(0.00001)) 6
+  mtx-l2-norm(mtx4) is%(within(0.00001)) num-sqrt(14)
+  mtx-l-inf-norm(mtx4) is%(within(0.00001)) 3
+  mtx-l-inf-norm(mtx5) is%(within(0.00001)) mtx-l-inf-norm((mtx5 * mtx4))
+end
+}
+
+◊function["mtx-qr-decomposition" #:contract (a-ftype (a-var-type "m" mtx-type) (a-record (a-var-type "Q" mtx-type) (a-var-type "R" mtx-type)))]
 
 See ◊pyret-method["Matrix" "qr-decomposition"].
 
-◊function["mtx-gram-schmidt"]
+◊examples[#:load-preamble #t]{
+decomp = [matrix(3,3):1, 2, 3, -1, 0, -3, 0, -2, 3].qr-decomposition()
+func-decomp = mtx-qr-decomposition([matrix(3,3):1, 2, 3, -1, 0, -3, 0, -2, 3])
+check:
+  func-decomp.Q is%(matrix-within(0.00001)) decomp.Q
+  func-decomp.R is%(matrix-within(0.00001)) decomp.R
+end
+}
+
+◊function["mtx-gram-schmidt" #:contract (a-ftype (a-var-type "m" mtx-type) mtx-type)]
 
 See ◊pyret-method["Matrix" "gram-schmidt"].
 
-◊function["mtx-add"]
-◊function["mtx-sub"]
-◊function["mtx-mult"]
+◊examples[#:load-preamble #t]{
+check:
+  mtx-gram-schmidt([matrix(3,3):1, 2, 3, -1, 0, -3, 0, -2, 3]) is%(matrix-within(0.00001))
+    [matrix(3,3):(1 / num-sqrt(2)), (1 / num-sqrt(6)), (1 / num-sqrt(3)),
+    (-1 / num-sqrt(2)), (1 / num-sqrt(6)), (1 / num-sqrt(3)),
+    0, (-2 / num-sqrt(6)), (1 / num-sqrt(3))]
+end
+}
+
+◊function["mtx-add" #:contract (a-ftype (a-var-type "m1" mtx-type) (a-var-type "m2" mtx-type) mtx-type)]
+◊function["mtx-sub" #:contract (a-ftype (a-var-type "m1" mtx-type) (a-var-type "m2" mtx-type) mtx-type)]
+◊function["mtx-mult" #:contract (a-ftype (a-var-type "m1" mtx-type) (a-var-type "m2" mtx-type) mtx-type)]
 
 Adds, subtracts, or multiplies the two matrices.  See ◊secref{s:matrix-binary-ops}.
 
+
+◊examples[#:load-preamble #t]{
+mtx1 = [matrix(2,3): 1, 2, 3,
+                     4, 5, 6]
+check:
+  mtx-add(mtx1, mtx1) is [matrix(2,3): 2,  4,  6,
+                                         8, 10, 12]
+  mtx-add(mtx1, [matrix(2,3): 1, 1, 1,
+                                1, 1, 1]) is
+    [matrix(2,3): 2, 3, 4,
+                  5, 6, 7]
+  mtx-sub(mtx1, [matrix(2,3): 1, 1, 1,
+                                1, 1, 1]) is
+    [matrix(2,3): 0, 1, 2,
+                  3, 4, 5]
+  mtx-mult(mtx1, [matrix(3,2): 1, 1, 1,
+                                 1, 1, 1]) is
+    [matrix(2,2): 6,  6,
+                  15, 15]
+end
+}
+
 ◊section{Matrix Conversion Functions}
 
-◊function["is-row-matrix"]
+◊function["is-row-matrix" #:contract (a-ftype (a-var-type "mtx" mtx-type) B)]
 Returns whether the matrix has exactly one row:
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
   is-row-matrix([matrix(1, 3): 10, 20, 10]) is true
   is-row-matrix([matrix(3, 1): 10, 20, 10]) is false
@@ -1235,18 +1544,16 @@ end
 }
 
 
-◊function["is-col-matrix"]
+◊function["is-col-matrix" #:contract (a-ftype (a-var-type "mtx" mtx-type) B)]
 Returns whether the matrix has exactly one column:
-◊examples{
-include matrices
+◊examples[#:load-preamble #t]{
 check:
-  is-row-matrix([matrix(1, 3): 10, 20, 10]) is false
-  is-row-matrix([matrix(3, 1): 10, 20, 10]) is true
+  is-col-matrix([matrix(1, 3): 10, 20, 10]) is false
+  is-col-matrix([matrix(3, 1): 10, 20, 10]) is true
 end
 }
-◊function["is-square-matrix"]{Returns true if the given matrix has the same number of rows and columns.}
-◊examples{
-include matrices
+◊function["is-square-matrix" #:contract (a-ftype (a-var-type "mtx" mtx-type) B)]{Returns true if the given matrix has the same number of rows and columns.}
+◊examples[#:load-preamble #t]{
 check:
   is-square-matrix([matrix(2, 2): 10, 20, 30, 40]) is true
   is-square-matrix([matrix(4, 1): 10, 20, 30, 40]) is false
@@ -1256,8 +1563,9 @@ end
 
 ◊function[
   "vector-to-matrix"
+  #:contract (a-ftype (a-var-type "v" vec-type) mtx-type)
   #:examples
-  ◊examples{
+  ◊examples[#:load-preamble #t]{
   check:
     vector-to-matrix([vector: 1, 2, 3]) is [matrix(1,3): 1, 2, 3]
   end
@@ -1266,8 +1574,9 @@ end
 
 ◊function[
   "list-to-matrix"
+  #:contract (a-ftype (a-var-type "rows" NonZeroNat) (a-var-type "cols" NonZeroNat) (a-var-type "lst" (L-of N)) mtx-type)
   #:examples
-  ◊examples{
+  ◊examples[#:load-preamble #t]{
   check:
     list-to-matrix(2, 2, [list: 1, 2, 3, 4])
       is [matrix(2,2): 1, 2, 3, 4]
@@ -1280,8 +1589,9 @@ end
 
 ◊function[
   "list-to-row-matrix"
+  #:contract (a-ftype (a-var-type "lst" (L-of N)) mtx-type)
   #:examples
-  ◊examples{
+  ◊examples[#:load-preamble #t]{
   check:
     list-to-row-matrix([list: 1, 2, 3, 4]) is [matrix(1,4): 1, 2, 3, 4]
   end
@@ -1290,8 +1600,9 @@ end
 
 ◊function[
   "list-to-col-matrix"
+  #:contract (a-ftype (a-var-type "lst" (L-of N)) mtx-type)
   #:examples
-  ◊examples{
+  ◊examples[#:load-preamble #t]{
   check:
     list-to-col-matrix([list: 1, 2, 3, 4]) is [matrix(4,1): 1, 2, 3, 4]
   end
@@ -1300,8 +1611,9 @@ end
 
 ◊function[
   "lists-to-matrix"
+  #:contract (a-ftype (a-var-type "lst" (L-of (L-of N))) mtx-type)
   #:examples
-  ◊examples{
+  ◊examples[#:load-preamble #t]{
   check:
     lists-to-matrix([list: [list: 1, 2, 3, 4]]) is [matrix(1,4): 1, 2, 3, 4]
     lists-to-matrix([list: [list: 1, 2, 3],
@@ -1312,8 +1624,9 @@ end
 
 ◊function[
   "vectors-to-matrix"
+  #:contract (a-ftype (a-var-type "lst" (L-of vec-type)) mtx-type)
   #:examples
-  ◊examples{
+  ◊examples[#:load-preamble #t]{
   check:
     vectors-to-matrix([list: [vector: 1, 2, 3]]) is [matrix(3,1): 1, 2, 3]
     vectors-to-matrix([list: [vector: 1, 3, 5], [vector: 2, 4, 6]])
@@ -1322,6 +1635,9 @@ end
   }
 ]{Converts the given list of vectors into a matrix, with each vector as a column.}
 
-◊function["matrix-within"]{Returns a comparison predicate which returns true if each entry in both matrices is within ◊pyret{delta} of each other.}
-  
+◊function["matrix-within"
+             #:contract (a-ftype (a-var-type "delta" N)
+                                 (p-a-ftype mtx-type mtx-type B))
+             ]{Returns a comparison predicate which returns true if each entry in both matrices is within ◊pyret{delta} of each other.}
+
 }
