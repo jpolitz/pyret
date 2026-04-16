@@ -885,8 +885,8 @@ end
 Returns the inverse of the matrix, if it is invertible (found
 by augmenting the matrix with itself and finding the reduced-row
 echelon form). For example:
-◊math-disp{\begin{bmatrix}1 & 0 & 4\\ 1 & 1 & 6\\ -3 & 0 & -10\end{bmatrix}^{-1}
-                 = \begin{bmatrix}-5 & 0 & -2\\ -4 & 1 & -1\\ ^3/_2 & 0 & ^1/_2\end{bmatrix}}
+
+◊(image "matrix-inverse.png")
 
 ◊examples[#:load-preamble #t]{
 check:
