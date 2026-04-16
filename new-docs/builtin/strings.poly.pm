@@ -86,9 +86,9 @@ If you are confident it will be present, consider using ◊pyret{string-find}, w
 ◊examples{
 include global
 check:
-  string-find("Hello", "ello") is some(1)
-  string-find("Hello", "H") is some(0)
-  string-find("Hello", "World") is none
+  string-find-opt("Hello", "ello") is some(1)
+  string-find-opt("Hello", "H") is some(0)
+  string-find-opt("Hello", "World") is none
 end
 }
 
@@ -271,6 +271,12 @@ end
 
   A shorthand for ◊pyret{string-split-all(s, "")}.
 
+◊examples{
+check:
+  string-explode("explode", "") is [list: "e", "x", "p", "l", "o", "d", "e"]
+end
+}
+
   ◊function["string-char-at" #:contract (a-ftype (a-var-type "s" S) (a-var-type "n" N) S) #:return S]
 
 Returns a ◊pyret{String} containing the character at the string index ◊pyret{n}
@@ -304,6 +310,8 @@ check:
   string-to-upper("λαμβδα") is "ΛΑΜΒΔΑ"
   string-to-upper("😊") is "😊"
   string-to-upper(" ﷵ‎") is " ﷵ‎"
+  #
+  string-toupper("obsolete name") is "OBSOLETE NAME"
 end
 }
 
@@ -332,6 +340,8 @@ check:
   string-to-lower("I'M NOT YELLING!") is "i'm not yelling!"
   string-to-lower("SS") is "ss"
   string-to-lower("ΛΑΜΒΔΑ") is "λαμβδα"
+  #
+  string-tolower("OBSOLETE NAME") is "obsolete name"
 end
 }
 
