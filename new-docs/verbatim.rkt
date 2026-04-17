@@ -27,16 +27,7 @@
 (define *functions-tested* '())
 (define *functions-untested* '())
 
-(define (prune-functions-tried code)
-  ; (printf "*** functions-defined = ~s\n" *functions-untested*)
-  ; (printf "*** doing prune-functions-tried ~s\n" code)
-  (let ([updated-functions-untested '()])
-    (for ([f *functions-untested*])
-      (if (regexp-match f code)
-          (set! *functions-tested* (cons f *functions-tested*))
-          (set! updated-functions-untested (cons f updated-functions-untested))))
-    (set! *functions-untested* updated-functions-untested))
-  ; (printf "*** functions-defined' = ~s\n" *functions-untested*)
+(define (log-untested-functions)
   (let ([functions-without-examples-file (build-path *project-root* "_untested-functions.rkt")])
     (call-with-output-file functions-without-examples-file
       (lambda (o)
@@ -47,6 +38,24 @@
             (when (>= i 6) (newline o) (set! i 0)))
           (newline o)))
       #:exists 'replace)))
+
+(define (contains-keyword? f code)
+  (define (contains-f? code) (contains-keyword? f code))
+  (cond [(string? code) (regexp-match f code)]
+        [(list? code) (ormap contains-f? code)]
+        [else #f]))
+
+(define (prune-functions-tried code)
+  ; (printf "*** functions-defined = ~s\n" *functions-untested*)
+  ; (printf "*** doing prune-functions-tried-in-string ~s\n" code)
+  (let ([updated-functions-untested '()])
+    (for ([f *functions-untested*])
+      (if (contains-keyword? f code)
+          (set! *functions-tested* (cons f *functions-tested*))
+          (set! updated-functions-untested (cons f updated-functions-untested))))
+    (set! *functions-untested* updated-functions-untested))
+  ; (printf "*** functions-defined' = ~s\n" *functions-untested*)
+  (log-untested-functions))
 
 (define (example-preamble . elems)
   (set! *example-preamble-string* (string-join elems " "))
@@ -142,20 +151,6 @@
                  `(span () ,fname " :: " ,contract)
                  fname))
         ,@elems))
-
-; (define (data-spec name type-vars variants shared)
-;   ; (printf "### data-spec ~s ~s ~s \n" name type-varss variants  shared )
-;   `(pre () (tt () ,(format "~a~a:"
-;                     name
-;                     (if deps (format "<~a>" (add-between deps ", ")) "")))
-;           "\n"
-;           (div ()
-;                 ,@(add-between
-;                     (map
-;                       (lambda (clause)
-;                         `(tt () "   | " ,clause))
-;                       clauses) "\n"))
-;           (tt () "end")))
 
 (define (data-spec2 #:no-toc [no-toc #f] name deps clauses)
   ; (printf "### doing data-spec2 ~s deps=~s ~s\n" name deps clauses)
@@ -268,3 +263,25 @@
         ,(make-gloss methname)
         (pre ([class "pyret-display"])
              ,methname " :: " ,contract)))
+
+(define (repl-examples . elems)
+  (printf "### repl-examples ~s\n" elems)
+  (prune-functions-tried elems)
+  `(div ([class "repl-examples"])
+        ,@(map (lambda (elem)
+                 ; (printf "### elem = ~s\n" elem)
+                 (define kar (car elem))
+                 (set! kar
+                   (map (lambda (x)
+                          (if (and (string? x)
+                                   (regexp-match-exact? #rx" +" x))
+                              (string-append "   " x)
+                              x))
+                        kar))
+                 ; (printf "### car elem = ~s\n" kar)
+                 ; (printf "### cdr elem = ~s\n" (cdr elem))
+                 `(div ([class "repl-example"])
+                      (pre ([class "pyret-highlight"])
+                           ,@kar)
+                      ,@(cdr elem)))
+               elems)))
