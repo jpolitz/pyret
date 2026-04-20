@@ -265,7 +265,7 @@
              ,methname " :: " ,contract)))
 
 (define (repl-examples . elems)
-  (printf "### repl-examples ~s\n" elems)
+  ; (printf "### repl-examples ~s\n" elems)
   (prune-functions-tried elems)
   `(div ([class "repl-examples"])
         ,@(map (lambda (elem)

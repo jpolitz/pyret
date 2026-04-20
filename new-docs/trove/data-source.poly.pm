@@ -159,4 +159,64 @@ This sanitizer is useful for handling incomplete data that might contain blank
 values; a subsequent processing step could filter out the ◊pyret-id["none"
 "option"] values.
 
+◊examples{
+include gdrive-sheets
+include tables
+include data-source
+include csv
+
+# first are obvious strings
+# second are obvious numbers
+# third are obvious numbers tho they feel like they cd be boolified
+# fourth are all over the place
+# fifth are obvious bools
+# sixth are all empty
+# seventh are also all over the place
+
+sample-csv-table = ```
+first,second,third,fourth,fifth,sixth,seventh
+a,0,0,a,false,,false
+b,1,1,0,true,,1
+c,2,0,c,false,,0
+d,3,1,1,true,,a
+```
+
+x1 = load-table: first, second, third, fourth, fifth, sixth, seventh
+  source: csv-table-str(sample-csv-table, { infer-content: false })
+  sanitize second using num-sanitizer
+  sanitize third using num-sanitizer
+  sanitize fifth using bool-sanitizer
+end
+
+x2 = load-table: first, second, third, fourth, fifth, sixth, seventh
+  source: csv-table-str(sample-csv-table, { infer-content: true })
+  sanitize second using string-sanitizer
+  sanitize third using bool-sanitizer
+  sanitize fourth using string-sanitizer
+  sanitize fifth using string-sanitizer
+end
+
+x3 = load-table: first, second, third, fourth, fifth, sixth, seventh
+  source: csv-table-str(sample-csv-table, { infer-content: true })
+  sanitize first using strings-only
+  sanitize second using numbers-only
+  sanitize fifth using booleans-only
+end
+
+check:
+  extract second from x1 end is [list: 0,1,2,3]
+  extract third from x1 end is [list: 0,1,0,1]
+  extract fifth from x1 end is [list: false,true,false,true]
+
+  extract second from x2 end is [list: "0","1","2","3"]
+  extract third from x2 end is [list: false,true,false,true]
+  extract fourth from x2 end is [list: "a","0","c","1"]
+  extract fifth from x2 end is [list: "false","true","false","true"]
+
+  extract first from x3 end is [list: "a","b","c","d"]
+  extract second from x3 end is [list: 0,1,2,3]
+  extract fifth from x3 end is [list: false,true,false,true]
+end
+}
+
 }
