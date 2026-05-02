@@ -799,11 +799,7 @@ multiplying the matrix with the transposition of ◊pyret{other} and taking
 the trace of the result. An example of this calculation (◊math-in{\ast} 
 denotes matrix multiplication):
 
-◊math-in{\left(\left[\begin{smallmatrix}1 & 2 & 3\end{smallmatrix}\right]
-\ast\left[\begin{smallmatrix}4\\ 2\\ ^4/_3 \end{smallmatrix}\right]\right)}◊pyret{.trace()}
-◊math-in{=
-\underbrace{\left[\begin{smallmatrix}(1\cdot 4)+(2\cdot 2)+(3\cdot \frac{4}{3})\end{smallmatrix}\right]}_{
-1\times 1 \text{ matrix}}}◊pyret{.trace()}◊math-in{=12}
+◊(image "matrix-frobenius.png")
 
 ◊examples[#:load-preamble #t]{
 check:
