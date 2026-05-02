@@ -393,7 +393,7 @@ end
 
 ◊function["identity-matrix" #:contract (a-ftype (a-var-type "n" NonZeroNat) mtx-type)]
 
-Constructs an ◊math-in{n \times n} identity matrix.
+Constructs an ◊emph{n} × ◊emph{n} identity matrix.
 
 ◊examples[#:load-preamble #t]{
 check:
@@ -549,21 +549,12 @@ end
 Returns the submatrix of the matrix comprised of the intersection
 of the given list of rows and the given list of columns.
 
-For example, if our list of rows is ◊math-in{\{1, 2\}} and our
-list of columns is ◊math-in{\{2, 3\}}, then the positions in the
-resulting submatrix will be the elements with ◊math-in{(row,col)} positions
-◊math-in{\{(1, 2), (1, 3), (2, 2), (2, 3)\}}.
+For example, if our list of rows is {1, 2} and our
+list of columns is {2, 3}, then the positions in the
+resulting submatrix will be the elements with (◊emph{row}, ◊emph{col}) positions
+{(1, 2), (1, 3), (2, 2), (2, 3)}.
 
-◊math-in{
-\left[\begin{matrix} 
-            a_{11} & a_{12} & a_{13} \\
-            a_{21} & a_{22} & a_{23} \\
-            a_{31} & a_{32} & a_{33}
-            \end{matrix}\right]}◊pyret{.submatrix([list: 1, 2], [list: 2, 3])}
-                                     ◊math-in{=
-\left[\begin{matrix}
-a_{12} & a_{13} \\
-a_{22} & a_{23}\end{matrix}\right]}
+◊(image "matrix-submatrix.png")
 
 This is shown in the below example:
 
@@ -796,7 +787,7 @@ end
 Returns the Frobenius Product of the matrix with the given matrix (for
 1-dimensional matrices, this is simply the dot product). This is done by
 multiplying the matrix with the transposition of ◊pyret{other} and taking
-the trace of the result. An example of this calculation (◊math-in{\ast} 
+the trace of the result. An example of this calculation (*
 denotes matrix multiplication):
 
 ◊(image "matrix-frobenius.png")
@@ -853,7 +844,7 @@ Returns true if the matrix is invertible, that is, it has a nonzero determinant.
 meaning that all rows (when treated as vectors) each have
 ◊pyret-method["Vector" "magnitude"] 1, are all distinct, and distinct rows
 ◊pyret-method["Vector" "dot"] of zero.  Mathematically, this computes whether
-◊math-in{self * self^T} is the identity matrix.  Since numerical inaccuracy is
+self * self◊sup{T} is the identity matrix.  Since numerical inaccuracy is
 quite likely, this check is performed using ◊pyret-id["roughly-equal"
 "equality"].
 
