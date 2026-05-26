@@ -314,30 +314,59 @@ fun match-runtime-async-backend(options):
   end
 end
 
+# Process-lifetime cache of compiled modules, used when the host is the
+# async-backend runtime to memoize the standard-library modules across
+# repeated run-to-result invocations (e.g. test-compile-helper's many
+# inner compiles).  Cache key is uri + a serialized form of the
+# compile-affecting flags so we never serve a module compiled with
+# different options.  Only populated/consulted in the cross-runtime
+# (async-backend) path; in the default path the in-memory cache is the
+# caller-provided `modules` dict, which test-compile-helper resets each
+# call.
+inner-async-cache = SD.make-mutable-string-dict()
+
+fun options-cache-key(options):
+  string-append("async=", tostring(options.async-backend))
+end
+
 fun compile-program-with(worklist :: List<ToCompile>, modules, shadow options) -> CompiledProgram block:
   shadow options = match-runtime-async-backend(options)
+  use-inner-cache = R.is-async-backend()
+  opt-key = options-cache-key(options)
   cache = modules
   loadables = for map(w from worklist):
     uri = w.locator.uri()
-    if not(cache.has-key-now(uri)) block:
-      provide-map = dict-map(
-          w.dependency-map,
-          lam(_, v): v.uri() end
-      )
-      options.before-compile(w.locator)
-      {loadable :: Loadable; trace :: List} = compile-module(w.locator, provide-map, cache, options)
-      # I feel like here we want to generate two copies of the loadable:
-      # - One local for calling on-compile with and serializing
-      # - One canonicalized for the local cache
-      cache.set-now(uri, loadable)
-      local-loadable = cases(Loadable) loadable:
-        | module-as-string(provides, env, post-env, result) =>
-          module-as-string(AU.localize-provides(provides, env), env, post-env, result)
-      end
-      # allow on-compile to return a new loadable
-      options.on-compile(w.locator, local-loadable, trace)
-    else:
+    full-key = uri + "|" + opt-key
+    if cache.has-key-now(uri):
       cache.get-value-now(uri)
+    else if use-inner-cache and inner-async-cache.has-key-now(full-key):
+      block:
+        cached = inner-async-cache.get-value-now(full-key)
+        cache.set-now(uri, cached)
+        cached
+      end
+    else:
+      block:
+        provide-map = dict-map(
+            w.dependency-map,
+            lam(_, v): v.uri() end
+        )
+        options.before-compile(w.locator)
+        {loadable :: Loadable; trace :: List} = compile-module(w.locator, provide-map, cache, options)
+        # I feel like here we want to generate two copies of the loadable:
+        # - One local for calling on-compile with and serializing
+        # - One canonicalized for the local cache
+        cache.set-now(uri, loadable)
+        when use-inner-cache:
+          inner-async-cache.set-now(full-key, loadable)
+        end
+        local-loadable = cases(Loadable) loadable:
+          | module-as-string(provides, env, post-env, result) =>
+            module-as-string(AU.localize-provides(provides, env), env, post-env, result)
+        end
+        # allow on-compile to return a new loadable
+        options.on-compile(w.locator, local-loadable, trace)
+      end
     end
   end
   { loadables: loadables, modules: cache }
