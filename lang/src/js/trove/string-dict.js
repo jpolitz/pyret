@@ -713,6 +713,32 @@
       };
     }
 
+    // Async-aware resumption helper: continues the eqHelp loop starting at a
+    // given index/curEq.  Used by the Promise-handling branch in eqHelp below
+    // to recurse after an async user _equals settles.
+    function eqHelpFrom(startIdx, startEq, self, other, selfKeys, hasKey, getValue, recEq) {
+      var curIdx = startIdx;
+      var curEq = startEq;
+      while (true) {
+        if (curIdx == selfKeys.length) return curEq;
+        if (!hasKey.full_meth(other, selfKeys[curIdx])) {
+          return runtime.ffi.notEqual.app("", self, other);
+        }
+        var $ans = recEq.app(getValue.full_meth(self, selfKeys[curIdx]), getValue.full_meth(other, selfKeys[curIdx]));
+        if ($ans && typeof $ans.then === "function") {
+          var $idx = curIdx, $eq = curEq;
+          return $ans.then(function(resolved) {
+            $eq = runtime.combineEquality($eq, resolved);
+            $idx++;
+            return eqHelpFrom($idx, $eq, self, other, selfKeys, hasKey, getValue, recEq);
+          });
+        }
+        if (runtime.isContinuation($ans)) { return $ans; }
+        curEq = runtime.combineEquality(curEq, $ans);
+        curIdx++;
+      }
+    }
+
     function eqHelp(self, other, selfKeys, hasKey, getValue, recEq) {
       if (runtime.isActivationRecord(self)) {
         var $ar = sekf;
@@ -750,6 +776,17 @@
               [],
               []);
             return $ans;
+          }
+          if ($ans && typeof $ans.then === "function") {
+            // Async-backend: the recursive equality returned a Promise (e.g.
+            // because some user _equals method was async).  Continue the eq
+            // loop after the promise settles, returning a Promise upward.
+            var $idx = curIdx, $eq = curEq, $sk = selfKeys;
+            return $ans.then(function(resolved) {
+              $eq = runtime.combineEquality($eq, resolved);
+              $idx++;
+              return eqHelpFrom($idx, $eq, self, other, $sk, hasKey, getValue, recEq);
+            });
           }
           break;
         case 1:
