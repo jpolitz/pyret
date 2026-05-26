@@ -48,6 +48,11 @@ define("http", [], function () {return http;});
 resolve = nodeRequire("resolve");
 define("resolve", [], function () {return resolve;});
 
-vegaMin = nodeRequire(nodeRequire('node:path').dirname(nodeRequire.resolve('vega')) + '/vega.js');
+try {
+  vegaMin = nodeRequire(nodeRequire('node:path').dirname(nodeRequire.resolve('vega')) + '/vega.js');
+} catch (e) {
+  // vega may be installed as ESM-only in newer versions; charts-lib already handles a null vega
+  vegaMin = null;
+}
 define("vegaMin", [], function () {return global.vega;});
 

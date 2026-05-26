@@ -155,6 +155,24 @@ endif
                       $(EXTRA_FLAGS) \
                       --require-config src/scripts/standalone-configA.json
 
+# Async-backend variant: compile the same .arr into <name>.async.jarr with
+# generated user code using async/await throughout. Uses a separate
+# compiled-dir so the cached non-async builtin compilations are not reused,
+# and a separate require-config so the bundle links runtime-async.js instead
+# of runtime.js.
+%.async.jarr: $(PHASEA)/pyret.jarr %.arr build/phaseA/js/runtime-async.js
+	$(NODE) $(PHASEA)/pyret.jarr --outfile $*.async.jarr \
+                      --build-runnable $*.arr \
+                      --builtin-js-dir src/js/trove/ \
+                      --builtin-arr-dir src/arr/trove/ \
+                      --compiled-dir compiled-async/ \
+                      $(EXTRA_FLAGS) \
+                      -async-backend \
+                      --require-config src/scripts/standalone-configA-async.json
+
+build/phaseA/js/runtime-async.js: src/js/base/runtime-async.js
+	cp $< $@
+
 %.html: $(PHASEA)/pyret.jarr %.arr
 	$(NODE) $(PHASEA)/pyret.jarr --outfile $*.jarr \
                       --build-runnable $*.arr \
@@ -234,6 +252,15 @@ TEST_BUILD=$(NODE) $(PYRET_TEST_PHASE)/pyret.jarr \
 		--require-config $(PYRET_TEST_CONFIG) \
 		--compiled-dir tests/compiled/
 
+PYRET_TEST_CONFIG_ASYNC=$(patsubst %.json,%-async.json,$(PYRET_TEST_CONFIG))
+
+TEST_BUILD_ASYNC=$(NODE) $(PYRET_TEST_PHASE)/pyret.jarr \
+	  --builtin-js-dir src/js/trove/ \
+		--builtin-arr-dir src/arr/trove/ \
+		--require-config $(PYRET_TEST_CONFIG_ASYNC) \
+		--compiled-dir tests/compiled-async/ \
+		-async-backend
+
 .PHONY : test-all
 test-all: test
 
@@ -258,6 +285,32 @@ tests/pyret/all.jarr: phaseA $(TEST_FILES) $(TYPE_TEST_FILES) $(REG_TEST_FILES) 
 .PHONY : all-pyret-test
 all-pyret-test: tests/pyret/all.jarr parse-test pyret-io-test
 	$(NODE) tests/pyret/all.jarr
+
+# Async-backend mirror of all-pyret-test. Builds tests/pyret/all.async.jarr
+# with --async-backend and runs it. Uses a separate compiled-dir so the
+# cached non-async compilations are not reused.
+tests/pyret/all.async.jarr: phaseA $(TEST_FILES) $(TYPE_TEST_FILES) $(REG_TEST_FILES) $(MAIN_TEST_FILES)
+	$(TEST_BUILD_ASYNC) \
+		--build-runnable tests/all.arr \
+    --outfile tests/pyret/all.async.jarr \
+		-check-all
+
+.PHONY : all-pyret-test-async
+all-pyret-test-async: tests/pyret/all.async.jarr parse-test
+	$(NODE) tests/pyret/all.async.jarr
+
+# Convenience: build *just* the async kickoff of a single user .arr program.
+.PHONY : async-smoke
+async-smoke: $(PHASEA)/pyret.jarr examples/sumtest.arr build/phaseA/js/runtime-async.js
+	$(NODE) $(PHASEA)/pyret.jarr --outfile examples/sumtest.async.jarr \
+		--build-runnable examples/sumtest.arr \
+		--builtin-js-dir src/js/trove/ \
+		--builtin-arr-dir src/arr/trove/ \
+		--compiled-dir compiled-async/ \
+		-no-check-mode \
+		-async-backend \
+		--require-config src/scripts/standalone-configA-async.json
+	$(NODE) examples/sumtest.async.jarr
 
 tests/pyret/main2.jarr: phaseA tests/pyret/main2.arr  $(TEST_FILES)
 	$(TEST_BUILD) \

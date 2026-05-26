@@ -2955,6 +2955,7 @@ default-compile-options = {
   collect-times: false,
   ignore-unbound: false,
   proper-tail-calls: true,
+  async-backend: false,
   inline-case-body-limit: 5,
   module-eval: true,
   user-annotations: true,

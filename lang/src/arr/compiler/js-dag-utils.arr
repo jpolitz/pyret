@@ -228,6 +228,38 @@ fun used-vars-jexpr(e :: J.JExpr, so-far :: NameSet) -> NameSet:
         from-body.remove-now(a.key())
       end
       so-far
+    | j-async-fun(id, _, args, body) =>
+      start = time-now()
+      total-before = j-fun-difference
+      declared =
+        if fun-decl-vars.has-key-now(id) block:
+          fun-decl-vars.get-value-now(id)
+        else:
+          ans = declared-vars-jblock(body, ns-empty())
+          fun-decl-vars.set-now(id, ans)
+          ans
+        end
+      from-body =
+        if fun-used-vars.has-key-now(id) block:
+          from-hit := from-hit + 1
+          so-far.merge-now(fun-used-vars.get-value-now(id))
+          so-far
+        else:
+          from-miss := from-miss + 1
+          clean-from-body = used-vars-jblock(body, ns-empty())
+          fun-used-vars.set-now(id, clean-from-body)
+          so-far.merge-now(clean-from-body)
+          so-far
+        end
+      for D.each-key-now(d from declared):
+        from-body.remove-now(d)
+      end
+      j-fun-difference := j-fun-difference + (time-now() - start - (j-fun-difference - total-before))
+      for CL.each(a from args):
+        from-body.remove-now(a.key())
+      end
+      so-far
+    | j-await(exp) => used-vars-jexpr(exp, so-far)
     | j-new(func, args) =>
       shadow so-far = used-vars-jexpr(func, so-far)
       for CL.each(a from args):
