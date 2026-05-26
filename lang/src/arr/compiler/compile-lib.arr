@@ -299,10 +299,16 @@ type CompiledProgram = {loadables :: List<Loadable>, modules :: SD.MutableString
 # Cross-runtime safety: when the host process is running the async-backend
 # runtime, any compiled module that will run in this process must also be
 # async-backend.  If the caller didn't ask for async-backend explicitly, flip
-# the flag so the inner output matches the runtime it'll execute on.
+# the flag so the inner output matches the runtime it'll execute on.  Also
+# switch the disk-cache directory so we don't read sync-compiled cached
+# files (the cache key only hashes the source, not the compile options).
 fun match-runtime-async-backend(options):
   if R.is-async-backend() and not(options.async-backend):
-    options.{async-backend: true}
+    if options.compiled-cache == "compiled":
+      options.{async-backend: true, compiled-cache: "compiled-async"}
+    else:
+      options.{async-backend: true}
+    end
   else:
     options
   end

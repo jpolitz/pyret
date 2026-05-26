@@ -367,3 +367,109 @@ new-bootstrap: no-diff-standalone $(PHASE0BUILD)
 	cp -r $(PHASEC)/js $(PHASE0)/
 no-diff-standalone: phaseB phaseC
 	diff $(PHASEB)/pyret.jarr $(PHASEC)/pyret.jarr
+
+# ----------------------------------------------------------------------
+# Async-backend bootstrap.  Mirrors phaseB / phaseC / new-bootstrap but
+# compiles the compiler itself with -async-backend, so phaseB-async /
+# phaseC-async are async-compiled compilers.  no-diff-standalone-async
+# verifies the async compiler is a fixed point (compiling itself twice
+# produces byte-identical output).
+# ----------------------------------------------------------------------
+
+PHASEB_ASYNC = build/phaseB-async
+PHASEC_ASYNC = build/phaseC-async
+PHASEB_ASYNC_ALL_DEPS := $(patsubst src/%,$(PHASEB_ASYNC)/%,$(COPY_JS)) $(patsubst lib/jglr/%.js,$(PHASEB_ASYNC)/js/%.js,$(COPY_LIB)) $(PHASEB_ASYNC)/bundled-node-compile-deps.js $(PHASEB_ASYNC)/bundled-node-deps.js $(PHASEB_ASYNC)/config.json
+PHASEC_ASYNC_ALL_DEPS := $(patsubst src/%,$(PHASEC_ASYNC)/%,$(COPY_JS)) $(patsubst lib/jglr/%.js,$(PHASEC_ASYNC)/js/%.js,$(COPY_LIB)) $(PHASEC_ASYNC)/bundled-node-compile-deps.js $(PHASEC_ASYNC)/bundled-node-deps.js $(PHASEC_ASYNC)/config.json
+PHASEB_ASYNC_DIRS := $(sort $(dir $(PHASEB_ASYNC_ALL_DEPS)))
+PHASEC_ASYNC_DIRS := $(sort $(dir $(PHASEC_ASYNC_ALL_DEPS)))
+
+$(PHASEB_ASYNC):
+	@$(call MKDIR,$(PHASEB_ASYNC_DIRS))
+$(PHASEC_ASYNC):
+	@$(call MKDIR,$(PHASEC_ASYNC_DIRS))
+$(PHASEB_ASYNC_ALL_DEPS): | $(PHASEB_ASYNC) phaseA
+$(PHASEC_ASYNC_ALL_DEPS): | $(PHASEC_ASYNC) phaseB-async
+
+$(PHASEB_ASYNC)/$(JS)/%.js : src/$(JSBASE)/%.js
+	cp $< $@
+$(PHASEB_ASYNC)/$(JS)/%.js : lib/jglr/%.js
+	cp $< $@
+$(PHASEC_ASYNC)/$(JS)/%.js : src/$(JSBASE)/%.js
+	cp $< $@
+$(PHASEC_ASYNC)/$(JS)/%.js : lib/jglr/%.js
+	cp $< $@
+
+$(PHASEB_ASYNC)/$(JS)/%-parser.js: src/$(JSBASE)/%-grammar.bnf src/$(JSBASE)/%-tokenizer.js $(wildcard lib/jglr/*.js)
+	$(NODE) lib/jglr/parser-generator.js src/$(JSBASE)/$*-grammar.bnf $(PHASEB_ASYNC)/$(JS)/$*-grammar.js "../../../lib/jglr" "jglr/jglr" "pyret-base/js/$*-parser"
+	$(NODE) $(PHASEB_ASYNC)/$(JS)/$*-grammar.js $(PHASEB_ASYNC)/$(JS)/$*-parser.js
+
+$(PHASEC_ASYNC)/$(JS)/%-parser.js: src/$(JSBASE)/%-grammar.bnf src/$(JSBASE)/%-tokenizer.js $(wildcard lib/jglr/*.js)
+	$(NODE) lib/jglr/parser-generator.js src/$(JSBASE)/$*-grammar.bnf $(PHASEC_ASYNC)/$(JS)/$*-grammar.js "../../../lib/jglr" "jglr/jglr" "pyret-base/js/$*-parser"
+	$(NODE) $(PHASEC_ASYNC)/$(JS)/$*-grammar.js $(PHASEC_ASYNC)/$(JS)/$*-parser.js
+
+$(PHASEB_ASYNC)/bundled-node-compile-deps.js: src/js/trove/require-node-compile-dependencies.js
+	$(NPM_EXEC) browserify src/js/trove/require-node-compile-dependencies.js -o $@
+$(PHASEB_ASYNC)/bundled-node-deps.js: src/js/trove/require-node-dependencies.js
+	$(NPM_EXEC) browserify src/js/trove/require-node-dependencies.js -o $@
+$(PHASEC_ASYNC)/bundled-node-compile-deps.js: src/js/trove/require-node-compile-dependencies.js
+	$(NPM_EXEC) browserify src/js/trove/require-node-compile-dependencies.js -o $@
+$(PHASEC_ASYNC)/bundled-node-deps.js: src/js/trove/require-node-dependencies.js
+	$(NPM_EXEC) browserify src/js/trove/require-node-dependencies.js -o $@
+
+$(PHASEB_ASYNC)/config.json: src/scripts/node_modules-config.json
+	cp $< $@
+$(PHASEC_ASYNC)/config.json: src/scripts/node_modules-config.json
+	cp $< $@
+
+# Async runtime files in the per-phase js/ directories.  These get
+# copied so each phase tree is self-contained and the bundled standalone
+# can link the async runtime under the pyret-base/js/runtime name.
+$(PHASEB_ASYNC)/$(JS)/runtime-async.js: src/$(JSBASE)/runtime-async.js
+	cp $< $@
+$(PHASEC_ASYNC)/$(JS)/runtime-async.js: src/$(JSBASE)/runtime-async.js
+	cp $< $@
+
+# Each phase has its own standalone config rooted at its build dir.  The
+# only difference from configA-async is the baseUrl/raw-js paths point
+# under phaseB-async / phaseC-async instead of phaseA.
+$(PHASEB_ASYNC)/standalone-config.json: src/scripts/standalone-configA-async.json $(PHASEB_ASYNC)
+	sed 's|build/phaseA|$(PHASEB_ASYNC)|g' $< > $@
+$(PHASEC_ASYNC)/standalone-config.json: src/scripts/standalone-configA-async.json $(PHASEC_ASYNC)
+	sed 's|build/phaseA|$(PHASEC_ASYNC)|g' $< > $@
+
+.PHONY : phaseB-async
+phaseB-async: $(PHASEB_ASYNC)/pyret.jarr
+
+$(PHASEB_ASYNC)/pyret.jarr: $(PHASEA)/pyret.jarr $(PHASEB_ASYNC_ALL_DEPS) $(patsubst src/%,$(PHASEB_ASYNC)/%,$(PARSERS)) $(PHASEB_ASYNC)/$(JS)/runtime-async.js $(PHASEB_ASYNC)/standalone-config.json
+	$(NODE) $(PHASEA)/pyret.jarr --outfile $(PHASEB_ASYNC)/pyret.jarr \
+                      --build-runnable src/arr/compiler/pyret.arr \
+                      --builtin-js-dir src/js/trove/ \
+                      --builtin-arr-dir src/arr/trove/ \
+                      --compiled-dir $(PHASEB_ASYNC)/compiled/ \
+                      --deps-file $(PHASEB_ASYNC)/bundled-node-compile-deps.js \
+                      -no-check-mode $(EF) \
+                      -async-backend \
+                      --require-config $(PHASEB_ASYNC)/standalone-config.json
+
+.PHONY : phaseC-async
+phaseC-async: $(PHASEC_ASYNC)/pyret.jarr
+
+$(PHASEC_ASYNC)/pyret.jarr: $(PHASEB_ASYNC)/pyret.jarr $(PHASEC_ASYNC_ALL_DEPS) $(patsubst src/%,$(PHASEC_ASYNC)/%,$(PARSERS)) $(PHASEC_ASYNC)/$(JS)/runtime-async.js $(PHASEC_ASYNC)/standalone-config.json
+	$(NODE) $(PHASEB_ASYNC)/pyret.jarr --outfile $(PHASEC_ASYNC)/pyret.jarr \
+                      --build-runnable src/arr/compiler/pyret.arr \
+                      --builtin-js-dir src/js/trove/ \
+                      --builtin-arr-dir src/arr/trove/ \
+                      --compiled-dir $(PHASEC_ASYNC)/compiled/ \
+                      --deps-file $(PHASEB_ASYNC)/bundled-node-compile-deps.js \
+                      -no-check-mode $(EF) \
+                      -async-backend \
+                      --require-config $(PHASEC_ASYNC)/standalone-config.json
+
+no-diff-standalone-async: phaseB-async phaseC-async
+	diff $(PHASEB_ASYNC)/pyret.jarr $(PHASEC_ASYNC)/pyret.jarr
+
+# new-bootstrap-async runs the same fixed-point test as new-bootstrap
+# but using the async-backend compiler.  Does not overwrite phase0
+# (we want to keep the non-async bootstrap as the canonical seed).
+.PHONY : new-bootstrap-async
+new-bootstrap-async: no-diff-standalone-async
