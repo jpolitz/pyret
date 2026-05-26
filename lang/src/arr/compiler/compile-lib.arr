@@ -296,7 +296,20 @@ end
 
 type CompiledProgram = {loadables :: List<Loadable>, modules :: SD.MutableStringDict<Loadable>}
 
-fun compile-program-with(worklist :: List<ToCompile>, modules, options) -> CompiledProgram block:
+# Cross-runtime safety: when the host process is running the async-backend
+# runtime, any compiled module that will run in this process must also be
+# async-backend.  If the caller didn't ask for async-backend explicitly, flip
+# the flag so the inner output matches the runtime it'll execute on.
+fun match-runtime-async-backend(options):
+  if R.is-async-backend() and not(options.async-backend):
+    options.{async-backend: true}
+  else:
+    options
+  end
+end
+
+fun compile-program-with(worklist :: List<ToCompile>, modules, shadow options) -> CompiledProgram block:
+  shadow options = match-runtime-async-backend(options)
   cache = modules
   loadables = for map(w from worklist):
     uri = w.locator.uri()
@@ -516,7 +529,8 @@ fun run-program(ws :: List<ToCompile>, prog :: CompiledProgram, realm :: L.Realm
   end
 end
 
-fun compile-and-run-locator(locator, finder, context, realm, runtime, starter-modules, options) block:
+fun compile-and-run-locator(locator, finder, context, realm, runtime, starter-modules, shadow options) block:
+  shadow options = match-runtime-async-backend(options)
   #print("Make worklist\n")
   wl = compile-worklist(finder, locator, context)
   #print("Compile program\n")

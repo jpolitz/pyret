@@ -6512,6 +6512,13 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         thisRuntime[nameMap[longName]] = thisRuntime[longName];
     }
 
+    // Marker: when this runtime instance is constructed, it expects async-
+    // backend-compiled user code as the cohabiting compilation target.  Used
+    // by compile-and-run-locator (via runtime-lib.is-async-backend-runtime)
+    // to default inner compiles to async-backend mode and avoid the
+    // sync/async polyglot trap noted in async-transform-instructions.md.
+    thisRuntime.isAsyncBackend = true;
+
     return thisRuntime;
   }
 
