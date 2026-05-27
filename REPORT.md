@@ -224,6 +224,8 @@ Other targeted trove changes:
     errors are pre-existing chart-test failures (vega is ESM-only in
     this environment; the same 5 errors appeared before any
     async-backend work).
+  - `make all-pyret-test`: **13366 passed, 0 failed, 5 errored**.
+    Same 5 vega-ESM chart errors. Real time 13m31s.
 
 ### Async backend
 
@@ -280,15 +282,17 @@ All run with `EF=-check-all`:
 #### `make all-pyret-test-async`
 
 **Passed: 13355; Failed: 8; Ended in Error: 6; Total: 13363.**
-99.94% pass rate. The 6 errored are the same vega-ESM chart tests
-that error in the default backend (the chart library transitively
-requires vega which is now ESM-only in this environment, unfixable
-without changing vega's package). The 8 failed are the test-errors
-stack-trace-format assertions that bake in the exact list of stack
-frames -- async-backend code has extra `await`-induced frames in V8's
-stack, so the literal raw-array equality assertions don't match. The
-underlying error detection is correct; only the displayed frame list
-differs.
+99.94% pass rate. Default `make all-pyret-test` on the same harness
+reports **13366 passed, 0 failed, 5 errored** -- the async backend
+gives up 11 passing assertions and gains 8 failures + 1 error
+relative to the default backend. The 8 failed under async are the
+test-errors stack-trace-format assertions that bake in the exact list
+of stack frames -- async-backend code has extra `await`-induced
+frames in V8's stack, so the literal raw-array equality assertions
+don't match. The underlying error detection is correct; only the
+displayed frame list differs. The 6th error is in test-charts, the
+same vega-ESM root cause that produces the other 5; just one
+additional chart scenario that exercises a different render path.
 
 Reflection: an earlier attempt at this same bundle produced a
 TypeMismatch in checker (a stale-cache artifact, not a real
