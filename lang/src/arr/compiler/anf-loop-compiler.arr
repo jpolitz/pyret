@@ -460,6 +460,10 @@ fun local-bound-vars(kase :: J.JCase, vars) block:
       | j-fun(_, _, _, _) =>
         # the body of a function contributes no *locally* bound vars
         nothing
+      | j-async-fun(_, _, _, _) =>
+        # same as j-fun: a function literal opens a new scope
+        nothing
+      | j-await(exp) => e(exp)
       | j-new(func, args) =>
         e(func)
         args.each(e)

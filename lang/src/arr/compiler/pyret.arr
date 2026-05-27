@@ -91,6 +91,8 @@ fun main(args :: List<String>) -> Number block:
     C.flag(C.once, "Ignore all annotations in the runtime, treating them as if they were blank."),
     "url-file-mode",
     C.next-val-default(C.Str, "all-remote", none, C.once, "How to handle url-file imports (all-remote, all-local, or local-if-present)"),
+    "async-backend",
+    C.flag(C.once, "Use the JS async/await backend instead of the bespoke Cont-based trampoline"),
   ]
 
   params-parsed = C.parse-args(options, args)
@@ -127,6 +129,7 @@ fun main(args :: List<String>) -> Number block:
       module-eval = not(r.has-key("no-module-eval"))
       user-annotations = not(r.has-key("no-user-annotations"))
       runtime-annotations = not(r.has-key("no-runtime-annotations"))
+      async-backend = r.has-key("async-backend")
       when r.has-key("builtin-js-dir"):
         B.set-builtin-js-dirs(r.get-value("builtin-js-dir"))
       end
@@ -197,7 +200,8 @@ fun main(args :: List<String>) -> Number block:
             module-eval: module-eval,
             user-annotations: user-annotations,
             runtime-annotations: runtime-annotations,
-            url-file-mode: url-file-mode
+            url-file-mode: url-file-mode,
+            async-backend: async-backend
           })
         success-code
       else if r.has-key("serve"):
