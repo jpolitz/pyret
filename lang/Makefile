@@ -166,6 +166,22 @@ endif
                       -bundle-dependencies \
                       --html-file $*.html
 
+# Async-backend mirror of the %.jarr rule. Builds any .arr with
+# -async-backend, the async require-config, and a separate compiled-async/
+# cache so async-compiled .js never gets mixed up with sync-compiled output.
+$(PHASEA)/js/runtime-async.js: src/$(JSBASE)/runtime-async.js
+	cp $< $@
+
+%.async.jarr: $(PHASEA)/pyret.jarr $(PHASEA)/js/runtime-async.js %.arr
+	$(NODE) $(PHASEA)/pyret.jarr --outfile $*.async.jarr \
+                      --build-runnable $*.arr \
+                      --builtin-js-dir src/js/trove/ \
+                      --builtin-arr-dir src/arr/trove/ \
+                      --compiled-dir compiled-async/ \
+                      $(EXTRA_FLAGS) \
+                      -async-backend \
+                      --require-config src/scripts/standalone-configA-async.json
+
 $(PHASEA_ALL_DEPS): | $(PHASEA)
 
 $(PHASEB_ALL_DEPS): | $(PHASEB) phaseA

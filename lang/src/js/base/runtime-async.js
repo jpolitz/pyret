@@ -2006,261 +2006,172 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     // fromWithin is a flag that indicates whether the tolerance came from
     // a call to within() or one of its variants, or whether it was implicit
     // (This affects the error message that gets generated)
+
+    /* ------------------------------------------------------------------
+       equal3 in the async backend.
+
+       The default runtime implements equality with an iterative work-list
+       walk plus a Cont-aware reentrant state machine to handle user
+       _equals methods that bounce through the trampoline. In async mode
+       user _equals methods are async functions returning Promises, so the
+       Cont machinery disappears and we can express the same algorithm as
+       direct recursion + `await`.
+
+       Invariants we preserve:
+       - Identity short-circuit before any deep work.
+       - One shared `cache` per call to equal3, so cycles in mutually-
+         compared structures terminate (positive caching).
+       - When the user defines _equals on the LHS, dispatch to it and
+         combine its answer with the running combined answer.
+       - equalFunPy is a Pyret-callable wrapper that user code can call
+         recursively; it shares the outer cache via closure.
+       ------------------------------------------------------------------ */
     function equal3(left, right, alwaysFlag, tol, rel, fromWithin) {
-      if(tol === undefined) { // means that we aren't doing any kind of within
+      if (tol === undefined) {
         var isIdentical = identical3(left, right);
-        if (!thisRuntime.ffi.isNotEqual(isIdentical)) { return isIdentical; } // if Equal or Unknown...
+        if (!thisRuntime.ffi.isNotEqual(isIdentical)) { return isIdentical; }
       }
 
-      var stackOfToCompare = [];
-      var toCompare = { stack: [], curAns: thisRuntime.ffi.equal };
-      var cache = {left: [], right: [], equal: []};
-      function findPair(obj1, obj2) {
+      var cache = { left: [], right: [], equal: [] };
+      function findPair(a, b) {
         for (var i = 0; i < cache.left.length; i++) {
-          if (cache.left[i] === obj1 && cache.right[i] === obj2)
-            return cache.equal[i];
+          if (cache.left[i] === a && cache.right[i] === b) { return cache.equal[i]; }
         }
         return false;
       }
-      function setCachePair(obj1, obj2, val) {
+      function setCachePair(a, b, val) {
         for (var i = 0; i < cache.left.length; i++) {
-          if (cache.left[i] === obj1 && cache.right[i] === obj2) {
-            cache.equal[i] = val;
-            return;
-          }
+          if (cache.left[i] === a && cache.right[i] === b) { cache.equal[i] = val; return; }
         }
-// throw new Error("Internal error: tried to
       }
-      function cachePair(obj1, obj2) {
-        cache.left.push(obj1);
-        cache.right.push(obj2);
-        cache.equal.push(thisRuntime.ffi.equal);
-        return cache.equal.length;
+      function cachePair(a, b) {
+        cache.left.push(a); cache.right.push(b); cache.equal.push(thisRuntime.ffi.equal);
       }
-      function equalHelp() {
-        var current, curLeft, curRight;
-        while (toCompare.stack.length > 0 && !thisRuntime.ffi.isNotEqual(toCompare.curAns)) {
-          current = toCompare.stack.pop();
-          if(current.setCache) {
-            cache.equal[current.index - 1] = toCompare.curAns;
-            continue;
-          }
-          curLeft = current.left;
-          curRight = current.right;
 
-          if (thisRuntime.ffi.isEqual(identical3(curLeft, curRight))) {
-            continue;
-          } else if (isNumber(curLeft) && isNumber(curRight)) {
-            if (tol) {
-              var comp;
-              if (rel === TOL_IS_REL) {
-                comp = jsnums.roughlyEqualsRel(curLeft, curRight, tol, false);
-              } else if (rel === TOL_IS_SMOOTH) {
-                comp = jsnums.roughlyEqualsRel(curLeft, curRight, tol, true);
-              } else {
-                // (rel === TOL_IS_ABS)
-                comp = jsnums.roughlyEquals(curLeft, curRight, tol);
-              }
-              if (comp) {
-                continue;
-              } else {
-                toCompare.curAns = thisRuntime.ffi.notEqual.app(current.path, curLeft, curRight);
-              }
-            } else if (jsnums.isRoughnum(curLeft) || jsnums.isRoughnum(curRight)) {
-              toCompare.curAns = thisRuntime.ffi.unknown.app(
-                fromWithin ? "RoughnumZeroTolerances" : "Roughnums",
-                curLeft,
-                curRight);
-            } else if (jsnums.equals(curLeft, curRight)) {
-              continue;
+      async function compareOne(curLeft, curRight, path) {
+        if (thisRuntime.ffi.isEqual(identical3(curLeft, curRight))) { return thisRuntime.ffi.equal; }
+
+        if (isNumber(curLeft) && isNumber(curRight)) {
+          if (tol) {
+            var ok;
+            if (rel === "rel") { ok = jsnums.roughlyEqualsRel(curLeft, curRight, tol, false); }
+            else if (rel === "smooth") { ok = jsnums.roughlyEqualsRel(curLeft, curRight, tol, true); }
+            else { ok = jsnums.roughlyEquals(curLeft, curRight, tol); }
+            return ok ? thisRuntime.ffi.equal : thisRuntime.ffi.notEqual.app(path, curLeft, curRight);
+          }
+          if (jsnums.isRoughnum(curLeft) || jsnums.isRoughnum(curRight)) {
+            return thisRuntime.ffi.unknown.app(fromWithin ? "RoughnumZeroTolerances" : "Roughnums", curLeft, curRight);
+          }
+          return jsnums.equals(curLeft, curRight)
+            ? thisRuntime.ffi.equal
+            : thisRuntime.ffi.notEqual.app(path, curLeft, curRight);
+        }
+        if (isNothing(curLeft) && isNothing(curRight)) { return thisRuntime.ffi.equal; }
+        if (isFunction(curLeft) && isFunction(curRight)) {
+          return thisRuntime.ffi.unknown.app("Functions", curLeft, curRight);
+        }
+        if (isMethod(curLeft) && isMethod(curRight)) {
+          return thisRuntime.ffi.unknown.app("Methods", curLeft, curRight);
+        }
+        if (isOpaque(curLeft) && isOpaque(curRight)) {
+          return curLeft.equals(curLeft.val, curRight.val)
+            ? thisRuntime.ffi.equal
+            : thisRuntime.ffi.notEqual.app(path, curLeft, curRight);
+        }
+
+        // Reference cycles: if we're already comparing this exact pair somewhere
+        // up the stack, return the in-progress (default-Equal) entry; once a
+        // deep comparison finishes we update it with setCachePair.
+        var cached = findPair(curLeft, curRight);
+        if (cached !== false) { return cached; }
+        cachePair(curLeft, curRight);
+
+        var subAns = thisRuntime.ffi.equal;
+
+        if (isRef(curLeft) && isRef(curRight)) {
+          if (alwaysFlag && !(isRefFrozen(curLeft) && isRefFrozen(curRight))) {
+            subAns = thisRuntime.ffi.notEqual.app(path, curLeft, curRight);
+          } else if (!isRefSet(curLeft) || !isRefSet(curRight)) {
+            subAns = thisRuntime.ffi.notEqual.app(path, curLeft, curRight);
+          } else {
+            var newPath = path;
+            var lastDot = newPath.lastIndexOf(".");
+            var lastParen = newPath.lastIndexOf(")");
+            if (lastDot > -1 && lastDot > lastParen) {
+              newPath = newPath.substr(0, lastDot) + "!" + newPath.substr(lastDot + 1);
             } else {
-              toCompare.curAns = thisRuntime.ffi.notEqual.app(current.path, curLeft, curRight);
+              newPath = "deref(" + newPath + ")";
             }
-          } else if (isNothing(curLeft) && isNothing(curRight)) {
-            continue;
-          } else if (isFunction(curLeft) && isFunction(curRight)) {
-            toCompare.curAns = thisRuntime.ffi.unknown.app("Functions" , curLeft ,  curRight);
-          } else if (isMethod(curLeft) && isMethod(curRight)) {
-            toCompare.curAns = thisRuntime.ffi.unknown.app("Methods" , curLeft , curRight);
-          } else if (isOpaque(curLeft) && isOpaque(curRight)) {
-            if (curLeft.equals(curLeft.val, curRight.val)) {
-              continue;
-            } else {
-              toCompare.curAns = thisRuntime.ffi.notEqual.app(current.path, curLeft, curRight);
+            subAns = await compareOne(getRef(curLeft), getRef(curRight), newPath);
+          }
+        } else if (isTuple(curLeft) && isTuple(curRight)) {
+          if (curLeft.vals.length !== curRight.vals.length) {
+            subAns = thisRuntime.ffi.notEqual.app(path, curLeft, curRight);
+          } else {
+            for (var i = 0; i < curLeft.vals.length; i++) {
+              subAns = combineEquality(subAns,
+                await compareOne(curLeft.vals[i], curRight.vals[i],
+                  "is-tuple{ " + path + "; " + i + " }"));
+              if (thisRuntime.ffi.isNotEqual(subAns)) { break; }
+            }
+          }
+        } else if (isArray(curLeft) && isArray(curRight)) {
+          if (alwaysFlag || (curLeft.length !== curRight.length)) {
+            subAns = thisRuntime.ffi.notEqual.app(path, curLeft, curRight);
+          } else {
+            for (var i = 0; i < curLeft.length; i++) {
+              subAns = combineEquality(subAns,
+                await compareOne(curLeft[i], curRight[i],
+                  "raw-array-get(" + path + ", " + i + ")"));
+              if (thisRuntime.ffi.isNotEqual(subAns)) { break; }
+            }
+          }
+        } else if (isObject(curLeft) && isObject(curRight)) {
+          if (!sameBrands(getBrands(curLeft), getBrands(curRight))) {
+            subAns = thisRuntime.ffi.notEqual.app(path, curLeft, curRight);
+          } else if (curLeft.dict["_equals"]) {
+            // User-defined equality. In async mode this may return a Promise.
+            var newAns = await getColonField(curLeft, "_equals").full_meth(curLeft, curRight, equalFunPy);
+            subAns = combineEquality(subAns, newAns);
+          } else if (isDataValue(curLeft) && isDataValue(curRight)) {
+            var fieldNames = curLeft.$constructor.$fieldNames;
+            if (fieldNames && fieldNames.length > 0) {
+              for (var k = 0; k < fieldNames.length; k++) {
+                subAns = combineEquality(subAns,
+                  await compareOne(curLeft.dict[fieldNames[k]], curRight.dict[fieldNames[k]],
+                    path + "." + fieldNames[k]));
+                if (thisRuntime.ffi.isNotEqual(subAns)) { break; }
+              }
             }
           } else {
-            var curPair = findPair(curLeft, curRight);
-            if (curPair !== false) {
-              // Already checked this pair of objects
-              toCompare.curAns = curPair
-              continue;
+            var fieldsLeft = getFields(curLeft);
+            var fieldsRight = getFields(curRight);
+            if (fieldsLeft.length !== fieldsRight.length) {
+              subAns = thisRuntime.ffi.notEqual.app(path, curLeft, curRight);
             } else {
-              var index = cachePair(curLeft, curRight);
-              toCompare.stack.push({ setCache: true, index: index, left: curLeft, right: curRight });
-              if (isRef(curLeft) && isRef(curRight)) {
-                if (alwaysFlag && !(isRefFrozen(curLeft) && isRefFrozen(curRight))) { // In equal-always, non-identical refs are not equal
-                  toCompare.curAns = thisRuntime.ffi.notEqual.app(current.path, curLeft, curRight); // We would've caught identical refs already
-                } else if(!isRefSet(curLeft) || !isRefSet(curRight)) {
-                  toCompare.curAns = thisRuntime.ffi.notEqual.app(current.path, curLeft, curRight);
-                } else { // In equal-now, we walk through the refs
-                  var newPath = current.path;
-                  var lastDot = newPath.lastIndexOf(".");
-                  var lastParen = newPath.lastIndexOf(")");
-                  if (lastDot > -1 && lastDot > lastParen) {
-                    newPath = newPath.substr(0, lastDot) + "!" + newPath.substr(lastDot + 1);
-                  } else {
-                    newPath = "deref(" + newPath + ")";
-                  }
-                  toCompare.stack.push({
-                    left: getRef(curLeft),
-                    right: getRef(curRight),
-                    path: newPath
-                  });
-                }
-              } else if(isTuple(curLeft) && isTuple(curRight)) {
-                if (curLeft.vals.length !== curRight.vals.length) {
-                  toCompare.curAns = thisRuntime.ffi.notEqual.app(current.path, curLeft, curRight);
-                } else {
-                  for (var i = 0; i < curLeft.vals.length; i++) {
-                    toCompare.stack.push({
-                      left: curLeft.vals[i],
-                      right: curRight.vals[i],
-                      path: "is-tuple{ " + current.path + "; " + i + " }"
-                    });
-                  }
-                }
-              } else if (isArray(curLeft) && isArray(curRight)) {
-                if (alwaysFlag || (curLeft.length !== curRight.length)) {
-                  toCompare.curAns = thisRuntime.ffi.notEqual.app(current.path, curLeft, curRight);
-                } else {
-                  for (var i = 0; i < curLeft.length; i++) {
-                    toCompare.stack.push({
-                      left: curLeft[i],
-                      right: curRight[i],
-                      path: "raw-array-get(" + current.path + ", " + i + ")"
-                    });
-                  }
-                }
-              } else if (isObject(curLeft) && isObject(curRight)) {
-                if (!sameBrands(getBrands(curLeft), getBrands(curRight))) {
-                  /* Two objects with brands that differ */
-                  toCompare.curAns = thisRuntime.ffi.notEqual.app(current.path, curLeft, curRight);
-                }
-                else if (isObject(curLeft) && curLeft.dict["_equals"]) {
-                  /* Two objects with the same brands and the left has an _equals method */
-                  // If this call stack-returns,
-                  var newAns = getColonField(curLeft, "_equals").full_meth(curLeft, curRight, equalFunPy);
-                  if(isContinuation(newAns)) { return newAns; }
-                  // the continuation stacklet will get the result, and combine them manually
-                  toCompare.curAns = combineEquality(toCompare.curAns, newAns);
-                }
-                else if (isDataValue(curLeft) && isDataValue(curRight)) {
-                  /* Two data values with the same brands and no equals method on the left */
-                  var fieldNames = curLeft.$constructor.$fieldNames;
-                  if (fieldNames && fieldNames.length > 0) {
-                    for (var k = 0; k < fieldNames.length; k++) {
-                      toCompare.stack.push({
-                        left: curLeft.dict[fieldNames[k]],
-                        right: curRight.dict[fieldNames[k]],
-                        path: current.path + "." + fieldNames[k]
-                      });
-                    }
-                  }
-                } else {
-                  /* Two non-data objects with the same brands and no equals method on the left */
-                  var dictLeft = curLeft.dict;
-                  var dictRight = curRight.dict;
-                  var fieldsLeft;
-                  var fieldsRight;
-                  fieldsLeft = getFields(curLeft);
-                  fieldsRight = getFields(curRight);
-                  if(fieldsLeft.length !== fieldsRight.length) {
-                    toCompare.curAns = thisRuntime.ffi.notEqual.app(current.path, curLeft, curRight);
-                  }
-                  for(var k = 0; k < fieldsLeft.length; k++) {
-                    toCompare.stack.push({
-                      left: curLeft.dict[fieldsLeft[k]],
-                      right: curRight.dict[fieldsLeft[k]],
-                      path: current.path + "." + fieldsLeft[k]
-                    });
-                  }
-                }
-              } else {
-                toCompare.curAns = thisRuntime.ffi.notEqual.app(current.path, curLeft, curRight);
+              for (var k = 0; k < fieldsLeft.length; k++) {
+                subAns = combineEquality(subAns,
+                  await compareOne(curLeft.dict[fieldsLeft[k]], curRight.dict[fieldsLeft[k]],
+                    path + "." + fieldsLeft[k]));
+                if (thisRuntime.ffi.isNotEqual(subAns)) { break; }
               }
             }
           }
+        } else {
+          subAns = thisRuntime.ffi.notEqual.app(path, curLeft, curRight);
         }
-        return toCompare.curAns;
+
+        setCachePair(curLeft, curRight, subAns);
+        return subAns;
       }
-      var stackFrameDesc = [alwaysFlag ? "runtime equal-always" : "runtime equal-now"];
-      function equalFun($ar) {
-        var $step = 0;
-        var $ans = undefined;
-        if (thisRuntime.isActivationRecord($ar)) {
-          $step = $ar.step;
-          $ans = $ar.ans;
-        }
-        while(true) {
-          switch($step) {
-          case 0:
-            $step = 1;
-            $ans = equalHelp();
-            if(isContinuation($ans)) {
-              $ans.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-                stackFrameDesc,
-                equalFun,
-                $step,
-                [],
-                []);
-            }
-            return $ans;
-          case 1:
-            toCompare.curAns = combineEquality(toCompare.curAns, $ans);
-            $step = 0;
-            break;
-          }
-        }
-      }
-      function reenterEqualFun(left, right) {
-        // arity check
-        var $step = 0;
-        var $ans = undefined;
-        if (thisRuntime.isActivationRecord(left)) {
-          $step = left.step;
-          $ans = left.ans;
-        }
-        while(true) {
-          switch($step) {
-          case 0:
-            stackOfToCompare.push(toCompare);
-            toCompare = {stack: [{left: left, right: right, path: "the-value"}], curAns: thisRuntime.ffi.equal};
-            $step = 1;
-            $ans = equalFun();
-            if(isContinuation($ans)) {
-              $ans.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-                stackFrameDesc,
-                reenterEqualFun,
-                $step,
-                [],
-                []);
-              return $ans;
-            }
-            break;
-          case 1:
-            for(var i = 0; i < toCompare.stack.length; i++) {
-              var current = toCompare.stack[i];
-              if(current.setCache) {
-                cache.equal[current.index - 1] = $ans;
-              }
-            }
-            toCompare = stackOfToCompare.pop();
-            return $ans;
-          }
-        }
-      }
-      var equalFunPy = makeFunction(reenterEqualFun, "equalFun");
-      return reenterEqualFun(left, right);
+
+      // Pyret-visible recursive equality, shared with user _equals
+      // implementations via the third arg of full_meth. Returns a Promise.
+      var equalFunPy = makeFunction(function(l, r) {
+        return compareOne(l, r, "the-value");
+      }, "equalFun");
+
+      return compareOne(left, right, alwaysFlag ? "equal-always" : "equal-now");
     }
 
     var EQUAL_ALWAYS = true;
@@ -3396,35 +3307,30 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
        @constructor
     */
 
-    function Cont(stack) {
-      this.stack = stack;
-    }
-    function makeCont() { return new Cont([]); }
-    function isCont(v) { return v instanceof Cont; }
-    function isContinuation(v) { return typeof v === "object" && v instanceof Cont; }
-    Cont.prototype._toString = function() {
-      var stack = this.stack;
-      var stackStr = stack && stack.length > 0 ?
-        stack.map(function(s) {
-          if(!s && s.from) { return "<blank frame>"; }
-          else {
-            if(typeof s.from === "string") { return s; }
-            else {
-              return s.from.join(",");
-            }
-          }
-        }).join("\n") : "<no stack trace>";
-      return stackStr;
-    }
+    /* ------------------------------------------------------------------
+       Cont / Pause / ActivationRecord stubs.
 
-    function Pause(stack, pause, resumer) {
-      this.stack = stack;
-      this.pause = pause;
-      this.resumer = resumer;
+       In the async backend, control flow is JS-native: every `await` is
+       the suspension primitive, and the JS engine maintains the stack.
+       Nothing should construct or test Cont/ActivationRecord. We keep
+       constructors-as-stubs that throw if called, and predicates that
+       always answer false, so:
+         - Trove helpers that *test* `isContinuation(x)` (because they
+           were written against the default runtime) take the right
+           branch automatically.
+         - Anything that actually tries to *make* a Cont fails loudly
+           rather than producing silent garbage. That's a "polyglot"
+           tripwire: the test catches polyglot mistakes during dev.
+       ------------------------------------------------------------------ */
+    function makeCont() {
+      throw new Error("Internal: makeCont() called in async backend; this is a polyglot bug.");
     }
-    function makePause(pause, resumer) { return new Pause([], pause, resumer); }
-    function isPause(v) { return v instanceof Pause; }
-    Pause.prototype = Object.create(Cont.prototype);
+    function isCont(_v) { return false; }
+    function isContinuation(_v) { return false; }
+    function makePause() {
+      throw new Error("Internal: makePause() called in async backend; use pauseStack instead.");
+    }
+    function isPause(_v) { return false; }
 
     function safeTail(fun) {
       return fun();
@@ -3443,351 +3349,92 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       };
     }
 
-    function safeCall(fun, after, stackFrame) {
-      var $ans = undefined;
-      var $step = 0;
-      var skipLoop = false;
-      if (thisRuntime.isActivationRecord(fun)) {
-        var $ar = fun;
-        $step = $ar.step;
-        $ans = $ar.ans;
-        fun = $ar.args[0];
-        after = $ar.args[1];
-        stackFrame = $ar.args[2];
-        $fun_ans = $ar.vars[0];
-      }
-      if (--thisRuntime.GAS <= 0 || --thisRuntime.RUNGAS <= 0) {
-        thisRuntime.EXN_STACKHEIGHT = 0;
-        skipLoop = true;
-        $ans = thisRuntime.makeCont();
-      }
-      while(!skipLoop) {
-        switch($step) {
-        case 0:
-          $step = 1;
-          $ans = fun();
-          if(isContinuation($ans)) { break;}
-          continue;
-        case 1:
-          var $fun_ans = $ans;
-          $step = 2;
-          $ans = after($fun_ans);
-          if(isContinuation($ans)) { break;}
-          continue;
-        case 2: ++thisRuntime.GAS; return $ans;
-        }
-        break;
-      }
-      $ans.stack[thisRuntime.EXN_STACKHEIGHT++] =
-        thisRuntime.makeActivationRecord(
-          "safeCall for " + stackFrame,
-          safeCall,
-          $step,
-          [ fun, after, stackFrame ],
-          [ $fun_ans ]
-        );
-      return $ans;
+    // safeCall in the async backend is the obvious sequencing combinator.
+    // It returns a Promise because the body or after may call back into
+    // async-compiled Pyret code. Trove modules that use safeCall (e.g.
+    // string-dict, json) get a Promise back; compiled callers that
+    // `await` the trove call see the right answer either way.
+    //
+    // We keep the `stackFrame` arg for source-compat with runtime.js even
+    // though we don't push activation records anywhere in async mode --
+    // JS's own call stack is the call stack.
+    async function safeCall(fun, after, stackFrame) {
+      return after(await fun());
     }
 
-    function eachLoop(fun, start, stop) {
-      var i = start;
-      function restart(_) {
-        var res = thisRuntime.nothing;
-        if (--thisRuntime.GAS <= 0) {
-          thisRuntime.EXN_STACKHEIGHT = 0;
-          res = thisRuntime.makeCont();
-        }
-        while(!thisRuntime.isContinuation(res)) {
-          if (--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            res = thisRuntime.makeCont();
-          }
-          else {
-            if(i >= stop) {
-              ++thisRuntime.GAS;
-              // NOTE(joe): this is the one true return value/exit of the loop
-              return thisRuntime.nothing;
-            }
-            else {
-              res = fun.app(i);
-              i = i + 1;
-            }
-          }
-        }
-        res.stack[thisRuntime.EXN_STACKHEIGHT++] =
-          thisRuntime.makeActivationRecord("eachLoop", restart, true, [], []);
-        return res;
-      }
-      return restart();
+    // The compiler emits R.runAsyncToplevel(body, moduleLoad, label) for
+    // each module's entry, replacing the safeCall the default backend uses.
+    // Semantically identical to safeCall here; named separately so the
+    // generated JS makes the module-entry boundary explicit (also useful
+    // when grepping or instrumenting).
+    async function runAsyncToplevel(body, after, label) {
+      return after(await body());
     }
 
-    var RUN_ACTIVE = false;
-    var currentThreadId = 0;
-    var activeThreads = {};
+    // The compiler emits `R.eachLoop(fun, start, stop)` for `for each(...)`.
+    // In async mode, fun.app may be an async function returning a Promise, so
+    // we await each call. checkPause inside fun.app handles fuel/yielding;
+    // the loop itself doesn't need its own gas accounting.
+    async function eachLoop(fun, start, stop) {
+      for (var i = start; i < stop; i++) {
+        await fun.app(i);
+      }
+      return thisRuntime.nothing;
+    }
 
-    var queuedRuns = [];
+    /* ---------------------------------------------------------------------
+       run / runThunk / execThunk in the async backend.
+
+       The default runtime maintains its own "one true stack" of activation
+       records (`theOneTrueStack`) and bounces user code through it via the
+       `iter` trampoline so that long programs can yield to setTimeout.
+       Async-backend compiled code is just `async function`s, so the JS
+       engine *is* the trampoline: each `await` is a microtask, and our
+       checkPause schedules a setTimeout(0) when fuel runs out.
+
+       The contract `run` exposes is identical: call onDone exactly once
+       with a SuccessResult or FailureResult. Internally we just `await`
+       the program. The currentThreadId / activeThreads bookkeeping that
+       runtime.js does is unnecessary here because user-visible interruption
+       is now `requestStop` -> next checkPause throws.
+       --------------------------------------------------------------------- */
+
+    function getStatsObj(start) {
+      var elapsed;
+      if (typeof window !== "undefined" && window.performance) {
+        elapsed = window.performance.now() - start;
+      } else if (typeof process !== "undefined" && process.hrtime) {
+        elapsed = process.hrtime(start);
+      }
+      return { bounces: 0, tos: 0, time: elapsed };
+    }
+    function startTimer() {
+      if (typeof window !== "undefined" && window.performance) { return window.performance.now(); }
+      if (typeof process !== "undefined" && process.hrtime) { return process.hrtime(); }
+      return Date.now();
+    }
 
     function run(program, namespace, options, onDone) {
-      // CONSOLE.log("In run2");
-      if(RUN_ACTIVE) {
-        onDone(makeFailureResult(thisRuntime.ffi.makeMessageException("Internal: run called while already running")));
-        return;
-      }
-      RUN_ACTIVE = true;
-      var start;
-      function startTimer() {
-        if (typeof window !== "undefined" && window.performance) {
-          start = window.performance.now();
-        } else if (typeof process !== "undefined" && process.hrtime) {
-          start = process.hrtime();
-        }
-      }
-      function endTimer() {
-        if (typeof window !== "undefined" && window.performance) {
-          return window.performance.now() - start;
-        } else if (typeof process !== "undefined" && process.hrtime) {
-          return process.hrtime(start);
-        }
-      }
-      function getStats() {
-        return { bounces: BOUNCES, tos: TOS, time: endTimer() };
-      }
-      function finishFailure(exn) {
-        RUN_ACTIVE = false;
-        delete activeThreads[thisThread.id];
-        onDone(makeFailureResult(exn, getStats()));
-      }
-      function finishSuccess(answer) {
-        RUN_ACTIVE = false;
-        delete activeThreads[thisThread.id];
-        onDone(new SuccessResult(answer, getStats()));
-      }
-
-      startTimer();
-      var that = this;
-      var theOneTrueStackTop = ["top-of-stack"]
-      var kickoff = makeActivationRecord(
-        "<top of stack>",
-        function(ignored) {
-          return program(thisRuntime, namespace);
-        },
-        0,
-        [],
-        []
-      );
-      var theOneTrueStack = [kickoff];
-      var theOneTrueStart = {};
-      var val = theOneTrueStart;
-      var theOneTrueStackHeight = 1;
-      var BOUNCES = 0;
-      var TOS = 0;
-
-      var sync = options.sync || false;
-      var initialGas = options.initialGas || thisRuntime.INITIAL_GAS;
-      var initialRunGas = options.initialRunGas || initialGas * 10;
-      thisRuntime.GAS = initialGas;
-      thisRuntime.RUNGAS = sync ? Infinity : initialRunGas;
-
-      var threadIsCurrentlyPaused = false;
-      var threadIsDead = false;
-      currentThreadId += 1;
-      // Special case of the first thread to run in between breaks.
-      // This is the only thread notified of the break, others just die
-      // silently.
-      if(Object.keys(activeThreads).length === 0) {
-        var breakFun = function() {
-          threadIsCurrentlyPaused = true;
-          threadIsDead = true;
-          finishFailure(new PyretFailException(thisRuntime.ffi.userBreak));
-        };
-      }
-      else {
-        var breakFun = function() {
-          threadIsCurrentlyPaused = true;
-          threadIsDead = true;
-        };
-      }
-
-      var thisThread = {
-        handlers: {
-          resume: function(restartVal) {
-            if(!threadIsCurrentlyPaused) { throw new Error("Stack already running"); }
-            if(threadIsDead) { throw new Error("Failed to resume; thread has been killed"); }
-            threadIsCurrentlyPaused = false;
-            val = restartVal;
-            TOS++;
-            RUN_ACTIVE = true;
-            util.suspend(iter);
-          },
-          break: breakFun,
-          error: function(errVal) {
-            threadIsCurrentlyPaused = true;
-            threadIsDead = true;
-            var exn;
-            if(isPyretException(errVal)) {
-              exn = errVal;
-            } else {
-              exn = new PyretFailException(errVal);
-            }
-            finishFailure(exn);
+      var start = startTimer();
+      // Reset fuel so each top-level run starts with a full tank.
+      FUEL = INITIAL_FUEL;
+      STOP_REQUESTED = false;
+      (async function() {
+        try {
+          var val = await program(thisRuntime, namespace);
+          onDone(new SuccessResult(val, getStatsObj(start)));
+        } catch (e) {
+          var exn;
+          if (isPyretException(e)) {
+            exn = e;
+          } else {
+            exn = new PyretFailException(e);
           }
-        },
-        pause: function() {
-          threadIsCurrentlyPaused = true;
-        },
-        id: currentThreadId
-      };
-      activeThreads[currentThreadId] = thisThread;
-
-      // iter :: () -> Undefined
-      // This function should not return anything meaningful, as state
-      // and fallthrough are carefully managed.
-      function iter() {
-        // CONSOLE.log("In run2::iter, GAS is ", thisRuntime.GAS);
-        // If the thread is dead, return has already been processed
-        if (threadIsDead) {
-          return;
+          onDone(makeFailureResult(exn, getStatsObj(start)));
         }
-        // If the thread is paused, something is wrong; only resume() should
-        // be used to re-enter
-        if (threadIsCurrentlyPaused) { throw new Error("iter entered during stopped execution"); }
-        var loop = true;
-        while (loop) {
-          loop = false;
-          try {
-            if (manualPause !== null) {
-              var thePause = manualPause;
-              manualPause = null;
-              return pauseStack(function(restarter) {
-                thePause.setHandlers({
-                  resume: function() { restarter.resume(val); },
-                  break: restarter.break,
-                  error: restarter.error
-                });
-              });
-            }
-            while(theOneTrueStackHeight > 0) {
-              if(!sync && thisRuntime.RUNGAS <= 1) {
-                thisRuntime.RUNGAS = initialRunGas;
-                TOS++;
-                // CONSOLE.log("Setting timeout to resume iter");
-                util.suspend(iter);
-                return;
-              }
-              var next = theOneTrueStack[--theOneTrueStackHeight];
-              // CONSOLE.log("ActivationRecord[" + theOneTrueStackHeight + "] = " + JSON.stringify(next, null, "  "));
-              theOneTrueStack[theOneTrueStackHeight] = undefined;
-              // CONSOLE.log("theOneTrueStack = ", theOneTrueStack);
-              // CONSOLE.log("Setting ans to " + JSON.stringify(val, null, "  "));
-              if(!isContinuation(val)) {
-                next.ans = val;
-              }
-              // CONSOLE.log("GAS = ", thisRuntime.GAS);
-
-
-
-              if (next.fun instanceof Function) {
-                val = next.fun(next);
-              }
-              else if (!(next instanceof ActivationRecord)) {
-                CONSOLE.log("Our next stack frame doesn't look right!");
-                CONSOLE.log(JSON.stringify(next));
-                CONSOLE.log(theOneTrueStack);
-                throw false;
-              }
-              if(next.fun instanceof Function && thisRuntime.isContinuation(val)) {
-                // console.log("BOUNCING");
-                BOUNCES++;
-                thisRuntime.GAS = initialGas;
-                thisRuntime.RUNGAS = initialRunGas;
-                for(var i = val.stack.length - 1; i >= 0; i--) {
-    //              console.error(e.stack[i].vars.length + " width;" + e.stack[i].vars + "; from " + e.stack[i].from + "; frame " + theOneTrueStackHeight);
-                  theOneTrueStack[theOneTrueStackHeight++] = val.stack[i];
-                }
-                // console.log("The new stack height is ", theOneTrueStackHeight);
-                // console.log("theOneTrueStack = ", theOneTrueStack.slice(0, theOneTrueStackHeight).map(function(f) {
-                //   if (f && f.from) { return f.from.toString(); }
-                //   else { return f; }
-                // }));
-
-                if(isPause(val)) {
-                  thisThread.pause();
-                  val.pause.setHandlers(thisThread.handlers);
-                  if(val.resumer) { val.resumer(val.pause); }
-                  return;
-                }
-                else if(thisRuntime.isCont(val)) {
-                  if(sync) {
-                    loop = true;
-                    // DON'T return; we synchronously loop back to the outer while loop
-                    continue;
-                  }
-                  else {
-                    TOS++;
-                    util.suspend(iter);
-                    return;
-                  }
-                }
-              }
-              // CONSOLE.log("Frame returned, val = " + JSON.stringify(val, null, "  "));
-            }
-          } catch(e) {
-//            console.error("Exceptions should no longer be thrown: ", e);
-            if(thisRuntime.isCont(e)) {
-              // CONSOLE.log("BOUNCING");
-              BOUNCES++;
-              thisRuntime.GAS = initialGas;
-              for(var i = e.stack.length - 1; i >= 0; i--) {
-              // CONSOLE.error(e.stack[i].vars.length + " width;" + e.stack[i].vars + "; from " + e.stack[i].from + "; frame " + theOneTrueStackHeight);
-                theOneTrueStack[theOneTrueStackHeight++] = e.stack[i];
-              }
-              // CONSOLE.log("The new stack height is ", theOneTrueStackHeight);
-              // CONSOLE.log("theOneTrueStack = ", theOneTrueStack.slice(0, theOneTrueStackHeight).map(function(f) {
-              //   if (f && f.from) { return f.from.toString(); }
-              //   else { return f; }
-              // }));
-
-              if(isPause(e)) {
-                thisThread.pause();
-                e.pause.setHandlers(thisThread.handlers);
-                if(e.resumer) { e.resumer(e.pause); }
-                return;
-              }
-              else if(thisRuntime.isCont(e)) {
-                if(sync) {
-                  loop = true;
-                  // DON'T return; we synchronously loop back to the outer while loop
-                  continue;
-                }
-                else {
-                  TOS++;
-                  util.suspend(iter);
-                  return;
-                }
-              }
-            }
-
-            else if(isPyretException(e)) {
-              while(theOneTrueStackHeight > 0) {
-                var next = theOneTrueStack[--theOneTrueStackHeight];
-                theOneTrueStack[theOneTrueStackHeight] = "sentinel";
-                e.pyretStack.push(next.from);
-              }
-              finishFailure(e);
-              return;
-            } else {
-              finishFailure(e);
-              return;
-            }
-          }
-        }
-        finishSuccess(val);
-        return;
-      }
-      thisRuntime.GAS = initialGas;
-      thisRuntime.RUNGAS = initialRunGas;
-      iter();
+      })();
     }
+
 
     var TRACE_DEPTH = 0;
     var SHOW_TRACE = true;
@@ -3826,29 +3473,12 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       TRACE_DEPTH = TRACE_DEPTH > 0 ? TRACE_DEPTH - 1 : 0;
     }
 
-    var UNINITIALIZED_ANSWER = {'uninitialized answer': true};
-    function ActivationRecord(from, fun, step, ans, args, vars) {
-      this.from = from;
-      this.fun = fun;
-      this.step = step;
-      this.ans = ans;
-      this.args = args;
-      this.vars = vars;
+    // ActivationRecord stubs. See the Cont stubs above for the rationale.
+    function makeActivationRecord() {
+      throw new Error("Internal: makeActivationRecord() called in async backend; this is a polyglot bug.");
     }
-    ActivationRecord.prototype.toString = function() {
-      return "{from: " + this.from + ", fun: " + this.fun + ", step: " + this.step
-        + ", ans: " + JSON.stringify(this.ans) + ", args: " + JSON.stringify(this.args)
-        + ", vars: " + JSON.stringify(this.vars) + "}";
-    }
-    function makeActivationRecord(from, fun, step, args, vars) {
-      return new ActivationRecord(from, fun, step, UNINITIALIZED_ANSWER, args, vars);
-    }
-    function isActivationRecord(obj) {
-      return obj instanceof ActivationRecord;
-    }
-    function isInitializedActivationRecord(obj) {
-      return obj instanceof ActivationRecord && !(obj.ans === UNINITIALIZED_ANSWER);
-    }
+    function isActivationRecord(_obj) { return false; }
+    function isInitializedActivationRecord(_obj) { return false; }
 
     // we can set verbose to true to include the <builtin> srcloc positions
     // and the "safecall for ..." internal frames
@@ -3868,99 +3498,57 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return "  " + stackStr.join("\n  ");
     }
 
-    function breakAll() {
-      RUN_ACTIVE = false;
-      var threadsToBreak = activeThreads;
-      var keys = Object.keys(threadsToBreak);
-      activeThreads = {};
-      for(var i = 0; i < keys.length; i++) {
-        threadsToBreak[keys[i]].handlers.break();
-      }
-    }
+    // breakAll: ask the currently-running async program to stop. The next
+    // checkPause throws userBreak; run()'s catch reports a FailureResult.
+    function breakAll() { requestStop(); }
 
+    // pauseStack in the async backend: hand the resumer an object with
+    // {resume, error, break} that will settle the returned Promise. Trove
+    // code that wants to bridge a JS callback into Pyret (e.g. setTimeout,
+    // fetch, an external event listener) does:
+    //
+    //   return R.pauseStack(function(r) { someCallback(function(x) { r.resume(x); }); });
+    //
+    // The compiled async caller awaits the returned Promise.
     function pauseStack(resumer) {
-      // CONSOLE.log("Pausing stack: ", RUN_ACTIVE, new Error().stack);
-      RUN_ACTIVE = false;
-      thisRuntime.EXN_STACKHEIGHT = 0;
-      var pause = new PausePackage();
-      return makePause(pause, resumer);
-    }
-
-    function pauseAwait(p) {
-      if(!('then' in p)) { return p; }
-
-      return pauseStack(async (restarter) => {
-        try {
-          const result = await p;
-          return restarter.resume(result);
-        }
-        catch(e) {
-          return restarter.error(e);
-        }
+      return new Promise(function(resolve, reject) {
+        var restarter = {
+          resume: function(val) { resolve(val); },
+          error: function(errVal) {
+            if (isPyretException(errVal)) { reject(errVal); }
+            else { reject(new PyretFailException(errVal)); }
+          },
+          break: function() { reject(makeUserBreakExn()); }
+        };
+        try { resumer(restarter); }
+        catch (e) { reject(e); }
       });
     }
 
-    function PausePackage() {
-      this.resumeVal = null;
-      this.errorVal = null;
-      this.breakFlag = false;
-      this.handlers = null;
-    }
-    PausePackage.prototype = {
-      setHandlers: function(handlers) {
-        if(this.breakFlag) {
-          handlers.break();
-        }
-        else if (this.resumeVal !== null) {
-          handlers.resume(this.resumeVal);
-        }
-        else if (this.errorVal !== null) {
-          handlers.error(this.errorVal);
-        }
-        else {
-          this.handlers = handlers;
-        }
-      },
-      break: function() {
-        if(this.resumeVal !== null || this.errorVal !== null) {
-          throw "Cannot break with resume or error requested";
-        }
-        if(this.handlers !== null) {
-          this.handlers.break();
-        }
-        else {
-          this.breakFlag = true;
-        }
-      },
-      error: function(err) {
-        if(this.resumeVal !== null || this.breakFlag) {
-          throw "Cannot error with resume or break requested";
-        }
-        if(this.handlers !== null) {
-          this.handlers.error(err);
-        }
-        else {
-          this.errorVal = err;
-        }
-      },
-      resume: function(val) {
-        if(this.errorVal !== null || this.breakFlag) {
-          throw "Cannot resume with error or break requested";
-        }
-        if(this.handlers !== null) {
-          this.handlers.resume(val);
-        }
-        else {
-          this.resumeVal = val;
-        }
+    // `await` is a Pyret-callable convenience: given a plain Promise (e.g.
+    // from a JS interop), suspend until it resolves and produce the value.
+    // For non-thenables, pass through unchanged so it composes with both
+    // legacy and modern callers.
+    function pauseAwait(p) {
+      if (p === null || p === undefined || typeof p.then !== "function") {
+        return p;
       }
-    };
+      return p;
+    }
 
-    var manualPause = null;
+    // schedulePause: the default runtime uses this to request a pause that
+    // takes effect at the next iter cycle. In async mode, the equivalent is
+    // requestStop() + checkPause's stop check at the top of every Pyret
+    // function. We keep the name for source-compat; it just calls the
+    // resumer with a stub object that wraps requestStop.
     function schedulePause(resumer) {
-      var pause = new PausePackage();
-      manualPause = pause;
-      resumer(pause);
+      requestStop();
+      resumer({
+        setHandlers: function(_h) {},
+        break: function() {},
+        error: function(_e) {},
+        resume: function(_v) {}
+      });
     }
 
     function getExnValue(v) {
@@ -3970,10 +3558,22 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return v.val.exn;
     }
 
+    // runThunk: API preserved. The thunk is invoked inside run(); the JS
+    // engine's microtask queue handles the trampoline.
     function runThunk(f, then, options) {
       return thisRuntime.run(f, thisRuntime.namespace, options || {}, then);
     }
 
+    // execThunk: API preserved. Returns a Promise (via pauseStack) that
+    // resolves to a Pyret Either. Compiled callers await it; sync callers
+    // can attach .then.
+    //
+    // Differences from the default runtime:
+    //   - We invoke thunk.app() inside `run`'s async wrapper, so success
+    //     and failure both come back via onComplete. The pauseStack here
+    //     simply forwards that completion to the awaiting Pyret caller.
+    //   - userBreak still routes through restarter.break(), so try/run-task
+    //     correctly observes "this run was interrupted" and surfaces it.
     function execThunk(thunk) {
       if (arguments.length !== 1) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["run-task"], 1, $a, false); }
       function wrapResult(res) {
@@ -3994,38 +3594,72 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return thisRuntime.pauseStack(function(restarter) {
         thisRuntime.run(function(_, __) {
           return thunk.app();
-        }, thisRuntime.namespace, {
-          sync: false
-        }, function(result) {
+        }, thisRuntime.namespace, {}, function(result) {
           if(isFailureResult(result) &&
              isPyretException(result.exn) &&
-             thisRuntime.ffi.isUserBreak(result.exn.exn)) { restarter.break(); }
-          else {
+             thisRuntime.ffi.isUserBreak(result.exn.exn)) {
+            restarter.break();
+          } else {
             restarter.resume(wrapResult(result));
           }
         });
       });
     }
 
-    function runWhileRunning(thunk) {
-      return thisRuntime.pauseStack(function(restarter) {
-        thisRuntime.run(function(_, __) {
-          return thunk.app();
-        }, thisRuntime.namespace, {
-          sync: false
-        }, function(result) {
-          restarter.resume(result);
-          if(isFailureResult(result) &&
-             isPyretException(result.exn) &&
-             thisRuntime.ffi.isUserBreak(result.exn.exn)) { restarter.break(); }
-          else {
-            restarter.resume(wrapResult(result))
-          }
-        });
-      });
+    var INITIAL_GAS = theOutsideWorld.initialGas || 500;
+
+    /* ---------------------------------------------------------------------
+       Async-backend fuel + interruption coordination.
+
+       Every compiled async Pyret function/method awaits R.checkPause() at the
+       top of its body. checkPause is the *only* place the runtime yields
+       control to the JS event loop during a long Pyret computation.
+
+       Design (intentionally simpler than email-demo's topLoop):
+         - One integer FUEL, decremented on every Pyret call.
+         - When FUEL hits zero, refill and await one setTimeout(0). This lets
+           the host (Node IO, or the IDE's UI event handlers, or a queued
+           stop request) run before Pyret resumes.
+         - One boolean STOP_REQUESTED. When set, the next checkPause throws
+           a userBreak Pyret exception. Compiled try/catch blocks propagate
+           it; run() catches it and reports a FailureResult.
+
+       We do *not* use the topLoop/Promise.withResolvers pattern from
+       async-email-demo.md, because:
+         a) The demo's topLoop centralises pause control through a single
+            arbiter, which is elegant when you have many independent pause
+            callers; we have exactly one (fuel exhaustion).
+         b) `await new Promise(r => setTimeout(r, 0))` already yields to the
+            event loop, which is the only thing we need topLoop's
+            setTimeout-after-signal to accomplish.
+         c) Less machinery = fewer places for stop-flag races to hide.
+       --------------------------------------------------------------------- */
+    var INITIAL_FUEL = theOutsideWorld.initialFuel || INITIAL_GAS;
+    var FUEL = INITIAL_FUEL;
+    var STOP_REQUESTED = false;
+
+    function makeUserBreakExn() {
+      return new PyretFailException(thisRuntime.ffi.userBreak);
     }
 
-    var INITIAL_GAS = theOutsideWorld.initialGas || 500;
+    // The compiled async-backend code does `await R.checkPause()` at the top
+    // of every Pyret function. Returns undefined for the cheap case (just a
+    // fuel decrement) so V8 can elide the await microtask hop, and returns a
+    // genuine Promise only when we actually need to yield.
+    function checkPause() {
+      if (STOP_REQUESTED) {
+        STOP_REQUESTED = false;
+        throw makeUserBreakExn();
+      }
+      FUEL = FUEL - 1;
+      if (FUEL > 0) { return; }
+      FUEL = INITIAL_FUEL;
+      return new Promise(function(resolve) { setTimeout(resolve, 0); });
+    }
+
+    // Called externally (e.g. by the IDE's stop button via runtime.requestStop)
+    // to cause the next checkPause to throw a userBreak.
+    function requestStop() { STOP_REQUESTED = true; }
 
     var DEBUGLOG = true;
     /**
@@ -6092,6 +5726,14 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     //Export the runtime
     //String keys should be used to prevent renaming
     var thisRuntime = {
+      // Marker so compile-lib (and external introspection) can detect that
+      // this runtime is the async backend without depending on file paths.
+      'isAsyncBackend': true,
+      // Compiled async-Pyret code calls these; see definitions above.
+      'checkPause': checkPause,
+      'runAsyncToplevel': runAsyncToplevel,
+      'requestStop': requestStop,
+
       'builtins': builtins,
       'run': run,
       'runThunk': runThunk,
@@ -6536,6 +6178,9 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         'traceExit': 'tEx',
         '_checkAnn': '_cA',
         'getMaker': 'gM',
+        // async-backend-only:
+        'checkPause': 'cP',
+        'runAsyncToplevel': 'rAT',
     };
 
     for (var longName in nameMap) {
