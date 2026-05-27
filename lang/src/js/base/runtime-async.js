@@ -5847,12 +5847,19 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         }, function(rendered) {
           if (rendered[0] !== "\"\"")
             prologue += " " + rendered[0];
-          prologue += " (at " + thisRuntime.getField(makeSrcloc(loc), "format").app(true) + ")";
-          theOutsideWorld.stdout(prologue + "\n");
-          for (var i = 1; i < rendered.length; i++) {
-            theOutsideWorld.stdout("  " + names[i - 1] + ": " + rendered[i] + "\n");
-          }
-          return thisRuntime.nothing;
+          // The "format" method on the srcloc is a Pyret function — under
+          // async-backend it returns a Promise.  Use a nested safeCall so
+          // the Promise gets awaited before we concatenate into prologue.
+          return thisRuntime.safeCall(function() {
+            return thisRuntime.getField(makeSrcloc(loc), "format").app(true);
+          }, function(locStr) {
+            prologue += " (at " + locStr + ")";
+            theOutsideWorld.stdout(prologue + "\n");
+            for (var i = 1; i < rendered.length; i++) {
+              theOutsideWorld.stdout("  " + names[i - 1] + ": " + rendered[i] + "\n");
+            }
+            return thisRuntime.nothing;
+          }, "spy-srcloc-format");
         }, "spy");
       }
     }
