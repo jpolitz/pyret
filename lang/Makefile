@@ -275,6 +275,27 @@ tests/pyret/all.jarr: phaseA $(TEST_FILES) $(TYPE_TEST_FILES) $(REG_TEST_FILES) 
 all-pyret-test: tests/pyret/all.jarr parse-test pyret-io-test
 	$(NODE) tests/pyret/all.jarr
 
+# Async-backend mirror of all-pyret-test. Same source files, same checker,
+# same harness -- only the compile flag and require-config differ. Uses a
+# separate cache dir so the sync- and async-compiled .js bytecode for each
+# builtin module never collide.
+TEST_BUILD_ASYNC=$(NODE) $(PHASEA)/pyret.jarr \
+	  --builtin-js-dir src/js/trove/ \
+		--builtin-arr-dir src/arr/trove/ \
+		--require-config src/scripts/standalone-configA-async.json \
+		--compiled-dir tests/compiled-async/ \
+		-async-backend
+
+tests/pyret/all.async.jarr: phaseA $(PHASEA)/js/runtime-async.js $(TEST_FILES) $(TYPE_TEST_FILES) $(REG_TEST_FILES) $(MAIN_TEST_FILES)
+	$(TEST_BUILD_ASYNC) \
+		--build-runnable tests/all.arr \
+    --outfile tests/pyret/all.async.jarr \
+		-check-all
+
+.PHONY : all-pyret-test-async
+all-pyret-test-async: tests/pyret/all.async.jarr
+	$(NODE) tests/pyret/all.async.jarr
+
 tests/pyret/main2.jarr: phaseA tests/pyret/main2.arr  $(TEST_FILES)
 	$(TEST_BUILD) \
 		--outfile tests/pyret/main2.jarr \

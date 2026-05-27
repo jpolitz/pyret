@@ -1567,7 +1567,11 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
           extra: extra
         });
       }
-      function toReprHelp() {
+      // toReprHelp drains the work-stack and produces the final string.
+      // In async mode the only call that can suspend is `_output.full_meth`,
+      // which we await inline. Everything else (recursing into arrays,
+      // objects, refs, etc.) is synchronous JS that just mutates the stack.
+      async function toReprHelp() {
         var top;
         function finishVal(str) {
           top.todo.pop();
@@ -1588,13 +1592,10 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
             else if (isString(next)) { finishVal(reprMethods["string"](next)); }
             else if (isOpaque(next)) { finishVal(reprMethods["opaque"](next)); }
             else if (isArray(next)) {
-              // NOTE(joe): need to copy the array below because we will pop from it
-              // Baffling bugs will result if next is passed directly
               var arrayHasBeenSeen = findSeenArray(top.arrays, next);
               if(typeof arrayHasBeenSeen === "string") {
                 finishVal(reprMethods["cyclic"](arrayHasBeenSeen));
-              }
-              else {
+              } else {
                 reprMethods["array"](next, pushTodo);
               }
             }
@@ -1606,11 +1607,9 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
               var implicit = implicitRefs(top) && top.extra.implicitRefs[top.todo.length - 1];
               if(typeof refHasBeenSeen === "string") {
                 finishVal(reprMethods["cyclic"](refHasBeenSeen));
-              }
-              else if(!isRefSet(next)) {
+              } else if(!isRefSet(next)) {
                 finishVal(reprMethods["cyclic"]("<uninitialized-ref>"));
-              }
-              else {
+              } else {
                 reprMethods["ref"](next, implicit, pushTodo);
               }
             }
@@ -1618,18 +1617,13 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
               var objHasBeenSeen = findSeenObject(top.objects, next);
               if(typeof objHasBeenSeen === "string") {
                 finishVal(reprMethods["cyclic"](objHasBeenSeen));
-              }
-              else if (next.dict["_output"] && isMethod(next.dict["_output"])) {
-                var m = getColonField(next, "_output");
-                var s = m.full_meth(next);
-                // Early exit for user-thrown exception here
-                if(isContinuation(s)) { return s; }
-                reprMethods["valueskeleton"](next, thisRuntime.unwrap(s), pushTodo);
-              }
-              else if(isDataValue(next)) {
+              } else if (next.dict["_output"] && isMethod(next.dict["_output"])) {
+                // User-defined output: may be async.
+                var skel = thisRuntime.unwrap(await getColonField(next, "_output").full_meth(next));
+                reprMethods["valueskeleton"](next, skel, pushTodo);
+              } else if(isDataValue(next)) {
                 reprMethods["data"](next, pushTodo);
-              }
-              else {
+              } else {
                 reprMethods["object"](next, pushTodo);
               }
             }
@@ -1640,106 +1634,42 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
             }
           }
           else {
-            // Done with object, array, or ref, so pop the todo list, and pop
-            // the object/array/ref itself
+            // Done with object/array/ref: pop and roll up via the type's
+            // reprMethod (turns done[] into a string in the parent's done[]).
             stack.pop();
             var prev = stack[stack.length - 1];
             prev.todo.pop();
             prev.done.push(reprMethods[top.type](top));
           }
         }
-        var finalAns = stack[0].done[0];
-        return finalAns;
+        return stack[0].done[0];
       }
-      function toReprFun($ar) {
-        var $step = 0;
-        var $ans = undefined;
-        if (thisRuntime.isActivationRecord($ar)) {
-          $step = $ar.step;
-          $ans = $ar.ans;
-        }
-        while(true) {
-          switch($step) {
-          case 0:
-            $step = 1;
-            $ans = toReprHelp();
-            if(isContinuation($ans)) { break; }
-            return $ans;
-          case 1:
-            if (stack.length === 0) {
-              thisRuntime.ffi.throwInternalError("Somehow we've drained the toRepr worklist, but have results coming back");
-            }
-            var top = stack[stack.length - 1];
-            var a = thisRuntime.unwrap($ans);
-            if (thisRuntime.ffi.isValueSkeleton(a)) {
-              reprMethods["valueskeleton"](top.todo[top.todo.length - 1], a, pushTodo);
-            } else {
-              // this is essentially finishVal
-              top.todo.pop();
-              top.done.push(a);
-            }
-            $step = 0;
-            continue;
-          }
-          break;
-        }
-        if(isContinuation($ans)) {
-          $ans.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["runtime torepr"],
-            toReprFun,
-            $step,
-            [],
-            []);
-          return $ans;
-        }
-      }
-      function reenterToReprFun(val) {
-        // arity check
-        var $step = 0;
-        var $ans = undefined;
+
+      // The Pyret-callable wrapper used by user `_output` implementations to
+      // recursively render sub-values. Returns a Promise -- compiled async
+      // callers await it; user _output methods that pipe-through (e.g.
+      // `cases(VS) ...` followed by `repr(self.x)`) get the right answer
+      // because the runtime equality cache is shared via stackOfStacks.
+      async function reenterToReprFun(val) {
         var oldStack = stack;
         function getOld(name) {
-          if(oldStack.length > 0) {
-            return oldStack[oldStack.length - 1][name];
-          }
-          else {
-            return undefined;
-          }
+          return oldStack.length > 0 ? oldStack[oldStack.length - 1][name] : undefined;
         }
-        if (thisRuntime.isActivationRecord(val)) {
-          $step = val.step;
-          $ans = val.ans;
+        stackOfStacks.push(stack);
+        stack = [{
+          arrays: getOld("arrays"),
+          objects: getOld("objects"),
+          refs: getOld("refs"),
+          todo: [val],
+          done: [],
+          extra: { implicitRefs: [false] },
+          root: val
+        }];
+        try {
+          return await toReprHelp();
+        } finally {
+          stack = stackOfStacks.pop();
         }
-        while(true) {
-          switch($step) {
-          case 0:
-            stackOfStacks.push(stack);
-            stack = [{
-              arrays: getOld("arrays"),
-              objects: getOld("objects"),
-              refs: getOld("refs"),
-              todo: [val],
-              done: [],
-              extra: { implicitRefs: [false] },
-              root: val
-            }];
-            $step = 1;
-            $ans = toReprFun();
-            if(isContinuation($ans)) { break; }
-            continue;
-          case 1:
-            stack = stackOfStacks.pop();
-            return $ans;
-          }
-          break;
-        }
-        $ans.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-          ["runtime torepr (reentrant)"],
-          reenterToReprFun,
-          $step,
-          [],
-          []);
-        return $ans;
       }
       var toReprFunPy = makeFunction(reenterToReprFun, "toReprFun");
       return reenterToReprFun(val);
@@ -3829,125 +3759,31 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return arr;
     };
 
-    var raw_array_build = function(f, len) {
-      if (thisRuntime.isActivationRecord(f)) {
-        var $ar = f;
-        $step = $ar.step;
-        $ans = $ar.ans;
-        curIdx = $ar.vars[0];
-        arr = $ar.vars[1];
-        f = $ar.args[0];
-        len = $ar.args[1];
-      } else {
-        if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-build"], 2, $a, false); }
-        thisRuntime.checkArgsInternal2("RawArrays", "raw-array-build",
-          f, thisRuntime.Function, len, thisRuntime.Number);
-        var curIdx = 0;
-        var arr = new Array();
-        var $ans;
-        var $step = 0;
-      }
-      var cleanQuit = true;
-      if (--thisRuntime.GAS <= 0) {
-        thisRuntime.EXN_STACKHEIGHT = 0;
-        cleanQuit = false;
-        $ans = thisRuntime.makeCont();
-      }
-
+    var raw_array_build = async function(f, len) {
+      if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-build"], 2, $a, false); }
+      thisRuntime.checkArgsInternal2("RawArrays", "raw-array-build",
+        f, thisRuntime.Function, len, thisRuntime.Number);
       check_array_size("raw-array-build", len);
-
-      while (cleanQuit && (curIdx < len)) {
-        if (--thisRuntime.RUNGAS <= 0) {
-          thisRuntime.EXN_STACKHEIGHT = 0;
-          cleanQuit = false;
-          $ans = thisRuntime.makeCont();
-          break;
-        }
-        switch($step) {
-        case 0:
-          $step = 1;
-          $ans = f.app(curIdx);
-          if(isContinuation($ans)) {
-            cleanQuit = false;
-            break;
-          }
-        case 1:
-          arr.push($ans);
-          $step = 0;
-          curIdx++;
-          continue;
-        }
-        break;
+      var arr = new Array(len);
+      for (var i = 0; i < len; i++) {
+        arr[i] = await f.app(i);
       }
-      if(cleanQuit) {
-        return arr;
-      }
-      else {
-        $ans.stack[thisRuntime.EXN_STACKHEIGHT++] =
-          thisRuntime.makeActivationRecord(["raw-array-build"], raw_array_build, $step, [f, len], [curIdx, arr]);
-        return $ans;
-      }
+      return arr;
     };
 
-    var raw_array_build_opt = function(f, len) {
-      if (thisRuntime.isActivationRecord(f)) {
-        var $ar = f;
-        $step = $ar.step;
-        $ans = $ar.ans;
-        curIdx = $ar.vars[0];
-        arr = $ar.vars[1];
-        f = $ar.args[0];
-        len = $ar.args[1];
-      } else {
-        if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-build-opt"], 2, $a, false); }
-        thisRuntime.checkArgsInternal2("RawArrays", "raw-array-build-opt",
-          f, thisRuntime.Function, len, thisRuntime.Number);
-        var curIdx = 0;
-        var arr = new Array();
-        var $ans;
-        var $step = 0;
-      }
-      var cleanQuit = true;
-      if (--thisRuntime.GAS <= 0) {
-        thisRuntime.EXN_STACKHEIGHT = 0;
-        $ans = thisRuntime.makeCont();
-        cleanQuit = false;
-      }
-
+    var raw_array_build_opt = async function(f, len) {
+      if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-build-opt"], 2, $a, false); }
+      thisRuntime.checkArgsInternal2("RawArrays", "raw-array-build-opt",
+        f, thisRuntime.Function, len, thisRuntime.Number);
       check_array_size("raw-array-build-opt", len);
-      while (cleanQuit && curIdx < len) {
-        if (--thisRuntime.RUNGAS <= 0) {
-          thisRuntime.EXN_STACKHEIGHT = 0;
-          $ans = thisRuntime.makeCont();
-          cleanQuit = false;
+      var arr = [];
+      for (var i = 0; i < len; i++) {
+        var res = await f.app(i);
+        if (thisRuntime.ffi.isSome(res)) {
+          arr.push(thisRuntime.getField(res, "value"));
         }
-        switch($step) {
-        case 0:
-          $step = 1;
-          $ans = f.app(curIdx);
-          // no need to break
-        case 1:
-          if (thisRuntime.isContinuation($ans)) {
-            cleanQuit = false;
-            break;
-          }
-          if (thisRuntime.ffi.isSome($ans)) {
-            arr.push(thisRuntime.getField($ans, "value"));
-          }
-          $step = 0;
-          curIdx++;
-          continue;
-        }
-        break;
       }
-      if(cleanQuit) {
-        return arr;
-      }
-      else {
-        $ans.stack[thisRuntime.EXN_STACKHEIGHT++] =
-          thisRuntime.makeActivationRecord(["raw-array-build-opt"], raw_array_build_opt, $step, [f, len], [curIdx, arr]);
-        return $ans;
-      }
+      return arr;
     };
 
     var raw_array_get = function(arr, ix) {
@@ -4050,431 +3886,163 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       make5: makeFunction(function(a, b, c, d, e) { return [a, b, c, d, e]; }, "raw-array:make5"),
     });
 
-    var raw_array_fold = function(f, init, arr, start) {
+    /* -----------------------------------------------------------------
+       raw_array_* / raw_list_* in the async backend.
+
+       Each of these takes a Pyret function and applies it to elements
+       of a collection. In the default runtime they're long because they
+       have to interleave the user-fn calls with RUNGAS bookkeeping and
+       hand-rolled state-machine resumption. With async/await each is a
+       trivial async for-loop: await f.app(...) and accumulate. checkPause
+       at the top of f.app handles fuel, so these helpers don't need their
+       own gas accounting.
+       ----------------------------------------------------------------- */
+
+    var raw_array_fold = async function(f, init, arr, start) {
       if (arguments.length !== 4) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-fold"], 4, $a, false); }
       thisRuntime.checkArgsInternalInline("RawArrays", "raw-array-fold",
         f, thisRuntime.Function, init, thisRuntime.Any, arr, thisRuntime.RawArray, start, thisRuntime.Number);
-      var currentIndex = -1;
-      var currentAcc = init;
-      var length = arr.length;
-      function foldHelp() {
-        while(currentIndex < (length - 1)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          currentIndex += 1;
-          var res = f.app(currentAcc, arr[currentIndex], currentIndex + start);
-          if(isContinuation(res)) { return res; }
-          currentAcc = res;
-        }
-        return currentAcc;
+      var acc = init;
+      for (var i = 0; i < arr.length; i++) {
+        acc = await f.app(acc, arr[i], i + start);
       }
-      function foldFun($ar) {
-        if (thisRuntime.isInitializedActivationRecord($ar)) {
-          currentAcc = $ar.ans;
-        }
-        var res = foldHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-array-fold"],
-            foldFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return foldFun();
+      return acc;
     };
 
-
     var raw_array_bool_mapper = function(name, good, bad) {
-      return function(f, arr, start) {
+      return async function(f, arr, start) {
         if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC([name], 3, $a, false); }
         thisRuntime.checkArgsInternal3("RawArrays", name,
           f, thisRuntime.Function, arr, thisRuntime.RawArray, start, thisRuntime.Number);
-        var currentIndex = start - 1;
-        var length = arr.length;
-        function foldHelp() {
-          while(currentIndex < (length - 1)) {
-            if(--thisRuntime.RUNGAS <= 0) {
-              thisRuntime.EXN_STACKHEIGHT = 0;
-              return thisRuntime.makeCont();
-            }
-            currentIndex += 1;
-            var res = f.app(arr[currentIndex], currentIndex);
-            if(isContinuation(res)) { return res; }
-            if(res === bad) { return res; }
-          }
-          return good;
+        for (var i = start; i < arr.length; i++) {
+          var res = await f.app(arr[i], i);
+          if (res === bad) { return res; }
         }
-        function foldFun($ar) {
-          var res = foldHelp();
-          if(isContinuation(res)) {
-            res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-              [name],
-              foldFun,
-              0, // step doesn't matter here
-              [], []);
-          }
-          return res;
-        }
-        return foldFun();
+        return good;
       };
     };
 
     var raw_array_and_mapi = raw_array_bool_mapper("raw-array-and-mapi", true, false);
     var raw_array_or_mapi = raw_array_bool_mapper("raw-array-or-mapi", false, true);
 
-
-    var raw_array_map = function(f, arr) {
+    var raw_array_map = async function(f, arr) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-map"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-map",
         f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var currentIndex = -1;
-      var length = arr.length;
-      var newArray = new Array(length);
-      function mapHelp() {
-        while(currentIndex < (length - 1)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          currentIndex += 1;
-          var res = f.app(arr[currentIndex]);
-          if(isContinuation(res)) { return res; }
-          newArray[currentIndex] = res;
-        }
-        return newArray;
+      var out = new Array(arr.length);
+      for (var i = 0; i < arr.length; i++) {
+        out[i] = await f.app(arr[i]);
       }
-      function mapFun($ar) {
-        if (thisRuntime.isInitializedActivationRecord($ar)) {
-          newArray[currentIndex] = $ar.ans;
-        }
-        var res = mapHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-array-map"],
-            mapFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return mapFun();
+      return out;
     };
 
-    var raw_array_each = function(f, arr) {
+    var raw_array_each = async function(f, arr) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-each"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-each",
         f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var currentIndex = -1;
-      var length = arr.length;
-      function eachHelp() {
-        while(currentIndex < (length - 1)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          currentIndex += 1;
-          var res = f.app(arr[currentIndex]);
-          if(isContinuation(res)) { return res; }
-        }
-        return nothing;
+      for (var i = 0; i < arr.length; i++) {
+        await f.app(arr[i]);
       }
-      function eachFun($ar) {
-        var res = eachHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-array-each"],
-            eachFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return eachFun();
+      return nothing;
     };
 
-    var raw_array_mapi = function(f, arr) {
+    var raw_array_mapi = async function(f, arr) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-mapi"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-mapi",
         f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var currentIndex = -1;
-      var length = arr.length;
-      var newArray = new Array(length);
-      function mapHelp() {
-        while(currentIndex < (length - 1)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          currentIndex += 1;
-          var res = f.app(arr[currentIndex], currentIndex);
-          if(isContinuation(res)) { return res; }
-          newArray[currentIndex] = res;
-        }
-        return newArray;
+      var out = new Array(arr.length);
+      for (var i = 0; i < arr.length; i++) {
+        out[i] = await f.app(arr[i], i);
       }
-      function mapFun($ar) {
-        if (thisRuntime.isInitializedActivationRecord($ar)) {
-          newArray[currentIndex] = $ar.ans;
-        }
-        var res = mapHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-array-mapi"],
-            mapFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return mapFun();
+      return out;
     };
 
-    var raw_list_map = function(f, lst) {
+    var raw_list_map = async function(f, lst) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-map"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("Lists", "raw-list-map",
         f, thisRuntime.Function, lst, thisRuntime.List);
-      var currentAcc = [];
-      var currentLst = lst;
-      var currentFst;
-      function foldHelp() {
-        while(thisRuntime.ffi.isLink(currentLst)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          currentFst = thisRuntime.getColonField(currentLst, "first");
-          currentLst = thisRuntime.getColonField(currentLst, "rest");
-          var res = f.app(currentFst);
-          if(isContinuation(res)) { return res; }
-          currentAcc.push(res);
-        }
-        return thisRuntime.ffi.makeList(currentAcc);
+      var out = [];
+      var cur = lst;
+      while (thisRuntime.ffi.isLink(cur)) {
+        out.push(await f.app(thisRuntime.getColonField(cur, "first")));
+        cur = thisRuntime.getColonField(cur, "rest");
       }
-      function foldFun($ar) {
-        if (thisRuntime.isInitializedActivationRecord($ar)) {
-          currentAcc.push($ar.ans);
-        }
-        var res = foldHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-list-map"],
-            foldFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return foldFun();
+      return thisRuntime.ffi.makeList(out);
     };
 
-
-    var raw_list_join_str_last = function(lst, sep, lastSep) {
+    var raw_list_join_str_last = async function(lst, sep, lastSep) {
       if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-join-str-last"], 3, $a, false); }
       thisRuntime.checkArgsInternal3("Lists", "raw-list-join-str-last",
         lst, thisRuntime.List, sep, thisRuntime.String, lastSep, thisRuntime.String);
-      var currentAcc = [];
-      var currentLst = lst;
-      var currentFst;
-      function foldHelp() {
-        while(thisRuntime.ffi.isLink(currentLst)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          currentFst = thisRuntime.getColonField(currentLst, "first");
-          currentLst = thisRuntime.getColonField(currentLst, "rest");
-          var res = tostring.app(currentFst);
-          if(isContinuation(res)) { return res; }
-          currentAcc.push(res);
-        }
-        if (currentAcc.length <= 1) { return currentAcc.join(sep); }
-        var lastElem = currentAcc.pop();
-        return currentAcc.join(sep) + lastSep + lastElem;
+      var parts = [];
+      var cur = lst;
+      while (thisRuntime.ffi.isLink(cur)) {
+        // tostring may call user _output; await for the async case.
+        parts.push(await tostring.app(thisRuntime.getColonField(cur, "first")));
+        cur = thisRuntime.getColonField(cur, "rest");
       }
-      function foldFun($ar) {
-        if (thisRuntime.isInitializedActivationRecord($ar)) {
-          currentAcc.push($ar.ans);
-        }
-        var res = foldHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-list-join-str-last"],
-            foldFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return foldFun();
+      if (parts.length <= 1) { return parts.join(sep); }
+      var last = parts.pop();
+      return parts.join(sep) + lastSep + last;
     };
 
-    /**
-     * Similar to `raw_array_map`, but applies a specific function to
-     * the first item in the array
-     */
-    var raw_array_map1 = function(f1, f, arr) {
+    // raw_array_map but f1 handles index 0 (used by string interpolation).
+    var raw_array_map1 = async function(f1, f, arr) {
       if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-map1"], 3, $a, false); }
       thisRuntime.checkArgsInternal3("RawArrays", "raw-array-map1",
         f1, thisRuntime.Function, f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var currentIndex = -1;
-      var length = arr.length;
-      var newArray = new Array(length);
-      function mapHelp() {
-        while(currentIndex < (length - 1)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          currentIndex += 1;
-          var toCall = currentIndex === 0 ? f1 : f;
-          var res = toCall.app(arr[currentIndex]);
-          if(isContinuation(res)) { return res; }
-          newArray[currentIndex] = res;
-        }
-        return newArray;
+      var out = new Array(arr.length);
+      for (var i = 0; i < arr.length; i++) {
+        out[i] = await (i === 0 ? f1 : f).app(arr[i]);
       }
-      function mapFun($ar) {
-        if (thisRuntime.isInitializedActivationRecord($ar)) {
-          newArray[currentIndex] = $ar.ans;
-        }
-        var res = mapHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-array-map1"],
-            mapFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return mapFun();
+      return out;
     };
 
-    var raw_list_filter = function(f, lst) {
+    var raw_list_filter = async function(f, lst) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-filter"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("Lists", "raw-list-filter",
         f, thisRuntime.Function, lst, thisRuntime.List);
-      var currentAcc = [];
-      var currentLst = lst;
-      var currentFst;
-      function foldHelp() {
-        while(thisRuntime.ffi.isLink(currentLst)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          currentFst = thisRuntime.getColonField(currentLst, "first");
-          currentLst = thisRuntime.getColonField(currentLst, "rest");
-          var res = f.app(currentFst);
-          if(isContinuation(res)) { return res; }
-          if(!(isBoolean(res))) {
-            return thisRuntime.ffi.throwNonBooleanCondition(["raw-list-filter"], "Boolean", res);
-          }
-          if(isPyretTrue(res)){
-            currentAcc.push(currentFst);
-          }
+      var out = [];
+      var cur = lst;
+      while (thisRuntime.ffi.isLink(cur)) {
+        var fst = thisRuntime.getColonField(cur, "first");
+        cur = thisRuntime.getColonField(cur, "rest");
+        var res = await f.app(fst);
+        if (!isBoolean(res)) {
+          return thisRuntime.ffi.throwNonBooleanCondition(["raw-list-filter"], "Boolean", res);
         }
-        return thisRuntime.ffi.makeList(currentAcc);
+        if (isPyretTrue(res)) { out.push(fst); }
       }
-      function foldFun($ar) {
-        if (thisRuntime.isInitializedActivationRecord($ar)) {
-          if($ar.ans) {
-            currentAcc.push(currentFst);
-          }
-        }
-        var res = foldHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-list-filter"],
-            foldFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return foldFun();
+      return thisRuntime.ffi.makeList(out);
     };
 
-    var raw_array_filter = function(f, arr) {
+    var raw_array_filter = async function(f, arr) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-filter"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-filter",
         f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var currentIndex = -1;
-      var length = arr.length;
-      var newArray = new Array();
-      function filterHelp() {
-        while(currentIndex < (length - 1)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          currentIndex += 1;
-          var res = f.app(arr[currentIndex]);
-          if(isContinuation(res)) { return res; }
-          if(!(isBoolean(res))) {
-            return thisRuntime.ffi.throwNonBooleanCondition(["raw-array-filter"], "Boolean", res);
-          }
-          if(isPyretTrue(res)){
-            newArray.push(arr[currentIndex]);
-          }
+      var out = [];
+      for (var i = 0; i < arr.length; i++) {
+        var res = await f.app(arr[i]);
+        if (!isBoolean(res)) {
+          return thisRuntime.ffi.throwNonBooleanCondition(["raw-array-filter"], "Boolean", res);
         }
-        return newArray;
+        if (isPyretTrue(res)) { out.push(arr[i]); }
       }
-      function filterFun($ar) {
-        if (thisRuntime.isInitializedActivationRecord($ar)) {
-          if($ar.ans) { newArray.push(arr[currentIndex]); }
-        }
-        var res = filterHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-array-filter"],
-            filterFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return filterFun();
+      return out;
     };
 
-    var raw_list_fold = function(f, init, lst) {
+    var raw_list_fold = async function(f, init, lst) {
       if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-fold"], 3, $a, false); }
       thisRuntime.checkArgsInternal3("Lists", "raw-list-fold",
         f, thisRuntime.Function, init, thisRuntime.Any, lst, thisRuntime.List);
-      var currentAcc = init;
-      var currentLst = lst;
-      function foldHelp() {
-        while(thisRuntime.ffi.isLink(currentLst)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          var fst = thisRuntime.getColonField(currentLst, "first");
-          currentLst = thisRuntime.getColonField(currentLst, "rest");
-          currentAcc = f.app(currentAcc, fst);
-          if(isContinuation(currentAcc)) { return currentAcc; }
-        }
-        return currentAcc;
+      var acc = init;
+      var cur = lst;
+      while (thisRuntime.ffi.isLink(cur)) {
+        var fst = thisRuntime.getColonField(cur, "first");
+        cur = thisRuntime.getColonField(cur, "rest");
+        acc = await f.app(acc, fst);
       }
-      function foldFun($ar) {
-        if (thisRuntime.isInitializedActivationRecord($ar)) {
-          currentAcc = $ar.ans;
-        }
-        var res = foldHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-list-fold"],
-            foldFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return foldFun();
+      return acc;
     };
 
 
@@ -5265,6 +4833,24 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         return hasBrand(val, brand);
       }, predName + "-pred");
     }
+    /* ------------------------------------------------------------------
+       makeVariantConstructor (async-backend rewrite).
+
+       The default runtime builds the constructor body as a JS source
+       string and evals it. That made the constructor a *sync* function,
+       which is fine when _checkAnn can suspend via the Cont trampoline.
+       In async mode _checkAnn returns a Promise (when the annotation is
+       non-flat / non-cheap), so the constructor must `await` it.
+
+       Per the lessons-learned in async-transform-instructions.md, the
+       eval'd metaprogramming is dropped here in favour of a plain JS
+       closure -- the resulting code is straightforward to read and the
+       sync/async split is right there in front of you (we choose an
+       async closure when any field has a non-flat annotation, sync
+       otherwise). Functional behaviour is unchanged: build the dict,
+       run any per-field ann checks, wrap mutable fields in
+       makeUnsafeSetRef, return a freshly-Construct'd value.
+       ------------------------------------------------------------------ */
     function makeVariantConstructor(
       loc,
       checkAnnsThunk,
@@ -5278,98 +4864,90 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       reflName,
       reflFields,
       constructor, _ignored) {
-      if (_ignored) { // POLYGLOT
+      if (_ignored) { // POLYGLOT compat: legacy callers had an extra arg.
         reflFields = constructor;
         constructor = _ignored;
       }
 
-      function quote(s) {
-        if (typeof s === "string") {
-          return JSON.stringify(s);
-        }
-        else if (typeof s === "number" || typeof s === "boolean") {
-          return s;
-        }
-        else {
-          console.error("Internal error: tried to quote ", s);
-          throw new Error("Internal error: cannot quote " + String(s));
-        }
-      }
-      function constArr(arr) { return "[" + arr.map(quote).join(",") + "]"; }
-
-      function makeConstructor() {
+      // Lazily compute (once) the actual constructor function. We can't do
+      // it eagerly because checkAnnsThunk depends on the surrounding module
+      // being fully loaded.
+      var Construct = null;
+      var theFun = null;
+      function buildOnce() {
+        if (theFun !== null) { return theFun; }
         var argNames = constructor.$fieldNames;
-        var flat = true;
         var checkAnns = checkAnnsThunk();
-        checkAnns.forEach(function(a) {
-          if(!a.flat) {
-            flat = false;
-          }
-        });
-        var constructorBody =
-          "var dict = thisRuntime.create(base);\n";
-        allArgs.forEach(function(a, i) {
-          if(allMuts[i]) {
-            var checkIndex = checkArgs.indexOf(a);
-            if(checkIndex >= 0) {
-              constructorBody += "dict['" + argNames[i] + "'] = thisRuntime.makeUnsafeSetRef(checkAnns[" + checkIndex + "], " + a + ", checkLocs[" + checkIndex + "]);\n";
-            }
-            else {
-              constructorBody += "dict['" + argNames[i] + "'] = thisRuntime.makeUnsafeSetRef(thisRuntime.Any, " + a + ", " + constArr(loc) + ");\n";
-            }
-          }
-          else {
-            constructorBody += "dict['" + argNames[i] + "'] = " + a + ";\n";
-          }
-        });
-        constructorBody += "return new Construct(dict, brands)";
+        var flat = checkAnns.every(function(a) { return a.flat; });
+        Construct = thisRuntime.makeDataTypeConstructor(
+          reflName, reflFields, allArgs.length, allMuts, constructor, false, loc);
 
-        //var arityCheck = "thisRuntime.checkArityC(loc, " + allArgs.length + ", arguments);";
-        var arityCheck = "var $l = arguments.length; if($l !== 1) { var $t = new Array($l); for(var $i = 0;$i < $l;++$i) { $t[$i] = arguments[$i]; } thisRuntime.checkArityC(L[7],1,$t,false); }";
-
-        var checksPlusBody = "";
-        if(!flat) {
-          checksPlusBody = "return thisRuntime.checkConstructorArgs2(checkAnns, [" + checkArgs.join(",") + "], checkLocs, " + constArr(checkMuts) + ", function() {\n" +
-            constructorBody + "\n" +
-          "});";
-        }
-        else {
-          checkArgs.forEach(function(a, i) {
-            if(checkMuts[i]) {
-              checksPlusBody += "var checkAns = thisRuntime.isGraphableRef(" + checkArgs[i] + ") || thisRuntime._checkAnn(checkLocs[" + i + "], checkAnns[" + i + "], " + checkArgs[i] + ");";
-            }
-            else {
-              checksPlusBody += "var checkAns = thisRuntime._checkAnn(checkLocs[" + i + "], checkAnns[" + i + "], " + checkArgs[i] + ");";
-            }
-            //checksPlusBody += "if(thisRuntime.isContinuation(checkAns)) { return checkAns; }";
-          });
-          checksPlusBody += constructorBody;
+        // The pre-computed mapping from each ann-checked arg (in checkArgs
+        // order) to its index in allArgs, so we can look up "this allArgs[i]
+        // is the same identity as checkArgs[k]" without repeated indexOf.
+        var checkIndexForArg = new Array(allArgs.length);
+        for (var i = 0; i < allArgs.length; i++) {
+          checkIndexForArg[i] = checkArgs.indexOf(allArgs[i]);
         }
 
-        var constrFun = "return function(" + allArgs.join(",") + ") {\n" +
-          "if(arguments.length !== " + allArgs.length + ") {\n" +
-          "thisRuntime.checkConstructorArityC(" + constArr(loc) + ", " + quote(reflName) + ", " + allArgs.length + ", thisRuntime.cloneArgs.apply(null, arguments));\n" +
-          "}\n" +
-          checksPlusBody + "\n" +
-          "}";
+        function buildDict(args) {
+          var dict = thisRuntime.create(base);
+          for (var i = 0; i < allArgs.length; i++) {
+            if (allMuts[i]) {
+              var ci = checkIndexForArg[i];
+              var ann = (ci >= 0) ? checkAnns[ci] : thisRuntime.Any;
+              var refLoc = (ci >= 0) ? checkLocs[ci] : loc;
+              dict[argNames[i]] = thisRuntime.makeUnsafeSetRef(ann, args[i], refLoc);
+            } else {
+              dict[argNames[i]] = args[i];
+            }
+          }
+          return new Construct(dict, brands);
+        }
 
-        var outerArgs = ["thisRuntime", "checkAnns", "checkLocs", "brands", "reflFields", "constructor", "base"];
-        var outerFun = Function.apply(null, outerArgs.concat(["\"use strict\";\n"
-        + "var Construct = thisRuntime.makeDataTypeConstructor(" + quote(reflName) + ", reflFields,"  + allArgs.length + ", " + constArr(allMuts) + ", constructor, false, " + constArr(loc) + ");"
-        + constrFun]));
-        return outerFun(thisRuntime, checkAnns, checkLocs, brands, reflFields, constructor, base);
+        function checkArity(args) {
+          if (args.length !== allArgs.length) {
+            thisRuntime.checkConstructorArityC(loc, reflName,
+              allArgs.length, thisRuntime.cloneArgs.apply(null, args));
+          }
+        }
+
+        if (flat) {
+          // All annotations are flat (sync); we can build a sync constructor.
+          theFun = function() {
+            checkArity(arguments);
+            for (var i = 0; i < checkArgs.length; i++) {
+              var argIndex = allArgs.indexOf(checkArgs[i]);
+              var val = arguments[argIndex];
+              if (checkMuts[i] && thisRuntime.isGraphableRef(val)) { continue; }
+              thisRuntime._checkAnn(checkLocs[i], checkAnns[i], val);
+            }
+            return buildDict(arguments);
+          };
+        } else {
+          // At least one ann is non-flat -- _checkAnn may return a Promise.
+          // The constructor must be async so callers `await` it.
+          theFun = async function() {
+            var args = arguments;
+            checkArity(args);
+            for (var i = 0; i < checkArgs.length; i++) {
+              var argIndex = allArgs.indexOf(checkArgs[i]);
+              var val = args[argIndex];
+              if (checkMuts[i] && thisRuntime.isGraphableRef(val)) { continue; }
+              await thisRuntime._checkAnn(checkLocs[i], checkAnns[i], val);
+            }
+            return buildDict(args);
+          };
+        }
+        return theFun;
       }
 
-      //CONSOLE.log(String(outerFun));
-
+      // The Pyret-facing constructor: a PFunction whose .app dispatches to
+      // the (lazily) built sync-or-async constructor.
       var funToReturn = makeFunction(function() {
-        var theFun = makeConstructor();
-        funToReturn.app = theFun;
-        //CONSOLE.log("Calling constructor ", quote(reflName), arguments);
-        //CONSOLE.trace();
-        var res = theFun.apply(null, arguments)
-        //CONSOLE.log("got ", res);
-        return res;
+        var f = buildOnce();
+        funToReturn.app = f;  // self-replacing fast-path after first call
+        return f.apply(null, arguments);
       }, reflName);
       funToReturn.$constrFor = reflName;
       return funToReturn;

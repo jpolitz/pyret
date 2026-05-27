@@ -1410,18 +1410,24 @@ fun compile-split-update(compiler, loc, opt-dest, obj :: N.AVal, fields :: List<
   field-names = CL.map_list(lam(f): j-str(f.name) end, fields)
   field-locs = CL.map_list(lam(f): compiler.get-loc(f.l) end, fields)
   {new-cases; after-update-label} = get-new-cases(compiler, opt-dest, opt-body, ans)
+  # checkRefAnns calls user ann predicates (via safeCall) and only after they
+  # all pass does it perform the unsafeSetRef updates. In async mode that
+  # return value is a Promise, and if we don't await it the assignments to
+  # the refs haven't happened yet when the next statement runs -- visible in
+  # test-refs "cases" and "update multiple" blocks where reads see stale
+  # values. Awaiting fixes that.
   c-block(
     j-block([clist:
         # Update step before the call, so that if it runs out of gas, the resumer goes to the right step
         j-expr(j-assign(step, after-update-label)),
-        j-expr(j-assign(ans, rt-method("checkRefAnns",
+        j-expr(j-assign(ans, maybe-await(compiler.options, rt-method("checkRefAnns",
           [clist:
             compiled-obj,
             j-list(false, field-names),
             j-list(false, compiled-field-vals),
             j-list(false, field-locs),
             compiler.get-loc(loc),
-            compiler.get-loc(obj.l)]))),
+            compiler.get-loc(obj.l)])))),
         j-break]),
     new-cases)
 

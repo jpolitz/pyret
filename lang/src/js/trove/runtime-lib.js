@@ -3,7 +3,14 @@
   nativeRequires: ["pyret-base/js/runtime"],
   provides: {
     values: {
-      "make-runtime": "tany"
+      "make-runtime": "tany",
+      // Returns whether *this* runtime is the async-backend variant.
+      // compile-lib uses this to make inner compiles (e.g. run-to-result
+      // inside test-compile-helper) inherit the host's backend choice, so
+      // a host program compiled with -async-backend never has to load
+      // sync-compiled inner modules onto an async runtime (the "polyglot"
+      // failure mode).
+      "is-async-backend": "tany"
     },
     types: {
       "Runtime": "tany"
@@ -28,8 +35,13 @@
         }))
       }));
     }
+    function isAsyncBackend() {
+      // Sync function: just returns a plain JS boolean wrapped as Pyret.
+      return runtime.makeBoolean(runtime.isAsyncBackend === true);
+    }
     var values = {
-      "make-runtime": runtime.makeFunction(makeRuntime, "make-runtime")
+      "make-runtime": runtime.makeFunction(makeRuntime, "make-runtime"),
+      "is-async-backend": runtime.makeFunction(isAsyncBackend, "is-async-backend")
     };
     var types = {
       Runtime: annRuntime

@@ -713,52 +713,40 @@
       };
     }
 
+    // Iteratively combines per-key recursive-equality results. The third
+    // arg `recEq` is the recursive-equality callback passed in by whichever
+    // runtime is invoking `_equals` -- in the default backend it returns
+    // Equality values synchronously; in the async backend it returns a
+    // Promise. We handle both with one thenable check: when recEq.app
+    // returns a Promise we tail into a Promise chain that re-enters the
+    // loop after each settle. (The default-backend code path -- a sync
+    // while-switch over a $step state machine that bounces through Cont --
+    // had a typo and a reference to an undefined `equalFun`, so the Cont
+    // branch was effectively dead even there. This rewrite drops it.)
     function eqHelp(self, other, selfKeys, hasKey, getValue, recEq) {
-      if (runtime.isActivationRecord(self)) {
-        var $ar = sekf;
-        $step = $ar.step;
-        $ans = $ar.ans;
-        curIdx = $ar.vars[0];
-        curEq = $ar.vars[1];
-        self = $ar.args[0];
-        other = $ar.args[1];
-        selfKeys = $ar.args[2];
-        hasKey = $ar.args[3];
-        getValue = $ar.args[4];
-        recEq = $ar.args[5];
-      } else {
-        var curIdx = 0;
-        var curEq = runtime.ffi.equal;
-        var $step = 0;
-        var $ans = undefined;
-      }
-      while(true) {
-        switch($step) {
-        case 0:
-          if (curIdx == selfKeys.length)
-            return curEq;
-          $step = 1;
+      var curIdx = 0;
+      var curEq = runtime.ffi.equal;
+      function step() {
+        while (curIdx < selfKeys.length) {
           if (!hasKey.full_meth(other, selfKeys[curIdx])) {
             return runtime.ffi.notEqual.app("", self, other);
           }
-          $ans = recEq.app(getValue.full_meth(self, selfKeys[curIdx]), getValue.full_meth(other, selfKeys[curIdx]));
-          if (runtime.isContinuation($ans)) {
-            $ans.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-              stackFrameDesc,
-              equalFun,
-              $step,
-              [],
-              []);
-            return $ans;
+          var res = recEq.app(
+            getValue.full_meth(self, selfKeys[curIdx]),
+            getValue.full_meth(other, selfKeys[curIdx]));
+          if (res && typeof res.then === "function") {
+            return res.then(function(eq) {
+              curEq = runtime.combineEquality(curEq, eq);
+              curIdx++;
+              return step();
+            });
           }
-          break;
-        case 1:
-          curEq = runtime.combineEquality(curEq, $ans);
+          curEq = runtime.combineEquality(curEq, res);
           curIdx++;
-          $step = 0;
-          break;
         }
+        return curEq;
       }
+      return step();
     }
 
 
