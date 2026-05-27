@@ -109,13 +109,28 @@ require-node-dependencies.js).
 Passes (verified): phaseA→phaseB→phaseC bootstrap is a fixed point
 and phase0 is updated.
 
-### Async mode (`make all-pyret-test-async` / individual tests)
+### Async mode (`make all-pyret-test-async`) — aggregate
 
-`make all-pyret-test-async` — the aggregate test that imports every
-test file — has been verified to pass test-by-test under
-`-async-backend`.  Running each test file individually with
-`-check-all -async-backend` (after rebuilding with the fixed compiler
-and the inner-async-cache):
+```
+Passed: 13422; Failed: 7; Ended in Error: 5; Total: 13429
+real    35m57.773s
+```
+
+13,422 / 13,429 (99.948% pass rate) under `-async-backend`.
+
+- 7 failures are all in `test-errors.arr`'s stack-trace-format
+  assertions — the async backend produces a different stack-frame
+  shape than the Cont-based trampoline (extra trampoline /
+  runtime-helper frames appear because `await` shows up in the JS
+  call stack), so the literal raw-array equality assertions that bake
+  in the exact list of stack frames don't match.  These are
+  expected-different-by-design under async; the underlying error
+  detection is correct, only the displayed frame list differs.
+- 5 errors are the pre-existing vega-ESM chart failures (`test-charts`
+  blocks loading vega-min.js — same 5 errors as `make pyret-test`
+  under default mode).
+
+For reference, the per-test individual runs:
 
 | Test file | Time | Result |
 |---|---|---|
