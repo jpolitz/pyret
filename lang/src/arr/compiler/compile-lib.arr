@@ -336,14 +336,24 @@ fun compile-program-with(worklist :: List<ToCompile>, modules, shadow options) -
   cache = modules
   loadables = for map(w from worklist):
     uri = w.locator.uri()
+    # Only the standard library (builtin:// URIs) is safe to memoize
+    # across calls: the source for any given URI is constant.  For
+    # user-code locators (file://, in-memory virtual schemes) two
+    # different test scenarios can reuse the same URI with different
+    # source content, which would cause a stale cache hit.
+    cacheable = is-builtin-module(uri)
     full-key = uri + "|" + opt-key
     if cache.has-key-now(uri):
       cache.get-value-now(uri)
-    else if use-inner-cache and inner-async-cache.has-key-now(full-key):
+    else if use-inner-cache and cacheable and inner-async-cache.has-key-now(full-key):
       block:
-        cached = inner-async-cache.get-value-now(full-key)
-        cache.set-now(uri, cached)
-        cached
+        cached-pair = inner-async-cache.get-value-now(full-key)
+        # cached-pair is {canonical; returned} — store canonical (with
+        # non-local provides) in cache for downstream uses that look up
+        # by uri, and return the same value the original compile path
+        # returned (after localize-provides and on-compile).
+        cache.set-now(uri, cached-pair.{0})
+        cached-pair.{1}
       end
     else:
       block:
@@ -357,15 +367,16 @@ fun compile-program-with(worklist :: List<ToCompile>, modules, shadow options) -
         # - One local for calling on-compile with and serializing
         # - One canonicalized for the local cache
         cache.set-now(uri, loadable)
-        when use-inner-cache:
-          inner-async-cache.set-now(full-key, loadable)
-        end
         local-loadable = cases(Loadable) loadable:
           | module-as-string(provides, env, post-env, result) =>
             module-as-string(AU.localize-provides(provides, env), env, post-env, result)
         end
         # allow on-compile to return a new loadable
-        options.on-compile(w.locator, local-loadable, trace)
+        returned = options.on-compile(w.locator, local-loadable, trace)
+        when use-inner-cache and cacheable:
+          inner-async-cache.set-now(full-key, {loadable; returned})
+        end
+        returned
       end
     end
   end
