@@ -3354,13 +3354,14 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
           var val = await program(thisRuntime, namespace);
           onDone(new SuccessResult(val, getStatsObj(start)));
         } catch (e) {
-          var exn;
-          if (isPyretException(e)) {
-            exn = e;
-          } else {
-            exn = new PyretFailException(e);
-          }
-          onDone(makeFailureResult(exn, getStatsObj(start)));
+          // Match the default runtime: pass the raw exception through.
+          // Consumers (execThunk in particular) special-case non-Pyret
+          // exceptions by wrapping them in makeMessageException so the
+          // checker's `exn-unwrap(err).render-reason()` always has a
+          // render-reason method to call. Pre-wrapping in PyretFailException
+          // here would set PyretFailException.exn = the raw JS Error, which
+          // doesn't satisfy that contract.
+          onDone(makeFailureResult(e, getStatsObj(start)));
         }
       })();
     }
@@ -5084,27 +5085,31 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       }, "toReprArray");
     }
 
-    function spy(loc, message, locs, names, vals) {
+    // spy is awkward because srcloc.format is itself a Pyret method that may
+    // return a Promise in async mode, and we string-concatenate its result
+    // into the prologue. The default runtime gets away with raw string-concat
+    // here because format returns a sync string; in async mode it returns a
+    // Promise and "...at " + Promise{<pending>} + ")" stringifies to garbage.
+    // Awaiting the format call is the minimum fix.
+    async function spy(loc, message, locs, names, vals) {
       var callback = undefined;
       if (thisRuntime.hasParam("onSpy")) { callback = thisRuntime.getParam("onSpy"); }
       if (typeof callback === "function") {
         return callback(loc, message, locs, names, vals);
-      } else {
-        var prologue = "Spying";
-        return thisRuntime.safeCall(function() {
-          vals = [message].concat(vals);
-          return raw_array_map(torepr, vals);
-        }, function(rendered) {
-          if (rendered[0] !== "\"\"")
-            prologue += " " + rendered[0];
-          prologue += " (at " + thisRuntime.getField(makeSrcloc(loc), "format").app(true) + ")";
-          theOutsideWorld.stdout(prologue + "\n");
-          for (var i = 1; i < rendered.length; i++) {
-            theOutsideWorld.stdout("  " + names[i - 1] + ": " + rendered[i] + "\n");
-          }
-          return thisRuntime.nothing;
-        }, "spy");
       }
+      var prologue = "Spying";
+      vals = [message].concat(vals);
+      var rendered = await raw_array_map(torepr, vals);
+      if (rendered[0] !== "\"\"") {
+        prologue += " " + rendered[0];
+      }
+      var locStr = await thisRuntime.getField(makeSrcloc(loc), "format").app(true);
+      prologue += " (at " + locStr + ")";
+      theOutsideWorld.stdout(prologue + "\n");
+      for (var i = 1; i < rendered.length; i++) {
+        theOutsideWorld.stdout("  " + names[i - 1] + ": " + rendered[i] + "\n");
+      }
+      return thisRuntime.nothing;
     }
 
     var runtimeNamespaceBindings = {

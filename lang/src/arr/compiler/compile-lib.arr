@@ -338,30 +338,29 @@ fun compile-program-with(worklist :: List<ToCompile>, modules, options) -> Compi
         else:
           none
         end
-      cases(Option) cached-loadable:
-        | some(l) =>
-          cache.set-now(uri, l)
-          l
-        | none =>
-          provide-map = dict-map(
-              w.dependency-map,
-              lam(_, v): v.uri() end
-          )
-          options.before-compile(w.locator)
-          {loadable :: Loadable; trace :: List} = compile-module(w.locator, provide-map, cache, options)
-          # I feel like here we want to generate two copies of the loadable:
-          # - One local for calling on-compile with and serializing
-          # - One canonicalized for the local cache
-          cache.set-now(uri, loadable)
-          when use-inner-cache and is-builtin-module(uri):
-            inner-async-builtin-cache.set-now(uri, loadable)
+      cases(Option) cached-loadable block:
+        | some(l) => block:
+            cache.set-now(uri, l)
+            l
           end
-          local-loadable = cases(Loadable) loadable:
-            | module-as-string(provides, env, post-env, result) =>
-              module-as-string(AU.localize-provides(provides, env), env, post-env, result)
+        | none => block:
+            provide-map = dict-map(
+                w.dependency-map,
+                lam(_, v): v.uri() end
+            )
+            options.before-compile(w.locator)
+            {loadable :: Loadable; trace :: List} = compile-module(w.locator, provide-map, cache, options)
+            cache.set-now(uri, loadable)
+            when use-inner-cache and is-builtin-module(uri):
+              inner-async-builtin-cache.set-now(uri, loadable)
+            end
+            local-loadable = cases(Loadable) loadable:
+              | module-as-string(provides, env, post-env, result) =>
+                module-as-string(AU.localize-provides(provides, env), env, post-env, result)
+            end
+            # allow on-compile to return a new loadable
+            options.on-compile(w.locator, local-loadable, trace)
           end
-          # allow on-compile to return a new loadable
-          options.on-compile(w.locator, local-loadable, trace)
       end
     else:
       cache.get-value-now(uri)
