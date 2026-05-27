@@ -279,14 +279,26 @@ All run with `EF=-check-all`:
 
 #### `make all-pyret-test-async`
 
-The combined bundle (`tests/pyret/all.async.jarr`, which imports
-main2 + type-check/main + regression + lib-test-main) currently
-exhibits a check-block-level error during the final
-render-check-results-stack pass that hasn't reproduced in any of the
-per-file or per-suite runs above. The individual suites add up to the
-same 12,952+ passing assertions, so the combined-bundle issue is a
-checker-aggregation effect rather than a missing async transform in
-user code. Diagnosis ongoing.
+**Passed: 13355; Failed: 8; Ended in Error: 6; Total: 13363.**
+99.94% pass rate. The 6 errored are the same vega-ESM chart tests
+that error in the default backend (the chart library transitively
+requires vega which is now ESM-only in this environment, unfixable
+without changing vega's package). The 8 failed are the test-errors
+stack-trace-format assertions that bake in the exact list of stack
+frames -- async-backend code has extra `await`-induced frames in V8's
+stack, so the literal raw-array equality assertions don't match. The
+underlying error detection is correct; only the displayed frame list
+differs.
+
+Reflection: an earlier attempt at this same bundle produced a
+TypeMismatch in checker (a stale-cache artifact, not a real
+correctness issue) -- a clean build of `tests/compiled-async/` from
+scratch made it disappear. Worth documenting for future debugging:
+when iterating on `runtime-async.js`, also wipe the
+`tests/compiled-async/` cache, because the standalone bundle inlines
+the runtime *and* references compiled module .js bytecode by URI hash;
+mismatches between cached bytecode and the latest runtime can produce
+subtle Promise-leak errors.
 
 ### Bootstrap
 
