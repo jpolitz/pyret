@@ -713,52 +713,31 @@
       };
     }
 
+    // Backend-agnostic: expressed via runtime.safeCall so it is stack-safe on
+    // the trampoline backend (safeCall returns a Cont that bubbles) AND correct
+    // on the async backend (safeCall awaits the user equality). No explicit
+    // Cont/activation-record handling, so this single shared trove works under
+    // both runtimes.
     function eqHelp(self, other, selfKeys, hasKey, getValue, recEq) {
-      if (runtime.isActivationRecord(self)) {
-        var $ar = sekf;
-        $step = $ar.step;
-        $ans = $ar.ans;
-        curIdx = $ar.vars[0];
-        curEq = $ar.vars[1];
-        self = $ar.args[0];
-        other = $ar.args[1];
-        selfKeys = $ar.args[2];
-        hasKey = $ar.args[3];
-        getValue = $ar.args[4];
-        recEq = $ar.args[5];
-      } else {
-        var curIdx = 0;
-        var curEq = runtime.ffi.equal;
-        var $step = 0;
-        var $ans = undefined;
-      }
-      while(true) {
-        switch($step) {
-        case 0:
-          if (curIdx == selfKeys.length)
-            return curEq;
-          $step = 1;
-          if (!hasKey.full_meth(other, selfKeys[curIdx])) {
-            return runtime.ffi.notEqual.app("", self, other);
-          }
-          $ans = recEq.app(getValue.full_meth(self, selfKeys[curIdx]), getValue.full_meth(other, selfKeys[curIdx]));
-          if (runtime.isContinuation($ans)) {
-            $ans.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-              stackFrameDesc,
-              equalFun,
-              $step,
-              [],
-              []);
-            return $ans;
-          }
-          break;
-        case 1:
-          curEq = runtime.combineEquality(curEq, $ans);
-          curIdx++;
-          $step = 0;
-          break;
+      var curEq = runtime.ffi.equal;
+      function loop(idx) {
+        if (idx >= selfKeys.length) { return curEq; }
+        if (!hasKey.full_meth(other, selfKeys[idx])) {
+          return runtime.ffi.notEqual.app("", self, other);
         }
+        return runtime.safeCall(
+          function() {
+            return recEq.app(getValue.full_meth(self, selfKeys[idx]),
+                             getValue.full_meth(other, selfKeys[idx]));
+          },
+          function(ans) {
+            curEq = runtime.combineEquality(curEq, ans);
+            if (runtime.ffi.isNotEqual(curEq)) { return curEq; }
+            return loop(idx + 1);
+          },
+          "string-dict eqHelp");
       }
+      return loop(0);
     }
 
 

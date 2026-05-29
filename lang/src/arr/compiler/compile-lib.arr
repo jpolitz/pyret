@@ -296,7 +296,25 @@ end
 
 type CompiledProgram = {loadables :: List<Loadable>, modules :: SD.MutableStringDict<Loadable>}
 
+# When the host runtime is the async backend, any program we compile here will
+# run on an async runtime (this process, or a fresh R.make-runtime() -- which is
+# also async, since the require-config maps pyret-base/js/runtime to
+# runtime-async.js). So nested compiler-at-runtime compiles must use the async
+# backend, with a separate on-disk cache so async- and trampoline-compiled
+# loadables for the same URI never collide (the cache key is source-hash only).
+fun match-runtime-async-backend(options):
+  if R.is-async-backend() and not(options.async-backend):
+    options.{
+      async-backend: true,
+      compiled-cache: options.compiled-cache + "-async"
+    }
+  else:
+    options
+  end
+end
+
 fun compile-program-with(worklist :: List<ToCompile>, modules, options) -> CompiledProgram block:
+  shadow options = match-runtime-async-backend(options)
   cache = modules
   loadables = for map(w from worklist):
     uri = w.locator.uri()

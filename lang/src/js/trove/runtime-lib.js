@@ -3,7 +3,8 @@
   nativeRequires: ["pyret-base/js/runtime"],
   provides: {
     values: {
-      "make-runtime": "tany"
+      "make-runtime": "tany",
+      "is-async-backend": "tany"
     },
     types: {
       "Runtime": "tany"
@@ -28,8 +29,15 @@
         }))
       }));
     }
+    // True iff the host runtime (the one this compiler is running on) is the
+    // async backend. Used to route nested compiler-at-runtime compiles to the
+    // async backend so generated code matches the runtime it will run on.
+    function isAsyncBackend() {
+      return runtime.makeBoolean(runtime.isAsyncBackend === true);
+    }
     var values = {
-      "make-runtime": runtime.makeFunction(makeRuntime, "make-runtime")
+      "make-runtime": runtime.makeFunction(makeRuntime, "make-runtime"),
+      "is-async-backend": runtime.makeFunction(isAsyncBackend, "is-async-backend")
     };
     var types = {
       Runtime: annRuntime
