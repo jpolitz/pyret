@@ -7,6 +7,7 @@ import pprint as PP
 
 import file("anf.arr") as N
 import file("anf-loop-compiler.arr") as AL
+import file("anf-loop-compiler-async.arr") as ALA
 import file("ast-util.arr") as AU
 import file("compile-structs.arr") as C
 import file("concat-lists.arr") as CL
@@ -82,7 +83,12 @@ fun trace-make-compiled-pyret(add-phase, program-ast, env, post-env, provides, o
   anfed = add-phase("ANFed", N.anf-program(program-ast))
   flatness-env = add-phase("Build flatness env", FL.make-prog-flatness-env(anfed, post-env, env))
   flat-provides = add-phase("Get flat-provides", FL.get-flat-provides(provides, env, post-env, flatness-env, anfed))
-  compiled = anfed.visit(AL.splitting-compiler(env, add-phase, flatness-env, flat-provides, post-env, options))
+  compiled =
+    if options.async-backend:
+      anfed.visit(ALA.splitting-compiler(env, add-phase, flatness-env, flat-provides, post-env, options))
+    else:
+      anfed.visit(AL.splitting-compiler(env, add-phase, flatness-env, flat-provides, post-env, options))
+    end
   {flat-provides; add-phase("Generated JS", C.ok(ccp-dict(compiled)))}
 end
 
@@ -96,7 +102,12 @@ fun make-compiled-pyret(program-ast, env, post-env, provides, options) -> { C.Pr
   #each(println, anfed.tosource().pretty(80))
   flatness-env = FL.make-prog-flatness-env(anfed, post-env, env)
   flat-provides = FL.get-flat-provides(provides, env, post-env, flatness-env, anfed)
-  compiled = anfed.visit(AL.splitting-compiler(env, flatness-env, flat-provides, post-env, options))
+  compiled =
+    if options.async-backend:
+      anfed.visit(ALA.splitting-compiler(env, flatness-env, flat-provides, post-env, options))
+    else:
+      anfed.visit(AL.splitting-compiler(env, flatness-env, flat-provides, post-env, options))
+    end
   {flat-provides; ccp-dict(compiled)}
 end
 
