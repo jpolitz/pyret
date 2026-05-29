@@ -314,3 +314,55 @@ new-bootstrap: no-diff-standalone $(PHASE0BUILD)
 	cp -r $(PHASEC)/js $(PHASE0)/
 no-diff-standalone: phaseB phaseC
 	diff $(PHASEB)/pyret.jarr $(PHASEC)/pyret.jarr
+
+# ============================================================================
+# Async backend (new targets; nothing above is modified).
+#
+# These build with -async-backend, link runtime-async.js via the async require
+# config, and use a SEPARATE compiled cache (tests/compiled-async). The on-disk
+# module cache is keyed on source hash only -- not on backend or check-mode --
+# so async- and trampoline-compiled output for the same module must never share
+# a cache directory, and all async builds here use -check-all consistently.
+# ============================================================================
+ASYNC_CONFIG    = src/scripts/standalone-configA-async.json
+ASYNC_COMPILED  = tests/compiled-async
+ASYNC_TEST_BUILD = $(NODE) $(PHASEA)/pyret.jarr \
+	  --builtin-js-dir src/js/trove/ \
+	  --builtin-arr-dir src/arr/trove/ \
+	  --require-config $(ASYNC_CONFIG) \
+	  --compiled-dir $(ASYNC_COMPILED)/ \
+	  -async-backend
+
+# Build any single file with the async backend (reuses the shared async builtin
+# cache). Produces $*.jarr (same name as the sync rule -- separate invocations).
+%.async-jarr: $(PHASEA)/pyret.jarr %.arr
+	$(ASYNC_TEST_BUILD) \
+	  --outfile $*.jarr \
+	  --build-runnable $*.arr \
+	  -check-all
+
+# Full main2 suite under the async backend.
+tests/pyret/main2-async.jarr: phaseA tests/pyret/main2.arr $(TEST_FILES)
+	$(ASYNC_TEST_BUILD) \
+	  --outfile tests/pyret/main2-async.jarr \
+	  --build-runnable tests/pyret/main2.arr \
+	  -check-all
+
+.PHONY : pyret-test-async
+pyret-test-async: phaseA tests/pyret/main2-async.jarr
+	$(NODE) tests/pyret/main2-async.jarr
+
+# Full all.arr suite under the async backend (the acceptance target).
+tests/pyret/all-async.jarr: phaseA $(TEST_FILES) $(TYPE_TEST_FILES) $(REG_TEST_FILES) $(MAIN_TEST_FILES)
+	$(ASYNC_TEST_BUILD) \
+	  --build-runnable tests/all.arr \
+	  --outfile tests/pyret/all-async.jarr \
+	  -check-all
+
+.PHONY : all-pyret-test-async
+all-pyret-test-async: tests/pyret/all-async.jarr parse-test pyret-io-test
+	$(NODE) tests/pyret/all-async.jarr
+
+.PHONY : test-clean-async
+test-clean-async:
+	$(call RMDIR, tests/compiled-async)
