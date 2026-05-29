@@ -366,3 +366,34 @@ all-pyret-test-async: tests/pyret/all-async.jarr parse-test pyret-io-test
 .PHONY : test-clean-async
 test-clean-async:
 	$(call RMDIR, tests/compiled-async)
+
+# Async self-host / bootstrap: build the compiler with -async-backend using the
+# default phaseA compiler, then have THAT async-compiled compiler rebuild itself
+# with -async-backend, and diff. A clean diff is the async fixpoint -- the
+# async-compiled compiler reproduces itself byte-for-byte. (Demonstrates the
+# async backend is self-hosting; the default new-bootstrap is unchanged.)
+ASYNC_BOOT_C1 = build/async-boot-compiled-1
+ASYNC_BOOT_C2 = build/async-boot-compiled-2
+
+# NOTE: the jarrs live in build/phaseA/ so that the standalone harness finds its
+# js deps (amd_loader.js etc.) at <this-pyret-dir>/js/ -- this-pyret-dir is the
+# dir of the *running* compiler, and build/phaseA/js/ is where they are copied.
+build/phaseA/pyret-async-1.jarr: $(PHASEA)/pyret.jarr $(COMPILER_FILES) $(PHASEA_ALL_DEPS) $(patsubst src/%,$(PHASEA)/%,$(PARSERS))
+	$(NODE) $(PHASEA)/pyret.jarr --outfile build/phaseA/pyret-async-1.jarr \
+	  --build-runnable src/arr/compiler/pyret.arr \
+	  --builtin-js-dir src/js/trove/ --builtin-arr-dir src/arr/trove/ \
+	  --compiled-dir $(ASYNC_BOOT_C1)/ \
+	  -async-backend -no-check-mode \
+	  --require-config $(ASYNC_CONFIG)
+
+build/phaseA/pyret-async-2.jarr: build/phaseA/pyret-async-1.jarr
+	$(NODE) build/phaseA/pyret-async-1.jarr --outfile build/phaseA/pyret-async-2.jarr \
+	  --build-runnable src/arr/compiler/pyret.arr \
+	  --builtin-js-dir src/js/trove/ --builtin-arr-dir src/arr/trove/ \
+	  --compiled-dir $(ASYNC_BOOT_C2)/ \
+	  -async-backend -no-check-mode \
+	  --require-config $(ASYNC_CONFIG)
+
+.PHONY : new-bootstrap-async
+new-bootstrap-async: build/phaseA/pyret-async-2.jarr
+	diff build/phaseA/pyret-async-1.jarr build/phaseA/pyret-async-2.jarr && echo "ASYNC FIXPOINT OK"

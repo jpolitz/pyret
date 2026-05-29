@@ -90,7 +90,12 @@ because they are built on these primitives:
 - `standalone-configA-async.json` maps `pyret-base/js/runtime.js` →
   `build/phaseA/js/runtime-async.js`.
 - New Makefile targets `%.async-jarr`, `pyret-test-async`, `all-pyret-test-async`,
-  `test-clean-async`, using the separate `tests/compiled-async/` cache.
+  `test-clean-async`, and `new-bootstrap-async`, using the separate
+  `tests/compiled-async/` cache.
+- `new-bootstrap-async` builds the compiler with `-async-backend` via phaseA,
+  then has that async-compiled compiler rebuild itself with `-async-backend`,
+  and diffs: a clean diff (the async fixpoint) shows the async backend
+  self-hosts byte-for-byte.
 
 ### 6. Polyglot / compiler-at-runtime
 The hardest part. When an async-compiled program runs the compiler at runtime
@@ -128,6 +133,7 @@ Measured on this VM (Node 18.19.1, headless — no browser/DOM).
 | `make all-pyret-test` (default) | Passed 13357; Failed 0; Ended in Error 5 |
 | `make all-pyret-test-async` | Passed 13342; Failed 12; Ended in Error 5 |
 | `make new-bootstrap` (default) | phaseB == phaseC (byte-identical, 33192726 b); fixpoint holds |
+| `make new-bootstrap-async` (new) | pyret-async-1 == pyret-async-2 (byte-identical, 26164872 b); async fixpoint |
 | `test-compile-lib` (async, isolated) | 74/74 |
 | `test-error-rendering` (async, isolated) | 58/58 |
 
