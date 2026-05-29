@@ -48,6 +48,13 @@ define("http", [], function () {return http;});
 resolve = nodeRequire("resolve");
 define("resolve", [], function () {return resolve;});
 
-vegaMin = nodeRequire(nodeRequire('node:path').dirname(nodeRequire.resolve('vega')) + '/vega.js');
+try {
+  vegaMin = nodeRequire(nodeRequire('node:path').dirname(nodeRequire.resolve('vega')) + '/vega.js');
+} catch (e) {
+  // Recent vega is ESM-only; a synchronous require() of it aborts the whole
+  // standalone at load under Node 18. Charts won't work without it, but every
+  // non-chart program would otherwise fail to even start. Degrade gracefully.
+  global.vega = global.vega || undefined;
+}
 define("vegaMin", [], function () {return global.vega;});
 
