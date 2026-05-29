@@ -732,8 +732,13 @@ fun compile-expr-lettable(compiler, e :: N.ALettable) -> { CL.ConcatList<J.JStmt
       compiled-args = CL.map_list(lam(a): a.visit(compiler).exp end, args)
       call = wrap-with-srcnode(l, rt-method(f, compiled-args))
       prep = cl-sing(j-expr(j-assign(compiler.cur-apploc, compiler.get-loc(l))))
-      val = if app-info.needs-step: j-await(call) else: call end
-      { prep; val }
+      # Always await prim-apps. Many prims (the binops _plus/_lessthan/..., which
+      # dispatch to user _plus/_lessthan/... methods) can return a Promise even
+      # when the flatness analysis marks them needs-step:false. The trampoline
+      # backend tolerates a returned Cont via the enclosing function loop; async
+      # has no such net, so a non-awaited Promise would leak. Awaiting a
+      # non-Promise is a harmless identity.
+      { prep; j-await(call) }
     | a-update(l, obj, fields) =>
       compiled-obj = obj.visit(compiler).exp
       compiled-field-vals = CL.map_list(lam(fld): fld.value.visit(compiler).exp end, fields)

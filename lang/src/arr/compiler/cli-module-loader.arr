@@ -301,6 +301,16 @@ type CLIContext = {
   url-file-mode :: CS.UrlFileMode
 }
 
+# When the host runtime is the async backend, builtins must be loaded from (and
+# written to) the "-async" sibling of the cache dir, so the cached loadables we
+# pick up are async-compiled and match the async runtime. Without this the
+# locators happily load trampoline-compiled builtins from e.g. tests/compiled,
+# which then run (and leak Conts/Promises) on the async runtime. (Lessons #3:
+# retarget the context's cache-base-dir too, not just options.compiled-cache.)
+fun async-cache-dir(d :: String) -> String:
+  if R.is-async-backend(): d + "-async" else: d end
+end
+
 fun get-real-path(current-load-path :: String, this-path :: String):
   if Filesystem.is-absolute(this-path):
     this-path
@@ -321,7 +331,7 @@ fun locate-file(ctxt :: CLIContext, rel-path :: String):
   real-path = get-real-path(clp, rel-path)
   new-context = ctxt.{current-load-path: Filesystem.dirname(real-path)}
   if Filesystem.exists(real-path):
-    some(CL.located(get-file-locator(ctxt.cache-base-dir, real-path), new-context))
+    some(CL.located(get-file-locator(async-cache-dir(ctxt.cache-base-dir), real-path), new-context))
   else:
     none
   end
@@ -367,7 +377,7 @@ fun module-finder(ctxt :: CLIContext, dep :: CS.Dependency):
         new-context = ctxt.{current-load-path: Filesystem.dirname(real-path)}
         CL.located(locator, new-context)
       else if protocol == "builtin-test":
-        l = get-builtin-test-locator(ctxt.cache-base-dir, args.first)
+        l = get-builtin-test-locator(async-cache-dir(ctxt.cache-base-dir), args.first)
         force-check-mode = l.{
           method get-options(self, options):
             options.{ checks: "all", type-check: false }
@@ -393,7 +403,7 @@ fun module-finder(ctxt :: CLIContext, dep :: CS.Dependency):
         raise("Unknown import type: " + protocol)
       end
     | builtin(modname) =>
-      CL.located(get-builtin-locator(ctxt.cache-base-dir, ctxt.compiled-read-only-dirs, modname), ctxt)
+      CL.located(get-builtin-locator(async-cache-dir(ctxt.cache-base-dir), ctxt.compiled-read-only-dirs.map(async-cache-dir), modname), ctxt)
   end
 end
 
