@@ -3443,82 +3443,21 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       };
     }
 
-    function safeCall(fun, after, stackFrame) {
-      var $ans = undefined;
-      var $step = 0;
-      var skipLoop = false;
-      if (thisRuntime.isActivationRecord(fun)) {
-        var $ar = fun;
-        $step = $ar.step;
-        $ans = $ar.ans;
-        fun = $ar.args[0];
-        after = $ar.args[1];
-        stackFrame = $ar.args[2];
-        $fun_ans = $ar.vars[0];
-      }
-      if (--thisRuntime.GAS <= 0 || --thisRuntime.RUNGAS <= 0) {
-        thisRuntime.EXN_STACKHEIGHT = 0;
-        skipLoop = true;
-        $ans = thisRuntime.makeCont();
-      }
-      while(!skipLoop) {
-        switch($step) {
-        case 0:
-          $step = 1;
-          $ans = fun();
-          if(isContinuation($ans)) { break;}
-          continue;
-        case 1:
-          var $fun_ans = $ans;
-          $step = 2;
-          $ans = after($fun_ans);
-          if(isContinuation($ans)) { break;}
-          continue;
-        case 2: ++thisRuntime.GAS; return $ans;
-        }
-        break;
-      }
-      $ans.stack[thisRuntime.EXN_STACKHEIGHT++] =
-        thisRuntime.makeActivationRecord(
-          "safeCall for " + stackFrame,
-          safeCall,
-          $step,
-          [ fun, after, stackFrame ],
-          [ $fun_ans ]
-        );
-      return $ans;
+    // ASYNC BACKEND: a "stack-safe call" is just await fun() then after(...).
+    // fun() and after(...) may each return a value or a Promise; awaiting
+    // handles both. The whole annotation/method/constructor machinery that is
+    // built on safeCall therefore becomes async-correct for free: it returns
+    // this Promise, and the compiled call site awaits it.
+    async function safeCall(fun, after, stackFrame) {
+      var funResult = await fun();
+      return after(funResult);
     }
 
-    function eachLoop(fun, start, stop) {
-      var i = start;
-      function restart(_) {
-        var res = thisRuntime.nothing;
-        if (--thisRuntime.GAS <= 0) {
-          thisRuntime.EXN_STACKHEIGHT = 0;
-          res = thisRuntime.makeCont();
-        }
-        while(!thisRuntime.isContinuation(res)) {
-          if (--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            res = thisRuntime.makeCont();
-          }
-          else {
-            if(i >= stop) {
-              ++thisRuntime.GAS;
-              // NOTE(joe): this is the one true return value/exit of the loop
-              return thisRuntime.nothing;
-            }
-            else {
-              res = fun.app(i);
-              i = i + 1;
-            }
-          }
-        }
-        res.stack[thisRuntime.EXN_STACKHEIGHT++] =
-          thisRuntime.makeActivationRecord("eachLoop", restart, true, [], []);
-        return res;
+    async function eachLoop(fun, start, stop) {
+      for (var i = start; i < stop; i++) {
+        await fun.app(i);
       }
-      return restart();
+      return thisRuntime.nothing;
     }
 
     var RUN_ACTIVE = false;
@@ -3527,266 +3466,52 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
 
     var queuedRuns = [];
 
+    // ASYNC BACKEND: running a program is just awaiting it. `program` is the
+    // kickoff thunk (e.g. the module loader chain); it returns a value or a
+    // Promise. We await it and report Success/Failure via onDone, exactly like
+    // the trampoline's finishSuccess/finishFailure. Nested runs (run-task, the
+    // checker) work because the parent is genuinely suspended on a pauseStack
+    // Promise while the child runs to completion; we save/restore the fuel
+    // counter around the child.
+    var ASYNC_RUN_DEPTH = 0;
     function run(program, namespace, options, onDone) {
-      // CONSOLE.log("In run2");
-      if(RUN_ACTIVE) {
-        onDone(makeFailureResult(thisRuntime.ffi.makeMessageException("Internal: run called while already running")));
-        return;
-      }
-      RUN_ACTIVE = true;
       var start;
       function startTimer() {
-        if (typeof window !== "undefined" && window.performance) {
-          start = window.performance.now();
-        } else if (typeof process !== "undefined" && process.hrtime) {
-          start = process.hrtime();
-        }
+        if (typeof window !== "undefined" && window.performance) { start = window.performance.now(); }
+        else if (typeof process !== "undefined" && process.hrtime) { start = process.hrtime(); }
       }
       function endTimer() {
-        if (typeof window !== "undefined" && window.performance) {
-          return window.performance.now() - start;
-        } else if (typeof process !== "undefined" && process.hrtime) {
-          return process.hrtime(start);
-        }
+        if (typeof window !== "undefined" && window.performance) { return window.performance.now() - start; }
+        else if (typeof process !== "undefined" && process.hrtime) { return process.hrtime(start); }
       }
-      function getStats() {
-        return { bounces: BOUNCES, tos: TOS, time: endTimer() };
-      }
-      function finishFailure(exn) {
-        RUN_ACTIVE = false;
-        delete activeThreads[thisThread.id];
-        onDone(makeFailureResult(exn, getStats()));
-      }
-      function finishSuccess(answer) {
-        RUN_ACTIVE = false;
-        delete activeThreads[thisThread.id];
-        onDone(new SuccessResult(answer, getStats()));
-      }
+      function getStats() { return { bounces: 0, tos: 0, time: endTimer() }; }
 
+      var initialGas = options.initialGas || thisRuntime.INITIAL_PAUSE_GAS;
+      var savedGas = thisRuntime.GAS;
+      var savedActive = RUN_ACTIVE;
+      RUN_ACTIVE = true;
+      ASYNC_RUN_DEPTH++;
       startTimer();
-      var that = this;
-      var theOneTrueStackTop = ["top-of-stack"]
-      var kickoff = makeActivationRecord(
-        "<top of stack>",
-        function(ignored) {
-          return program(thisRuntime, namespace);
-        },
-        0,
-        [],
-        []
-      );
-      var theOneTrueStack = [kickoff];
-      var theOneTrueStart = {};
-      var val = theOneTrueStart;
-      var theOneTrueStackHeight = 1;
-      var BOUNCES = 0;
-      var TOS = 0;
-
-      var sync = options.sync || false;
-      var initialGas = options.initialGas || thisRuntime.INITIAL_GAS;
-      var initialRunGas = options.initialRunGas || initialGas * 10;
       thisRuntime.GAS = initialGas;
-      thisRuntime.RUNGAS = sync ? Infinity : initialRunGas;
 
-      var threadIsCurrentlyPaused = false;
-      var threadIsDead = false;
-      currentThreadId += 1;
-      // Special case of the first thread to run in between breaks.
-      // This is the only thread notified of the break, others just die
-      // silently.
-      if(Object.keys(activeThreads).length === 0) {
-        var breakFun = function() {
-          threadIsCurrentlyPaused = true;
-          threadIsDead = true;
-          finishFailure(new PyretFailException(thisRuntime.ffi.userBreak));
-        };
-      }
-      else {
-        var breakFun = function() {
-          threadIsCurrentlyPaused = true;
-          threadIsDead = true;
-        };
+      function finish(action) {
+        thisRuntime.GAS = savedGas;
+        RUN_ACTIVE = savedActive;
+        ASYNC_RUN_DEPTH--;
+        action();
       }
 
-      var thisThread = {
-        handlers: {
-          resume: function(restartVal) {
-            if(!threadIsCurrentlyPaused) { throw new Error("Stack already running"); }
-            if(threadIsDead) { throw new Error("Failed to resume; thread has been killed"); }
-            threadIsCurrentlyPaused = false;
-            val = restartVal;
-            TOS++;
-            RUN_ACTIVE = true;
-            util.suspend(iter);
-          },
-          break: breakFun,
-          error: function(errVal) {
-            threadIsCurrentlyPaused = true;
-            threadIsDead = true;
-            var exn;
-            if(isPyretException(errVal)) {
-              exn = errVal;
-            } else {
-              exn = new PyretFailException(errVal);
-            }
-            finishFailure(exn);
-          }
-        },
-        pause: function() {
-          threadIsCurrentlyPaused = true;
-        },
-        id: currentThreadId
-      };
-      activeThreads[currentThreadId] = thisThread;
-
-      // iter :: () -> Undefined
-      // This function should not return anything meaningful, as state
-      // and fallthrough are carefully managed.
-      function iter() {
-        // CONSOLE.log("In run2::iter, GAS is ", thisRuntime.GAS);
-        // If the thread is dead, return has already been processed
-        if (threadIsDead) {
-          return;
-        }
-        // If the thread is paused, something is wrong; only resume() should
-        // be used to re-enter
-        if (threadIsCurrentlyPaused) { throw new Error("iter entered during stopped execution"); }
-        var loop = true;
-        while (loop) {
-          loop = false;
-          try {
-            if (manualPause !== null) {
-              var thePause = manualPause;
-              manualPause = null;
-              return pauseStack(function(restarter) {
-                thePause.setHandlers({
-                  resume: function() { restarter.resume(val); },
-                  break: restarter.break,
-                  error: restarter.error
-                });
-              });
-            }
-            while(theOneTrueStackHeight > 0) {
-              if(!sync && thisRuntime.RUNGAS <= 1) {
-                thisRuntime.RUNGAS = initialRunGas;
-                TOS++;
-                // CONSOLE.log("Setting timeout to resume iter");
-                util.suspend(iter);
-                return;
-              }
-              var next = theOneTrueStack[--theOneTrueStackHeight];
-              // CONSOLE.log("ActivationRecord[" + theOneTrueStackHeight + "] = " + JSON.stringify(next, null, "  "));
-              theOneTrueStack[theOneTrueStackHeight] = undefined;
-              // CONSOLE.log("theOneTrueStack = ", theOneTrueStack);
-              // CONSOLE.log("Setting ans to " + JSON.stringify(val, null, "  "));
-              if(!isContinuation(val)) {
-                next.ans = val;
-              }
-              // CONSOLE.log("GAS = ", thisRuntime.GAS);
-
-
-
-              if (next.fun instanceof Function) {
-                val = next.fun(next);
-              }
-              else if (!(next instanceof ActivationRecord)) {
-                CONSOLE.log("Our next stack frame doesn't look right!");
-                CONSOLE.log(JSON.stringify(next));
-                CONSOLE.log(theOneTrueStack);
-                throw false;
-              }
-              if(next.fun instanceof Function && thisRuntime.isContinuation(val)) {
-                // console.log("BOUNCING");
-                BOUNCES++;
-                thisRuntime.GAS = initialGas;
-                thisRuntime.RUNGAS = initialRunGas;
-                for(var i = val.stack.length - 1; i >= 0; i--) {
-    //              console.error(e.stack[i].vars.length + " width;" + e.stack[i].vars + "; from " + e.stack[i].from + "; frame " + theOneTrueStackHeight);
-                  theOneTrueStack[theOneTrueStackHeight++] = val.stack[i];
-                }
-                // console.log("The new stack height is ", theOneTrueStackHeight);
-                // console.log("theOneTrueStack = ", theOneTrueStack.slice(0, theOneTrueStackHeight).map(function(f) {
-                //   if (f && f.from) { return f.from.toString(); }
-                //   else { return f; }
-                // }));
-
-                if(isPause(val)) {
-                  thisThread.pause();
-                  val.pause.setHandlers(thisThread.handlers);
-                  if(val.resumer) { val.resumer(val.pause); }
-                  return;
-                }
-                else if(thisRuntime.isCont(val)) {
-                  if(sync) {
-                    loop = true;
-                    // DON'T return; we synchronously loop back to the outer while loop
-                    continue;
-                  }
-                  else {
-                    TOS++;
-                    util.suspend(iter);
-                    return;
-                  }
-                }
-              }
-              // CONSOLE.log("Frame returned, val = " + JSON.stringify(val, null, "  "));
-            }
-          } catch(e) {
-//            console.error("Exceptions should no longer be thrown: ", e);
-            if(thisRuntime.isCont(e)) {
-              // CONSOLE.log("BOUNCING");
-              BOUNCES++;
-              thisRuntime.GAS = initialGas;
-              for(var i = e.stack.length - 1; i >= 0; i--) {
-              // CONSOLE.error(e.stack[i].vars.length + " width;" + e.stack[i].vars + "; from " + e.stack[i].from + "; frame " + theOneTrueStackHeight);
-                theOneTrueStack[theOneTrueStackHeight++] = e.stack[i];
-              }
-              // CONSOLE.log("The new stack height is ", theOneTrueStackHeight);
-              // CONSOLE.log("theOneTrueStack = ", theOneTrueStack.slice(0, theOneTrueStackHeight).map(function(f) {
-              //   if (f && f.from) { return f.from.toString(); }
-              //   else { return f; }
-              // }));
-
-              if(isPause(e)) {
-                thisThread.pause();
-                e.pause.setHandlers(thisThread.handlers);
-                if(e.resumer) { e.resumer(e.pause); }
-                return;
-              }
-              else if(thisRuntime.isCont(e)) {
-                if(sync) {
-                  loop = true;
-                  // DON'T return; we synchronously loop back to the outer while loop
-                  continue;
-                }
-                else {
-                  TOS++;
-                  util.suspend(iter);
-                  return;
-                }
-              }
-            }
-
-            else if(isPyretException(e)) {
-              while(theOneTrueStackHeight > 0) {
-                var next = theOneTrueStack[--theOneTrueStackHeight];
-                theOneTrueStack[theOneTrueStackHeight] = "sentinel";
-                e.pyretStack.push(next.from);
-              }
-              finishFailure(e);
-              return;
-            } else {
-              finishFailure(e);
-              return;
-            }
-          }
-        }
-        finishSuccess(val);
-        return;
-      }
-      thisRuntime.GAS = initialGas;
-      thisRuntime.RUNGAS = initialRunGas;
-      iter();
+      Promise.resolve(null).then(function() {
+        return program(thisRuntime, namespace);
+      }).then(function(answer) {
+        finish(function() { onDone(new SuccessResult(answer, getStats())); });
+      }, function(e) {
+        finish(function() {
+          // Pass the exception through unchanged: PyretFailExceptions stay as
+          // such; a raw JS error keeps its .stack so handalone can report it.
+          onDone(makeFailureResult(e, getStats()));
+        });
+      });
     }
 
     var TRACE_DEPTH = 0;
@@ -3868,36 +3593,61 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return "  " + stackStr.join("\n  ");
     }
 
+    // ASYNC BACKEND: user interruption (e.g. a Stop button) is cooperative.
+    // breakAll sets a flag that the next checkPause() yield observes and turns
+    // into a thrown userBreak, which unwinds the awaiting Pyret stack to run().
+    var breakRequested = false;
     function breakAll() {
       RUN_ACTIVE = false;
-      var threadsToBreak = activeThreads;
-      var keys = Object.keys(threadsToBreak);
-      activeThreads = {};
-      for(var i = 0; i < keys.length; i++) {
-        threadsToBreak[keys[i]].handlers.break();
-      }
+      breakRequested = true;
     }
 
+    // ASYNC BACKEND: the fuel meter. Decrement on every function entry; while
+    // fuel remains, return undefined synchronously (awaiting it is a no-op).
+    // When it runs out, yield to the event loop (so pending events — input, a
+    // Stop click — get a turn) and then honor any pending break by throwing.
+    var INITIAL_PAUSE_GAS = theOutsideWorld.initialGas || 100000;
+    function checkPause() {
+      if (--thisRuntime.GAS > 0) { return undefined; }
+      thisRuntime.GAS = INITIAL_PAUSE_GAS;
+      return new Promise(function(resolve, reject) {
+        setImmediate(function() {
+          if (breakRequested) {
+            breakRequested = false;
+            reject(new PyretFailException(thisRuntime.ffi.userBreak));
+          } else {
+            resolve(undefined);
+          }
+        });
+      });
+    }
+
+    // ASYNC BACKEND: a paused Pyret stack is just a pending Promise. The
+    // resumer is handed a restarter that settles it: resume -> resolve,
+    // error -> reject (as a PyretFailException), break -> reject(userBreak).
+    // A Pyret call site that needs to suspend (input, sleep, run-task, native
+    // module loading) returns this Promise, and the compiled `await` suspends
+    // the JS stack until it settles.
     function pauseStack(resumer) {
-      // CONSOLE.log("Pausing stack: ", RUN_ACTIVE, new Error().stack);
-      RUN_ACTIVE = false;
       thisRuntime.EXN_STACKHEIGHT = 0;
-      var pause = new PausePackage();
-      return makePause(pause, resumer);
+      return new Promise(function(resolve, reject) {
+        var restarter = {
+          resume: function(val) { resolve(val); },
+          error: function(errVal) {
+            reject(isPyretException(errVal) ? errVal : new PyretFailException(errVal));
+          },
+          break: function() {
+            reject(new PyretFailException(thisRuntime.ffi.userBreak));
+          }
+        };
+        try { resumer(restarter); }
+        catch(e) { reject(e); }
+      });
     }
 
     function pauseAwait(p) {
       if(!('then' in p)) { return p; }
-
-      return pauseStack(async (restarter) => {
-        try {
-          const result = await p;
-          return restarter.resume(result);
-        }
-        catch(e) {
-          return restarter.error(e);
-        }
-      });
+      return p;
     }
 
     function PausePackage() {
@@ -6117,8 +5867,16 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       'isInitializedActivationRecord'   : isInitializedActivationRecord,
       'makeActivationRecord' : makeActivationRecord,
 
-      'GAS': INITIAL_GAS,
+      'GAS': INITIAL_PAUSE_GAS,
       'INITIAL_GAS': INITIAL_GAS,
+      'INITIAL_PAUSE_GAS': INITIAL_PAUSE_GAS,
+      'checkPause': checkPause,
+      'breakRequested': false,
+      // Marker read by js-of-pyret / compile-lib to route nested
+      // compiler-at-runtime compiles to the async backend (avoids the
+      // "polyglot" hazard of trampoline code linked against this runtime).
+      'isAsyncBackend': true,
+      'isAsyncRuntime': function() { return true; },
 
       'jsnums': jsnums,
       'NumberErrbacks': NumberErrbacks,
