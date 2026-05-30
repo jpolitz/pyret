@@ -72,3 +72,6 @@ compiled/
 .pyret-parley.*.pid
 .pyret-parley.*.lock
 
+
+# Async-backend module cache (build artifact, parallels tests/compiled)
+tests/compiled-async/

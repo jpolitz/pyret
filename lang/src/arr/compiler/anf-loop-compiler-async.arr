@@ -596,6 +596,107 @@ fun is-id-fn-name(flatness-env :: D.MutableStringDict<Option<Number>>, name :: S
   flatness-env.has-key-now(name)
 end
 
+# TCO support (ported from anf-loop-compiler.arr). is-id-occurs / get-assignments
+# find an assignment order for the tail-call argument reassignment that avoids
+# clobbering a parameter still needed by a later argument expression, using temps
+# only when a genuine cycle forces it.
+fun is-id-occurs(target :: A.Name, e :: J.JExpr) block:
+  doc: "Returns true iff `target` occurs in `e`"
+  dummy-js-expr = j-num(0)
+  var found = false
+  e.visit(J.default-map-visitor.{
+    method j-id(self, name) block:
+      when name == target:
+        found := true
+      end
+      dummy-js-expr
+    end
+  })
+  found
+end
+
+fun get-assignments(lst :: List<J.JExpr>, limit :: Number) -> {List<J.JStmt>; List<J.JStmt>}:
+  doc: ```
+       Find an order of assignment statements in `lst` that avoid new variables
+       where `limit` is the number of round-robin attempts allowed. Returns a
+       pair {pre; post} of assignment statement lists (post order irrelevant).
+       ```
+  cases (List) lst:
+    | empty => {empty; empty}
+    | link(asgn, rest) =>
+      cases (J.JExpr) asgn:
+        | j-assign(formal, actual) =>
+          if limit == 0:
+            tmp-arg = fresh-id(compiler-name('tmp_asgn'))
+            {pre; post} = get-assignments(rest, rest.length())
+            {link(j-var(tmp-arg, actual), pre); link(j-expr(j-assign(formal, j-id(tmp-arg))), post)}
+          else:
+            occurs-any = for any(next-asgn :: J.JExpr%(is-j-assign) from rest):
+              is-id-occurs(formal, next-asgn.rhs)
+            end
+            if occurs-any:
+              get-assignments(rest + [list: asgn], limit - 1)
+            else:
+              {pre; post} = get-assignments(rest, rest.length())
+              {link(j-expr(asgn), pre); post}
+            end
+          end
+      end
+  end
+end
+
+# Does `e` contain a tail-position self-recursive call of the current function
+# (arity `arity`), reachable without crossing a nested lambda boundary? Such a
+# call is what we turn into a back-edge of the function's `while(true)` loop. We
+# do not descend into a-lam, a-method, or data definitions: their tail calls
+# belong to their own (independently compiled) loop, not this one.
+fun has-self-tail-call(e :: N.AExpr, arity :: Number) -> Boolean:
+  cases(N.AExpr) e:
+    | a-lettable(_, lettable) => lettable-self-tail-call(lettable, arity)
+    | a-let(_, _, lettable, body) =>
+      lettable-self-tail-call(lettable, arity) or has-self-tail-call(body, arity)
+    | a-arr-let(_, _, _, lettable, body) =>
+      lettable-self-tail-call(lettable, arity) or has-self-tail-call(body, arity)
+    | a-var(_, _, lettable, body) =>
+      lettable-self-tail-call(lettable, arity) or has-self-tail-call(body, arity)
+    | a-seq(_, e1, e2) =>
+      lettable-self-tail-call(e1, arity) or has-self-tail-call(e2, arity)
+    | a-type-let(_, _, body) => has-self-tail-call(body, arity)
+  end
+end
+
+fun lettable-self-tail-call(lettable :: N.ALettable, arity :: Number) -> Boolean:
+  cases(N.ALettable) lettable:
+    | a-app(_, _, args, app-info) =>
+      app-info.is-recursive and app-info.is-tail and (args.length() == arity)
+    | a-if(_, _, consq, alt) =>
+      has-self-tail-call(consq, arity) or has-self-tail-call(alt, arity)
+    | a-cases(_, _, _, branches, _else) =>
+      has-self-tail-call(_else, arity) or
+      for any(b from branches):
+        cases(N.ACasesBranch) b:
+          | a-cases-branch(_, _, _, _, body) => has-self-tail-call(body, arity)
+          | a-singleton-cases-branch(_, _, _, body) => has-self-tail-call(body, arity)
+        end
+      end
+    | else => false
+  end
+end
+
+# Compile a tail-position self-recursive call as a back-edge of the function's
+# loop: reassign the parameter variables to the new argument values (ordered to
+# avoid clobbering), then `continue` to re-run the fuel check, arg-annotation
+# checks, and body. Replaces `return await self.app(...)`.
+fun compile-tail-self-call(compiler, l :: Loc, args :: List<N.AVal>) -> CL.ConcatList<J.JStmt>:
+  compiled-args = CL.map_list(lam(a): a.visit(compiler).exp end, args)
+  args-list = map2(j-assign, compiler.args, compiled-args.to-list())
+  {pre; post} = get-assignments(args-list, args-list.length())
+  cl-sing(j-expr(j-assign(compiler.cur-apploc, compiler.get-loc(l))))
+    ^ cl-append(_, CL.from_list(pre))
+    ^ cl-append(_, CL.from_list(post))
+    ^ cl-snoc(_, j-continue)
+end
+
 # A control lettable branches; its value cannot be expressed as a single JS
 # expression, so we push the continuation into its branches.
 fun is-control-lettable(e :: N.ALettable) -> Boolean:
@@ -764,6 +865,19 @@ fun compile-deliver(compiler, e :: N.ALettable, k :: (J.JExpr -> CL.ConcatList<J
       compile-if(compiler, l, cond, consq, alt, k)
     | a-cases(l, typ, val, branches, _else) =>
       compile-cases(compiler, l, typ, val, branches, _else, k)
+    | a-app(l, _, args, app-info) =>
+      # A tail-position self-recursive call (with matching arity) becomes a loop
+      # back-edge instead of `return await self.app(...)`. `is-tail` guarantees
+      # this app's value is the function's return value, so `k` is the return
+      # continuation and need not be invoked. `loop-tco` is only set when the
+      # function body is wrapped in the `while(true)` loop.
+      if compiler.loop-tco and app-info.is-recursive and app-info.is-tail
+        and (args.length() == compiler.args.length()):
+        compile-tail-self-call(compiler, l, args)
+      else:
+        { prep; val } = compile-expr-lettable(compiler, e)
+        cl-append(prep, k(val))
+      end
     | else =>
       { prep; val } = compile-expr-lettable(compiler, e)
       cl-append(prep, k(val))
@@ -873,11 +987,19 @@ end
 # formals, check argument annotations, then the body (ending in `return`).
 fun compile-fun-body(l :: Loc, compiler, args :: List<N.ABind>, opt-arity :: Option<Number>, body :: N.AExpr, is-method :: Boolean) -> J.JBlock block:
   apploc = fresh-id(compiler-name("al"))
-  local-compiler = compiler.{cur-apploc: apploc, args: args.map(_.id).map(js-id-of)}
+  no-real-args = (args.first.id == compiler.resumer)
+  # Tail-recursion: when this function makes a self-recursive tail call (and TCO
+  # is on), wrap the body in `while(true)` and turn those calls into back-edges
+  # (see compile-tail-self-call). The fuel check sits at the loop top so a tight
+  # recursive loop still yields/honors break each iteration; arg-annotation
+  # checks are re-run each iteration since the parameters are reassigned.
+  use-loop =
+    not(no-real-args) and compiler.options.proper-tail-calls and
+    has-self-tail-call(body, args.length())
+  local-compiler = compiler.{cur-apploc: apploc, args: args.map(_.id).map(js-id-of), loop-tco: use-loop}
   formal-args = for map(arg from args):
       N.a-bind(arg.l, formal-shadow-name(arg.id), arg.ann)
     end
-  no-real-args = (args.first.id == compiler.resumer)
   copy-formals-to-args =
     if no-real-args: cl-empty
     else:
@@ -896,15 +1018,32 @@ fun compile-fun-body(l :: Loc, compiler, args :: List<N.ABind>, opt-arity :: Opt
         cl-append(acc, make-ann-stmts(local-compiler, arg, j-id(js-id-of(arg.id))))
       end
     end
-  check-pause = cl-sing(j-expr(j-await(rt-method("checkPause", cl-empty))))
+  # await-avoidance micro-optimization: `if(needsPause()) { await pause(); }`
+  # so the fuel-remaining common case pays for no `await` micro-op.
+  check-pause = cl-sing(j-if1(rt-method("needsPause", cl-empty),
+      j-block1(j-expr(j-await(rt-method("pause", cl-empty))))))
   body-stmts = compile-e(local-compiler, body, lam(val): cl-sing(j-return(val)) end)
-  j-block(
-    cl-cons(j-var(apploc, local-compiler.get-loc(l)),
-      arity-stmts
-        ^ cl-append(_, check-pause)
-        ^ cl-append(_, copy-formals-to-args)
-        ^ cl-append(_, arg-ann-stmts)
-        ^ cl-append(_, body-stmts)))
+  body-block =
+    if use-loop:
+      # The fuel check and arg-annotation checks go inside the loop so they run
+      # on every iteration (i.e. every logical recursive call); copy-formals
+      # stays outside as a one-time declaration.
+      cl-cons(j-var(apploc, local-compiler.get-loc(l)),
+        arity-stmts
+          ^ cl-append(_, copy-formals-to-args)
+          ^ cl-snoc(_, j-while(j-true,
+                j-block(check-pause
+                    ^ cl-append(_, arg-ann-stmts)
+                    ^ cl-append(_, body-stmts)))))
+    else:
+      cl-cons(j-var(apploc, local-compiler.get-loc(l)),
+        arity-stmts
+          ^ cl-append(_, check-pause)
+          ^ cl-append(_, copy-formals-to-args)
+          ^ cl-append(_, arg-ann-stmts)
+          ^ cl-append(_, body-stmts))
+    end
+  j-block(body-block)
 end
 
 fun compile-a-lam(compiler, l :: Loc, name :: String, args :: List<N.ABind>, ret :: A.Ann, body :: N.AExpr) block:

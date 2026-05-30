@@ -3489,13 +3489,19 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       breakRequested = true;
     }
 
-    // ASYNC BACKEND: the fuel meter. Decrement on every function entry; while
-    // fuel remains, return undefined synchronously (awaiting it is a no-op).
-    // When it runs out, yield to the event loop (so pending events — input, a
-    // Stop click — get a turn) and then honor any pending break by throwing.
+    // ASYNC BACKEND: the fuel meter, split into two helpers for the await-
+    // avoidance micro-optimization. Every function entry runs
+    //   if (needsPause()) { await pause(); }
+    // needsPause() is a plain synchronous boolean test (decrement fuel, report
+    // whether it is exhausted) so the common case — fuel remaining — pays for
+    // no `await` micro-op at all. Only when fuel is exhausted do we await
+    // pause(), which yields to the event loop (so pending events — input, a
+    // Stop click — get a turn) and then honors any pending break by throwing.
     var INITIAL_PAUSE_GAS = theOutsideWorld.initialGas || 100000;
-    function checkPause() {
-      if (--thisRuntime.GAS > 0) { return undefined; }
+    function needsPause() {
+      return (--thisRuntime.GAS <= 0);
+    }
+    function pause() {
       thisRuntime.GAS = INITIAL_PAUSE_GAS;
       return new Promise(function(resolve, reject) {
         setImmediate(function() {
@@ -3507,6 +3513,12 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
           }
         });
       });
+    }
+    // Compatibility wrapper: the old single-call form, for any code path that
+    // still wants one `await`-able fuel check.
+    function checkPause() {
+      if (needsPause()) { return pause(); }
+      return undefined;
     }
 
     // ASYNC BACKEND: a paused Pyret stack is just a pending Promise. The
@@ -5396,6 +5408,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       'INITIAL_GAS': INITIAL_GAS,
       'INITIAL_PAUSE_GAS': INITIAL_PAUSE_GAS,
       'checkPause': checkPause,
+      'needsPause': needsPause,
+      'pause': pause,
       'breakRequested': false,
       // Marker read by js-of-pyret / compile-lib to route nested
       // compiler-at-runtime compiles to the async backend (avoids the
