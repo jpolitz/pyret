@@ -98,3 +98,22 @@ end
 check "annotations re-checked across loop iterations":
   must-stay-number(1000) raises "Number"
 end
+
+# Soundness: a tail call whose argument is a closure capturing a parameter must
+# NOT be loop-optimized (in-place mutation would corrupt the escaped closure).
+# The loop must be silently disabled for these so the answer matches a non-TCO
+# version. (pyret issue #1230; mirrors tail-recursion-arg-order.arr.)
+fun captures(a, b):
+  foo = lam(): a end
+  if a == 1: b() else: captures(1, foo) end
+end
+fun captures-no-tco(a, b):
+  foo = lam(): a end
+  if a == 1: b() else: captures-no-tco(1, foo) + 0 end
+end
+
+check "closure-capturing tail call stays sound (TCO disabled)":
+  captures(4, 5) is 4
+  captures(4, 5) is captures-no-tco(4, 5)
+  captures(7, 5) is 7
+end

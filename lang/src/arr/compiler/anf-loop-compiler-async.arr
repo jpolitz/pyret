@@ -683,6 +683,50 @@ fun lettable-self-tail-call(lettable :: N.ALettable, arity :: Number) -> Boolean
   end
 end
 
+# Soundness guard for the loop optimization (pyret issue #1230). The loop mutates
+# the parameter variables in place on each back-edge. If the body builds a
+# closure that captures a parameter, a later iteration's mutation would be
+# observed by that (escaping) closure -- unsound. So if any lambda in the body
+# has a parameter among its free variables, we leave TCO off for this function
+# and compile its tail calls as ordinary `return await self.app(...)`. (cf. the
+# `oops2` case in tests/pyret/regression/tail-recursion-arg-order.arr.)
+fun body-captures-params-in-lam(e :: N.AExpr, param-keys :: List<String>) -> Boolean:
+  cases(N.AExpr) e:
+    | a-lettable(_, l) => lettable-captures-params-in-lam(l, param-keys)
+    | a-let(_, _, l, body) =>
+      lettable-captures-params-in-lam(l, param-keys) or body-captures-params-in-lam(body, param-keys)
+    | a-arr-let(_, _, _, l, body) =>
+      lettable-captures-params-in-lam(l, param-keys) or body-captures-params-in-lam(body, param-keys)
+    | a-var(_, _, l, body) =>
+      lettable-captures-params-in-lam(l, param-keys) or body-captures-params-in-lam(body, param-keys)
+    | a-seq(_, e1, e2) =>
+      lettable-captures-params-in-lam(e1, param-keys) or body-captures-params-in-lam(e2, param-keys)
+    | a-type-let(_, _, body) => body-captures-params-in-lam(body, param-keys)
+  end
+end
+
+fun lettable-captures-params-in-lam(lettable :: N.ALettable, param-keys :: List<String>) -> Boolean:
+  cases(N.ALettable) lettable:
+    | a-lam(_, _, args, _, lam-body) =>
+      fv-keys = N.freevars-e(lam-body).keys-list()
+      arg-keys = args.map(lam(a): a.id.key() end)
+      for any(pk from param-keys):
+        fv-keys.member(pk) and not(arg-keys.member(pk))
+      end
+    | a-if(_, _, consq, alt) =>
+      body-captures-params-in-lam(consq, param-keys) or body-captures-params-in-lam(alt, param-keys)
+    | a-cases(_, _, _, branches, _else) =>
+      body-captures-params-in-lam(_else, param-keys) or
+      for any(b from branches):
+        cases(N.ACasesBranch) b:
+          | a-cases-branch(_, _, _, _, body) => body-captures-params-in-lam(body, param-keys)
+          | a-singleton-cases-branch(_, _, _, body) => body-captures-params-in-lam(body, param-keys)
+        end
+      end
+    | else => false
+  end
+end
+
 # Compile a tail-position self-recursive call as a back-edge of the function's
 # loop: reassign the parameter variables to the new argument values (ordered to
 # avoid clobbering), then `continue` to re-run the fuel check, arg-annotation
@@ -995,7 +1039,8 @@ fun compile-fun-body(l :: Loc, compiler, args :: List<N.ABind>, opt-arity :: Opt
   # checks are re-run each iteration since the parameters are reassigned.
   use-loop =
     not(no-real-args) and compiler.options.proper-tail-calls and
-    has-self-tail-call(body, args.length())
+    has-self-tail-call(body, args.length()) and
+    not(body-captures-params-in-lam(body, args.map(lam(a): a.id.key() end)))
   local-compiler = compiler.{cur-apploc: apploc, args: args.map(_.id).map(js-id-of), loop-tco: use-loop}
   formal-args = for map(arg from args):
       N.a-bind(arg.l, formal-shadow-name(arg.id), arg.ann)
