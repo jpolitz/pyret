@@ -75,3 +75,7 @@ compiled/
 
 # Async-backend module cache (build artifact, parallels tests/compiled)
 tests/compiled-async/
+
+# Async bootstrap self-host caches (build artifacts)
+build/async-boot-compiled-1/
+build/async-boot-compiled-2/

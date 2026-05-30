@@ -11,12 +11,12 @@ fun sum-to(n :: Number, acc :: Number) -> Number:
   end
 end
 
-fun repeat(k :: Number, n :: Number, total :: Number) -> Number:
+fun sweep(k :: Number, n :: Number, total :: Number) -> Number:
   if k == 0: total
-  else: repeat(k - 1, n, total + sum-to(n, 0))
+  else: sweep(k - 1, n, total + sum-to(n, 0))
   end
 end
 
 # 200 sweeps of a 200k-deep tail loop = 40M tail iterations.
-print(repeat(200, 200000, 0))
+print(sweep(200, 200000, 0))
 print("\n")

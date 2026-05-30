@@ -155,3 +155,168 @@ above), so those tests cannot run here on either backend. The runtime APIs the
 IDE depends on (`safeCall`, `runThunk`, `execThunk`, `pauseStack`) are preserved
 with the same external shapes by the async runtime, so the interface contract
 the IDE relies on is intact.
+
+---
+
+# Optimizations (follow-on work)
+
+Three changes on top of the async backend: tail-recursion (loop) optimization, an
+await-avoidance micro-optimization on the fuel check, and a stack-trace test
+cleanup. All acceptance targets still hold: `make all-pyret-test-async` is now
+**Passed 13361; Failed 0; Ended in Error 5** (the 5 errors are the same
+DOM/browser environment errors as the default backend; previously the async
+backend had 12 failures, all stack-trace assertions), and `make
+new-bootstrap-async` is a clean byte-for-byte fixpoint (26702350 b).
+
+## 1. Tail-recursion (loop) optimization
+
+The first cut of the async backend compiled every Pyret call — including a
+self-recursive tail call — as `return await self.app(...)`: a fresh `async`
+frame plus an `await` (a microtask round-trip) per iteration. A tight recursive
+loop therefore allocated a continuation and bounced through the microtask queue
+on every step.
+
+`compile-fun-body` now detects self-recursive tail calls (`has-self-tail-call`,
+using ANF's `is-recursive`/`is-tail` flags, matching arity) and, when TCO is
+enabled, wraps the function body in `while (true) { ... }`. Such calls become a
+back-edge — reassign the parameter variables (ordered by the ported
+`get-assignments`, which uses temporaries only for a genuine cycle) and
+`continue` — instead of a call. Generated shape:
+
+```js
+async function f(x_formal) {
+  var al = <loc>;
+  <arity-check>
+  var x = x_formal;                 // copy formals once
+  while (true) {
+    if (R.needsPause()) { await R.pause(); }   // fuel check, every iteration
+    await R._checkAnn(..., x);                  // arg anns, re-checked each iter
+    ... body ...                                // tail self-call: x = ...; continue;
+  }
+}
+```
+
+The fuel check stays inside the loop so a tight recursive loop is still
+interruptible (a Stop click is honored each iteration); argument annotations are
+re-checked each iteration since the parameters are reassigned — matching
+per-call semantics. `has-self-tail-call` decides this per function, so
+non-recursive functions get no loop and no overhead. It stops at
+lambda/method/data boundaries (those compile their own loops); methods are
+excluded because `is-recursive` is false for them, matching the trampoline.
+
+**Soundness guard (pyret issue #1230).** In-place mutation of a parameter is
+unsound if the body builds a closure that captures that parameter and the
+closure escapes (e.g. is passed to the tail call): a later iteration's mutation
+would be observed through the escaped closure. `body-captures-params-in-lam`
+(via `freevars-e`) detects any lambda whose free variables include a parameter
+and leaves TCO off for that function, compiling its tail calls normally. This
+reproduces the trampoline's behavior on the documented `oops2` case (both yield
+4); `tests/pyret/regression/tail-recursion-arg-order.arr` passes under async.
+
+## 2. await-avoidance micro-optimization
+
+`checkPause()` was awaited at every function entry (`await R.checkPause()`).
+Even when fuel remained and it returned `undefined`, the `await` forced a
+microtask suspension. It is now split into a synchronous `needsPause()`
+(decrement fuel, report whether exhausted) and an awaitable `pause()` (yield +
+honor break), and the per-entry check is emitted as
+`if (R.needsPause()) { await R.pause(); }` — so the common fuel-remaining path
+pays for no `await` at all. `checkPause()` is kept as a compatibility wrapper.
+
+## 3. Stack-trace test cleanup
+
+Under async the Pyret stack is reconstructed from V8's async stack trace
+(`exn-stack-parser.js`, via source maps over the compiled JS). V8 keeps a frame
+only while its `await` has not yet suspended: a *synchronous* throw (e.g. a field
+access or non-function application that raises before any awaited call) unwinds
+with the full stack, but as soon as a frame executes an `await` that actually
+suspends — an awaited prim-app/comparison, a fuel pause, an input/sleep pause —
+the frames below it on the JS stack are gone. So in a deep recursion (each level
+awaits a comparison) only the error frame survives, and the top-level call frame
+is always lost (the run loop suspends at kickoff). What remains is always a
+contiguous-from-the-error-site **subsequence** of the trampoline's full trace:
+same frames, same order, no spurious entries, beginning at the true error
+location. (Raising `Error.stackTraceLimit` does not help — it is already
+`Infinity`; the limit is suspension, not depth.)
+
+`tests/pyret/tests/test-repl.arr`'s stack-trace block pinned exact frame lists,
+so 7 of its assertions failed under async. Per the instructions ("make the test
+less specific … keep them meaningful"), those 7 are relaxed to the cross-backend
+invariant above, via two small helpers added to the test file
+(`subsequence-from-start`, `is-known-frame46`): each assertion still checks the
+error frame is correct, the order is preserved, and no spurious frames appear —
+and the trampoline trace (a subsequence of itself) still satisfies them exactly.
+The other ~130 assertions are untouched. Both backends now pass test-repl
+137/137. A more faithful fix (reconstructing the full logical stack by
+accumulating frames on promise-rejection unwind) was rejected: it double-counts
+against the JS-parsed synchronous frames, would re-break the assertions that
+already pass under async, and adds a try/catch to every call — against the
+backend's simplicity goal.
+
+## Timing
+
+VM: Node 18.19.1, headless. Three configurations per row: **default** (the
+unchanged trampoline backend), **async-noopt** (the async backend before this
+work, commit `a32b194e`), **async-opt** (with the two optimizations).
+
+### Microbenchmarks and individual test files (best-of-3 wall time, seconds)
+
+Pure `node <standalone>` run time; the standalones are self-contained, so all
+three configs were timed back-to-back under identical load.
+
+| Workload | default | async-noopt | async-opt | opt vs noopt |
+| --- | ---: | ---: | ---: | ---: |
+| `bench-tco` — tight tail-recursive accumulator (40M tail iters) | 8.42 | 80.98 | 16.82 | **4.8× faster** |
+| `bench-listsum` — tail-recursive list sum (×400 sweeps) | 6.37 | 37.37 | 10.50 | **3.6× faster** |
+| `bench-nontail` — naive recursive `fib` (~25M non-tail calls) | 7.99 | 16.20 | 14.25 | 1.14× faster |
+| `test-numbers.arr` (196 checks, arithmetic-heavy) | 0.79 | 35.43 | 35.46 | ~1.0× |
+| `test-lists.arr` (list library) | 0.76 | 1.49 | 1.50 | ~1.0× |
+
+(Benchmarks are in `tests/async-opt/`.) Reading: the loop optimization is a big
+win where it applies — `bench-tco` and `bench-listsum` are tail-recursion-bound
+and speed up 3.6–4.8×. `bench-nontail` cannot be TCO'd (the recursive call is not
+in tail position), so only the fuel-check micro-opt applies: ~1.14×.
+`test-numbers`/`test-lists` are dominated by per-operation awaits that neither
+optimization removes, so they are ~neutral between noopt and opt. Against the
+trampoline the async backend is still slower (the project's goal is simplicity,
+not speed), but on recursion-heavy code the gap narrows to ~1.6–2×. The
+`test-numbers` row (45× the trampoline, unchanged by these opts) shows where the
+async backend's real remaining cost lives: every prim-app (`+`, `<`, …) is
+unconditionally awaited, so arithmetic-heavy code pays a microtask per
+operation. Making prim-app awaits conditional on the result actually being a
+Promise is the obvious next optimization (it would also recover much of the lost
+stack-trace fidelity), but it is a pervasive codegen change and out of scope
+here.
+
+### `new-bootstrap` (clean two-stage self-host build, wall seconds)
+
+| | default (`no-diff-standalone`, check-mode) | async-noopt | async-opt |
+| --- | ---: | ---: | ---: |
+| build + diff | 231.68 | 158.22 | 164.08 |
+
+All three are clean fixpoints (byte-identical stage outputs). Bootstrap time is
+dominated by compilation/IO, not the optimized runtime paths, so the two async
+configs are within noise of each other; the opts target hot user-code loops, not
+the compiler's compile-time throughput. (The async builds use `-no-check-mode`,
+matching the existing `new-bootstrap-async` target; the default two-stage build
+compiles check blocks, part of why it is slower.)
+
+### Full test suite (`make all-pyret-test[-async]`, warm-cache run wall time)
+
+| Target | Wall (s) | Result |
+| --- | ---: | --- |
+| `make all-pyret-test` (default) | 660.84 | Passed 13361; Failed 0; Error 5 |
+| `make all-pyret-test-async` (async-opt) | 767.67 | Passed 13361; Failed 0; Error 5 |
+| async-noopt (pre-opt, prior report) | — | Passed 13342; Failed 12; Error 5 |
+
+The suite count rose from the pre-opt 13357/13342 to 13361 on **both** backends
+because the test-repl stack-trace assertion edits (§3) change how many
+individual checks that block contains; the new count is identical on both, with
+0 failures. At suite level the async backend is only ~1.16× the default wall
+time: the suite is dominated by compilation and the compile-at-runtime tests
+(`test-compile-lib`, the repl), where the per-operation async overhead is
+diluted, not by tight numeric loops. The 5 `Ended in Error` blocks are the
+charts/images/world tests that need a DOM/browser this headless VM lacks; they
+error identically on the default backend (environment baseline, not a backend
+regression).
+

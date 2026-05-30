@@ -11,12 +11,12 @@ fun fib(n :: Number) -> Number:
   end
 end
 
-fun repeat(k :: Number, n :: Number, total :: Number) -> Number:
+fun sweep(k :: Number, n :: Number, total :: Number) -> Number:
   if k == 0: total
-  else: repeat(k - 1, n, total + fib(n))
+  else: sweep(k - 1, n, total + fib(n))
   end
 end
 
 # 30 evaluations of fib(28): ~30 * 832040 calls ~= 25M non-tail calls.
-print(repeat(30, 28, 0))
+print(sweep(30, 28, 0))
 print("\n")

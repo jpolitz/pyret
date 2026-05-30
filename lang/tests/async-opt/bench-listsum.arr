@@ -18,12 +18,12 @@ fun sum-list(l :: List<Number>, acc :: Number) -> Number:
   end
 end
 
-fun repeat(k :: Number, lst :: List<Number>, total :: Number) -> Number:
+fun sweep(k :: Number, lst :: List<Number>, total :: Number) -> Number:
   if k == 0: total
-  else: repeat(k - 1, lst, total + sum-list(lst, 0))
+  else: sweep(k - 1, lst, total + sum-list(lst, 0))
   end
 end
 
 big = build(50000, empty)
-print(repeat(400, big, 0))
+print(sweep(400, big, 0))
 print("\n")
