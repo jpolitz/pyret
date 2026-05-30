@@ -306,17 +306,29 @@ compiles check blocks, part of why it is slower.)
 | Target | Wall (s) | Result |
 | --- | ---: | --- |
 | `make all-pyret-test` (default) | 660.84 | Passed 13361; Failed 0; Error 5 |
+| async-noopt (`all-async.jarr` run) | 656.30 | Passed 13356; Failed 5†; Error 5 |
 | `make all-pyret-test-async` (async-opt) | 767.67 | Passed 13361; Failed 0; Error 5 |
-| async-noopt (pre-opt, prior report) | — | Passed 13342; Failed 12; Error 5 |
 
-The suite count rose from the pre-opt 13357/13342 to 13361 on **both** backends
-because the test-repl stack-trace assertion edits (§3) change how many
-individual checks that block contains; the new count is identical on both, with
-0 failures. At suite level the async backend is only ~1.16× the default wall
-time: the suite is dominated by compilation and the compile-at-runtime tests
-(`test-compile-lib`, the repl), where the per-operation async overhead is
-diluted, not by tight numeric loops. The 5 `Ended in Error` blocks are the
-charts/images/world tests that need a DOM/browser this headless VM lacks; they
-error identically on the default backend (environment baseline, not a backend
-regression).
+The suite count rose from the pre-opt 13357/13342 to 13361 on **both** the
+default and async-opt backends because the test-repl stack-trace assertion edits
+(§3) change how many individual checks that block contains; the new count is
+identical on both, with 0 failures.
+
+†The async-noopt row was produced by running the current (edited) test files
+against the pre-opt async compiler purely to get a wall-time; its 5 "failures"
+are test-repl stack-trace assertions now tuned for the **opt** backend's frames,
+which the older codegen produces differently (the unedited test had 12 mismatches
+under async-noopt — see the original report) — not a noopt correctness issue.
+
+Three observations on the suite wall-times: (a) the full suite is dominated by
+compilation and the compile-at-runtime tests (`test-compile-lib`, the repl), not
+by tight numeric loops, so the runtime optimizations barely move it; (b) for the
+same reason async-opt is actually ~17% *slower* here than async-noopt — the
+loop/closure analyses (`has-self-tail-call`, `freevars-e`) add compile-time work
+that this compile-heavy suite pays without recouping it in tight-loop runtime;
+(c) the async backend is within ~1.16× of the default at suite level, far from
+the per-operation slowdowns seen on arithmetic microbenchmarks. The 5 `Ended in
+Error` blocks are the charts/images/world tests that need a DOM/browser this
+headless VM lacks; they error identically on the default backend (environment
+baseline, not a backend regression).
 
