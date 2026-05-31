@@ -792,11 +792,19 @@ fun make-ann-stmts(compiler, bind :: N.ABind, value-expr :: J.JExpr) -> CL.Conca
             compiler.get-loc(bind.ann.l)]))]
   else:
     compiled-ann = compile-ann(bind.ann, none, compiler)
+    check-call = rt-method("_checkAnn",
+      [clist: compiler.get-loc(bind.ann.l), compiled-ann.exp, value-expr])
+    # In a flat (non-async) function we cannot await. The flatness analysis
+    # guarantees every annotation a flat function checks is flat-enough, and the
+    # runtime's _checkAnn returns *synchronously* (no Promise) for a flat
+    # annotation -- the same invariant the trampoline backend relies on when it
+    # omits the isContinuation check after a flat _checkAnn. So calling it
+    # unawaited here is sound.
+    checked = if compiler.flat-mode: check-call else: j-await(check-call) end
     cl-append(compiled-ann.other-stmts,
       [clist:
         j-expr(j-assign(compiler.cur-apploc, compiler.get-loc(bind.ann.l))),
-        j-expr(j-await(rt-method("_checkAnn",
-            [clist: compiler.get-loc(bind.ann.l), compiled-ann.exp, value-expr])))])
+        j-expr(checked)])
   end
 end
 
@@ -830,20 +838,31 @@ fun bind-assign-k(b :: BindType) -> (J.JExpr -> CL.ConcatList<J.JStmt>):
 end
 
 # Compile an expression-valued lettable to { prep-statements ; value-expression }.
-fun compile-expr-lettable(compiler, e :: N.ALettable) -> { CL.ConcatList<J.JStmt>; J.JExpr }:
+# `opt-bind` is the BindType this lettable is bound to, if any (used to look up a
+# lambda's flatness by its binding name -- see compile-a-lam).
+fun compile-expr-lettable(compiler, e :: N.ALettable, opt-bind :: Option<BindType>) -> { CL.ConcatList<J.JStmt>; J.JExpr }:
   cases(N.ALettable) e:
     | a-app(l, f, args, app-info) =>
       compiled-f = f.visit(compiler).exp
       compiled-args = CL.map_list(lam(a): a.visit(compiler).exp end, args)
       is-safe-id = N.is-a-id(f) or N.is-a-id-safe-letrec(f)
       is-fn = is-safe-id and is-id-fn-name(compiler.flatness-env, f.id.key())
+      # Flatness call-site optimization: a flat callee is compiled as a *non-async*
+      # JS function (see compile-a-lam), so its call returns a value, not a
+      # Promise -- no await needed. Inside a flat function we likewise never await
+      # (the closure property guarantees every call target is flat/synchronous,
+      # which also covers flat callees reached via a module ref that are not
+      # is-safe-id here).
+      is-callee-flat = is-safe-id and is-function-flat(compiler.flatness-env, f.id.key())
       guard = if not(is-fn):
           cl-sing(check-fun(l, j-id(compiler.cur-apploc), compiled-f))
         else:
           cl-empty
         end
       prep = cl-cons(j-expr(j-assign(compiler.cur-apploc, compiler.get-loc(l))), guard)
-      { prep; j-await(app(l, compiled-f, compiled-args)) }
+      call = app(l, compiled-f, compiled-args)
+      result = if compiler.flat-mode or is-callee-flat: call else: j-await(call) end
+      { prep; result }
     | a-method-app(l, obj, methname, args) =>
       compiled-obj = obj.visit(compiler).exp
       compiled-args = CL.map_list(lam(a): a.visit(compiler).exp end, args)
@@ -894,7 +913,7 @@ fun compile-expr-lettable(compiler, e :: N.ALettable) -> { CL.ConcatList<J.JStmt
           j-list(false, field-locs), compiler.get-loc(l), compiler.get-loc(obj.l)])
       { cl-empty; j-await(call) }
     | a-lam(l, name, args, ret, body) =>
-      compiled-e = compile-a-lam(compiler, l, name, args, ret, body)
+      compiled-e = compile-a-lam(compiler, l, name, args, ret, body, opt-bind)
       { compiled-e.other-stmts; compiled-e.exp }
     | else =>
       compiled-e = e.visit(compiler)
@@ -919,11 +938,11 @@ fun compile-deliver(compiler, e :: N.ALettable, k :: (J.JExpr -> CL.ConcatList<J
         and (args.length() == compiler.args.length()):
         compile-tail-self-call(compiler, l, args)
       else:
-        { prep; val } = compile-expr-lettable(compiler, e)
+        { prep; val } = compile-expr-lettable(compiler, e, none)
         cl-append(prep, k(val))
       end
     | else =>
-      { prep; val } = compile-expr-lettable(compiler, e)
+      { prep; val } = compile-expr-lettable(compiler, e, none)
       cl-append(prep, k(val))
   end
 end
@@ -986,7 +1005,7 @@ fun compile-bind(compiler, b :: BindType, e :: N.ALettable, kont :: ( -> CL.Conc
     ann = make-ann-stmts(compiler, b.value, j-id(js-id-of(b.value.id)))
     decl ^ cl-append(_, deliver) ^ cl-append(_, ann) ^ cl-append(_, kont())
   else:
-    { prep; val } = compile-expr-lettable(compiler, e)
+    { prep; val } = compile-expr-lettable(compiler, e, some(b))
     prep ^ cl-append(_, make-bind-stmts(compiler, b, val)) ^ cl-append(_, kont())
   end
 end
@@ -1029,7 +1048,7 @@ end
 
 # An async function body: declare apploc, arity-check, await checkPause, copy
 # formals, check argument annotations, then the body (ending in `return`).
-fun compile-fun-body(l :: Loc, compiler, args :: List<N.ABind>, opt-arity :: Option<Number>, body :: N.AExpr, is-method :: Boolean) -> J.JBlock block:
+fun compile-fun-body(l :: Loc, compiler, args :: List<N.ABind>, opt-arity :: Option<Number>, body :: N.AExpr, is-method :: Boolean, is-flat :: Boolean) -> J.JBlock block:
   apploc = fresh-id(compiler-name("al"))
   no-real-args = (args.first.id == compiler.resumer)
   # Tail-recursion: when this function makes a self-recursive tail call (and TCO
@@ -1037,11 +1056,14 @@ fun compile-fun-body(l :: Loc, compiler, args :: List<N.ABind>, opt-arity :: Opt
   # (see compile-tail-self-call). The fuel check sits at the loop top so a tight
   # recursive loop still yields/honors break each iteration; arg-annotation
   # checks are re-run each iteration since the parameters are reassigned.
+  # A flat function never has a self-recursive call (recursion makes it non-flat),
+  # so use-loop is always false there; we guard on is-flat for clarity.
   use-loop =
+    not(is-flat) and
     not(no-real-args) and compiler.options.proper-tail-calls and
     has-self-tail-call(body, args.length()) and
     not(body-captures-params-in-lam(body, args.map(lam(a): a.id.key() end)))
-  local-compiler = compiler.{cur-apploc: apploc, args: args.map(_.id).map(js-id-of), loop-tco: use-loop}
+  local-compiler = compiler.{cur-apploc: apploc, args: args.map(_.id).map(js-id-of), loop-tco: use-loop, flat-mode: is-flat}
   formal-args = for map(arg from args):
       N.a-bind(arg.l, formal-shadow-name(arg.id), arg.ann)
     end
@@ -1065,8 +1087,16 @@ fun compile-fun-body(l :: Loc, compiler, args :: List<N.ABind>, opt-arity :: Opt
     end
   # await-avoidance micro-optimization: `if(needsPause()) { await pause(); }`
   # so the fuel-remaining common case pays for no `await` micro-op.
-  check-pause = cl-sing(j-if1(rt-method("needsPause", cl-empty),
-      j-block1(j-expr(j-await(rt-method("pause", cl-empty))))))
+  # A flat function is bounded-depth and non-recursive: it terminates promptly
+  # and cannot itself spin, so it needs no fuel check (matching the trampoline
+  # backend, which omits the GAS increment for flat functions). It is also
+  # non-async, so an `await pause()` would be invalid -- hence empty here.
+  check-pause =
+    if is-flat: cl-empty
+    else:
+      cl-sing(j-if1(rt-method("needsPause", cl-empty),
+          j-block1(j-expr(j-await(rt-method("pause", cl-empty))))))
+    end
   body-stmts = compile-e(local-compiler, body, lam(val): cl-sing(j-return(val)) end)
   body-block =
     if use-loop:
@@ -1091,7 +1121,19 @@ fun compile-fun-body(l :: Loc, compiler, args :: List<N.ABind>, opt-arity :: Opt
   j-block(body-block)
 end
 
-fun compile-a-lam(compiler, l :: Loc, name :: String, args :: List<N.ABind>, ret :: A.Ann, body :: N.AExpr) block:
+fun compile-a-lam(compiler, l :: Loc, name :: String, args :: List<N.ABind>, ret :: A.Ann, body :: N.AExpr, bind-opt :: Option<BindType>) block:
+  # Flatness optimization: a function the flatness analysis deems flat is
+  # compiled as a *non-async* JS function. By the flatness closure property it
+  # only calls other flat (non-async) functions, contains no method/prim calls
+  # or non-flat global calls, and all its annotation checks are flat (hence
+  # synchronous) -- so its body has no `await` and it returns a value rather
+  # than a Promise. Callers detect this via the same is-function-flat lookup and
+  # skip the await. We only know a lambda's flatness through the name it is bound
+  # to, so flatness is keyed off bind-opt (mirroring the trampoline backend).
+  is-flat = cases(Option) bind-opt:
+    | some(b) => is-b-let(b) and is-function-flat(compiler.flatness-env, b.value.id.key())
+    | none => false
+  end
   temp = fresh-id(compiler-name("temp_lam"))
   len = args.length()
   # NOTE: args may be empty, so we need at least one name ("resumer") for the convention
@@ -1099,13 +1141,16 @@ fun compile-a-lam(compiler, l :: Loc, name :: String, args :: List<N.ABind>, ret
     if len > 0: args
     else: [list: N.a-bind(l, compiler.resumer, A.a-blank)]
     end
+  fun-id = J.next-j-fun-id()
+  formals = CL.map_list(lam(arg): formal-shadow-name(arg.id) end, effective-args)
+  the-body = compile-fun-body(l, compiler, effective-args, some(len), body, false, is-flat)
+  the-fun =
+    if is-flat: j-fun(fun-id, make-fun-name(compiler, l), formals, the-body)
+    else: j-fun-async(fun-id, make-fun-name(compiler, l), formals, the-body)
+    end
   c-exp(
     rt-method("makeFunction", [clist: j-id(temp), j-str(name)]),
-    [clist:
-      j-var(temp,
-        j-fun-async(J.next-j-fun-id(), make-fun-name(compiler, l),
-          CL.map_list(lam(arg): formal-shadow-name(arg.id) end, effective-args),
-          compile-fun-body(l, compiler, effective-args, some(len), body, false)))])
+    [clist: j-var(temp, the-fun)])
 end
 
 
@@ -1294,7 +1339,7 @@ compiler-visitor = {
       j-var(temp-full,
         j-fun-async(J.next-j-fun-id(), make-fun-name(self, l),
           CL.map_list(lam(a): formal-shadow-name(a.id) end, args),
-          compile-fun-body(l, self, args, some(len), body, true)
+          compile-fun-body(l, self, args, some(len), body, true, false)
         ))
     method-expr = if len < 9:
       rt-method(string-append("makeMethod", tostring(len - 1)), [clist: j-id(temp-full), j-str(name)])
@@ -1979,7 +2024,7 @@ fun compile-module(self, l, prog-provides, imports-in, prog, freevars, provides,
   }
   visited-body = compile-fun-body(l,
     body-compiler, # resumer gets js-id-of'ed in compile-fun-body
-    [list: resumer-bind], none, prog, false)
+    [list: resumer-bind], none, prog, false, false)
   toplevel-fun = j-fun-async(J.next-j-fun-id(), make-fun-name(body-compiler, l), [clist: formal-shadow-name(resumer)], visited-body)
   define-locations = j-var(LOCS, j-list(true, locations))
   module-body = j-block(
@@ -2000,6 +2045,10 @@ fun splitting-compiler(env, add-phase, { flatness-env; type-flatness-env}, provi
     options: options,
     flatness-env: flatness-env,
     type-flatness-env: type-flatness-env,
+    # flat-mode is true while compiling the body of a flat (non-async) function;
+    # set per-function in compile-fun-body. Default false on the base visitor so
+    # the field always exists.
+    flat-mode: false,
     bindings: post-env.bindings,
     type-bindings: post-env.type-bindings,
     module-bindings: post-env.module-bindings,

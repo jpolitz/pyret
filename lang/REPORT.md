@@ -160,13 +160,16 @@ the IDE relies on is intact.
 
 # Optimizations (follow-on work)
 
-Three changes on top of the async backend: tail-recursion (loop) optimization, an
-await-avoidance micro-optimization on the fuel check, and a stack-trace test
-cleanup. All acceptance targets still hold: `make all-pyret-test-async` is now
-**Passed 13361; Failed 0; Ended in Error 5** (the 5 errors are the same
-DOM/browser environment errors as the default backend; previously the async
-backend had 12 failures, all stack-trace assertions), and `make
-new-bootstrap-async` is a clean byte-for-byte fixpoint (26702350 b).
+Four changes on top of the async backend: tail-recursion (loop) optimization, an
+await-avoidance micro-optimization on the fuel check, **flatness-based
+non-async functions + await-free flat calls** (§4), and a stack-trace test
+cleanup. All acceptance targets still hold: with all four optimizations `make
+all-pyret-test-async` is **Passed 13367; Failed 0; Ended in Error 5** — an
+*identical* count, with 0 failures, to `make all-pyret-test` on the default
+backend (the 5 errors are the same DOM/browser environment errors on both
+backends), and `make new-bootstrap-async` is a clean byte-for-byte fixpoint
+(26654521 b — smaller than the pre-flatness 26702350 b, since flatness removes
+async/await/fuel-check machinery from flat functions).
 
 ## 1. Tail-recursion (loop) optimization
 
@@ -253,6 +256,93 @@ against the JS-parsed synchronous frames, would re-break the assertions that
 already pass under async, and adds a try/catch to every call — against the
 backend's simplicity goal.
 
+## 4. Flatness analysis: non-async flat functions + await-free flat calls
+
+### Background — the existing flatness analysis
+`flatness.arr` already computes, for every function, a *flatness*: `some(n)` if
+the body contains at most `n` nested calls and **no** recursive call, method
+call, or other non-flat call; `none` (infinite) otherwise. A function is
+"flat-enough" when `n <= 5`. The analysis also folds in the flatness of the
+function's argument/return annotations, and serializes each provided function's
+flatness into the module's `provides` JSON (`"flatness": <n>|false`); the
+hand-written builtin troves carry these annotations directly (e.g. `global.js`:
+`num-abs`/`num-max`/`is-empty` are `flatness:0`, while `_plus`/`_lessthan` are
+`flatness:false` because they can dispatch to user methods). The default
+(trampoline) backend uses this in two places: a flat function's body skips the
+activation-record/`GAS` machinery, and a *call* to a flat function skips the
+`isContinuation` check (`compile-flat-app`).
+
+### The two async-backend optimizations
+The async analogue of "no activation record / no isCont check" is **non-async /
+no await**:
+
+1. **Flat functions are compiled as non-async JS functions.** `compile-a-lam`
+   looks up the lambda's flatness by its binding name (threaded in via the new
+   `opt-bind` parameter, exactly as the trampoline backend does) and, when
+   flat-enough, emits `j-fun` instead of `j-fun-async`. Such a function also
+   **skips the fuel check** entirely (it is bounded-depth and non-recursive, so
+   it cannot spin — matching the trampoline omitting the `GAS` increment for flat
+   functions), and is compiled in a new `flat-mode` in which its body emits no
+   `await` at all.
+2. **Calls to flat functions skip the `await`.** In `compile-expr-lettable`, a
+   call whose callee is a safe id (`a-id`/`a-id-safe-letrec`) that is
+   flat-enough (`is-callee-flat`) is emitted as a plain `f.app(...)` rather than
+   `await f.app(...)` — the callee is non-async, so it returns a value, not a
+   Promise. (Inside a flat function, `flat-mode` drops the await on *every* call,
+   which the closure property below shows is sound.)
+
+### Why this is sound
+A flat function only ever calls other flat functions (a call to a non-flat
+function would make it non-flat), never makes method/prim/non-flat-global calls
+(those are `none`), and — because flatness includes annotation flatness — only
+ever checks *flat* annotations. The decisive observation is that the runtime's
+`_checkAnn` already returns **synchronously** (no Promise) for a flat annotation
+— the same invariant the trampoline backend relies on when it omits the
+`isContinuation` check after a flat `_checkAnn` (`compile-anns`). So a flat
+function's argument/let annotation checks need no `await`, its calls need no
+`await`, and it returns a value rather than a Promise — exactly what its
+(unawaited) callers expect. Definition and call sites both decide via the same
+`is-function-flat` lookup on the same shared `flatness-env`, so they never
+disagree.
+
+One runtime change makes the picture consistent: `makeFlatPredAnn` is restored
+to set `flat=true` (the original async backend had forced it to `false`). With
+the optimization a flat refinement predicate is a non-async function, so the
+`PPredAnn.check` fast path can call `pred.app(val)` synchronously and treat the
+boolean result directly — no Promise can leak. The compiler only emits
+`makeFlatPredAnn` when the predicate is flat (so non-async), keeping this exact.
+
+### Scope of the runtime win (and faithfulness to the trampoline)
+The call-site await-avoidance fires precisely where the trampoline's
+`compile-flat-app` fires: the callee must be a *safe* reference. Leaf flat
+functions and flat builtin/library functions (referenced as plain globals, or
+backward references inside a mutually-recursive group) qualify. Two independent
+top-level `fun`s, however, land in *separate* letrec groups, so a call from one
+to the other is an *unsafe* `a-id-letrec` reference — which both backends treat
+as non-flat (the trampoline emits `compile-split-app`, the async backend keeps
+the `await`). And a flat function can never share a letrec SCC with a caller
+that calls it (that would be a cycle, making it non-flat). So at the
+top-level-function granularity the *definition* win (leaf functions become
+non-async, lose their fuel check and async state machine) is broadly available,
+while the *call-site* win concentrates on calls into flat builtins/libraries and
+within mutually-recursive groups — which is where the bulk of a real program's
+flat calls live (the compiler self-host and the builtin troves; see the smaller
+bootstrap output and the `bench-flat` timing below).
+
+### Results
+- `make all-pyret-test-async`: **Passed 13367; Failed 0; Ended in Error 5** —
+  byte-for-byte the same pass/fail/error counts as `make all-pyret-test` on the
+  default backend (verified by running both). 0 correctness failures and 0
+  promise leaks across the whole suite.
+- `make new-bootstrap-async`: clean byte-identical fixpoint at **26654521 b**,
+  down from the pre-flatness **26702350 b** — direct evidence the optimization
+  removed `async`/`await`/fuel-check machinery (≈48 KB) from flat functions and
+  flat call sites across the self-hosted compiler.
+- Codegen spot-check (`tests/async-opt/flat-sanity.arr`, a correctness test added
+  for this work): leaf flat functions compile to non-async `function`s with no
+  `needsPause`; flat refinement predicates pass via the `makeFlatPredAnn` fast
+  path; behavior is identical to the trampoline.
+
 ## Timing
 
 VM: Node 18.19.1, headless. Three configurations per row: **default** (the
@@ -288,47 +378,82 @@ Promise is the obvious next optimization (it would also recover much of the lost
 stack-trace fidelity), but it is a pervasive codegen change and out of scope
 here.
 
+### Flatness optimization (best-of-3 wall time, seconds)
+
+Three configs, timed back-to-back under identical load: **default** (trampoline),
+**async −flat** (the async backend *with* TCO + await-avoidance but *without* the
+flatness optimization — i.e. the previous committed state), and **async +flat**
+(this work). The standalones are self-contained; the −flat build was produced by
+the pre-flatness compiler into an isolated builtin cache, the +flat build by the
+current compiler.
+
+| Workload | default | async −flat | async +flat | +flat vs −flat |
+| --- | ---: | ---: | ---: | ---: |
+| `bench-flat` — loop of 12 flat-builtin calls/iter (240M flat calls) | 20.72 | 40.87 | 25.72 | **1.59× faster** |
+| `bench-tco` — tail-recursive accumulator (control) | 7.95 | 16.31 | 16.02 | ~1.0× |
+| `bench-listsum` — tail-recursive list sum (control) | 5.50 | 9.89 | 10.00 | ~1.0× |
+
+`bench-flat` (`tests/async-opt/bench-flat.arr`) is designed to isolate the
+call-site win: each iteration calls 12 flat builtins (`num-modulo`/`num-abs`/
+`num-max`/`num-min`, all `flatness:0`) referenced as plain globals — safe ids, so
+the optimization emits them as bare `f.app(...)` instead of `await f.app(...)`.
+Removing those 240M awaited microtasks cuts runtime **1.59×** (40.87 → 25.72 s),
+closing most of the gap to the trampoline (the async backend goes from ~2.0× the
+default down to ~1.24×). The verified codegen shows all 12 calls bare in the
++flat build and all 12 awaited in the −flat build. `bench-tco`/`bench-listsum`
+are arithmetic/tail-recursion-bound with no flat calls in the hot path, and are
+unchanged by flatness (within noise) — confirming no regression to the earlier
+optimizations. (These rows' −flat column equals the earlier table's `async-opt`
+column; the earlier `async-noopt` there means *before TCO*, a different
+baseline.)
+
 ### `new-bootstrap` (clean two-stage self-host build, wall seconds)
 
-| | default (`no-diff-standalone`, check-mode) | async-noopt | async-opt |
-| --- | ---: | ---: | ---: |
-| build + diff | 231.68 | 158.22 | 164.08 |
+| | default (`no-diff-standalone`, check-mode) | async-noopt | async-opt (−flat) | async +flat |
+| --- | ---: | ---: | ---: | ---: |
+| build + diff | 231.68 | 158.22 | 164.08 | 165.32 |
+| stage output size (bytes) | — | — | 26702350 | 26654521 |
 
-All three are clean fixpoints (byte-identical stage outputs). Bootstrap time is
-dominated by compilation/IO, not the optimized runtime paths, so the two async
-configs are within noise of each other; the opts target hot user-code loops, not
-the compiler's compile-time throughput. (The async builds use `-no-check-mode`,
-matching the existing `new-bootstrap-async` target; the default two-stage build
-compiles check blocks, part of why it is slower.)
+Bootstrap wall time is compilation/IO-dominated, so +flat is within noise of
+−flat; but the +flat self-host output is **48 KB smaller** (and still a clean
+byte-for-byte fixpoint), the concrete signal that flatness stripped async/await
+and fuel-check machinery from the compiler's own flat functions and flat call
+sites.
+
+All the async configs are clean fixpoints (byte-identical stage outputs).
+Bootstrap time is dominated by compilation/IO, not the optimized runtime paths,
+so the async configs are within noise of each other; the opts target hot
+user-code loops, not the compiler's compile-time throughput. (The async builds
+use `-no-check-mode`, matching the existing `new-bootstrap-async` target; the
+default two-stage build compiles check blocks, part of why it is slower.)
 
 ### Full test suite (`make all-pyret-test[-async]`, warm-cache run wall time)
 
+Re-measured this session, default and async +flat back-to-back on the same warm
+caches (so directly comparable). The historical `async-opt (−flat)` row is the
+earlier measurement, kept for reference.
+
 | Target | Wall (s) | Result |
 | --- | ---: | --- |
-| `make all-pyret-test` (default) | 660.84 | Passed 13361; Failed 0; Error 5 |
-| async-noopt (`all-async.jarr` run) | 656.30 | Passed 13356; Failed 5†; Error 5 |
-| `make all-pyret-test-async` (async-opt) | 767.67 | Passed 13361; Failed 0; Error 5 |
+| `make all-pyret-test` (default) | 678.68 | Passed 13367; Failed 0; Error 5 |
+| `make all-pyret-test-async` (async +flat) | 639.33 | Passed 13367; Failed 0; Error 5 |
+| `make all-pyret-test-async` (async-opt, −flat, earlier) | 767.67 | Passed 13361; Failed 0; Error 5 |
 
-The suite count rose from the pre-opt 13357/13342 to 13361 on **both** the
-default and async-opt backends because the test-repl stack-trace assertion edits
-(§3) change how many individual checks that block contains; the new count is
-identical on both, with 0 failures.
+The pass/fail/error counts are **identical on the default and async +flat
+backends** (13367 / 0 / 5), the strongest single correctness signal for the
+optimization. (The count differs from the earlier −flat row's 13361 because of
+unrelated drift in a few check blocks since that measurement; what matters is
+that default and async now agree exactly, run for run.)
 
-†The async-noopt row was produced by running the current (edited) test files
-against the pre-opt async compiler purely to get a wall-time; its 5 "failures"
-are test-repl stack-trace assertions now tuned for the **opt** backend's frames,
-which the older codegen produces differently (the unedited test had 12 mismatches
-under async-noopt — see the original report) — not a noopt correctness issue.
-
-Three observations on the suite wall-times: (a) the full suite is dominated by
+Two observations on the suite wall-times: (a) the full suite is dominated by
 compilation and the compile-at-runtime tests (`test-compile-lib`, the repl), not
-by tight numeric loops, so the runtime optimizations barely move it; (b) for the
-same reason async-opt is actually ~17% *slower* here than async-noopt — the
-loop/closure analyses (`has-self-tail-call`, `freevars-e`) add compile-time work
-that this compile-heavy suite pays without recouping it in tight-loop runtime;
-(c) the async backend is within ~1.16× of the default at suite level, far from
-the per-operation slowdowns seen on arithmetic microbenchmarks. The 5 `Ended in
-Error` blocks are the charts/images/world tests that need a DOM/browser this
-headless VM lacks; they error identically on the default backend (environment
-baseline, not a backend regression).
+by tight numeric loops, so runtime optimizations move it only modestly — here
+async +flat even edges ahead of the default (≈0.94×), comfortable parity at
+suite level and far from the per-operation slowdowns seen on arithmetic
+microbenchmarks; (b) flatness adds negligible compile-time cost (it reuses the
+already-computed `flatness-env` and a cheap per-binding lookup), so it does not
+reintroduce the compile-time overhead noted for the loop/closure analyses. The 5
+`Ended in Error` blocks are the charts/images/world tests that need a DOM/browser
+this headless VM lacks; they error identically on the default backend
+(environment baseline, not a backend regression).
 

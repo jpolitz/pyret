@@ -2976,16 +2976,19 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return new PPredAnn(ann, pred, predname);
     }
     function makeFlatPredAnn(ann, pred, predname) {
-      // ASYNC BACKEND: a user refinement predicate is an async function, so it
-      // must be awaited. The "flat" fast-path in PPredAnn.check calls pred.app
-      // synchronously (treating its result as a boolean), which under async
-      // would silently skip the predicate and could leak a Promise. So flat
-      // refinements are treated as non-flat here, routing through the awaited
-      // safeCall path. (Genuinely-cheap PPrimAnns like Number/String/brands keep
-      // flat=true and stay synchronous, since they never call user code.)
+      // ASYNC BACKEND + flatness optimization: the compiler emits makeFlatPredAnn
+      // only when the refinement predicate is a *flat* function (see compile-ann's
+      // is-flat test). With the flatness optimization, a flat function is compiled
+      // as a non-async JS function, so `pred.app(val)` returns a boolean
+      // synchronously -- exactly what the PPredAnn.check fast path (guarded by
+      // this.flat) assumes. So flat refinements are genuinely flat again: the
+      // check stays synchronous and never leaks a Promise. (Non-flat predicates
+      // go through makePredAnn, which keeps flat=false and the awaited path.)
       checkFunction(pred);
       checkString(predname);
-      return new PPredAnn(ann, pred, predname);
+      var ppred = new PPredAnn(ann, pred, predname);
+      ppred.flat = ann.flat;
+      return ppred;
     }
     PPredAnn.prototype.check = function(compilerLoc, val) {
       function fail() {
