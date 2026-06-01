@@ -3527,6 +3527,133 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
 
     var queuedRuns = [];
 
+    // ===== Async/promise backend fuel + interruption =========================
+    //
+    // Compiled (non-flat) functions begin with `if (needsPause()) await
+    // checkPause();`, and every non-flat call is `await f.app(...)`. The `await`
+    // is what converts JS stack space into heap space: when needsPause() fires
+    // (every INITIAL_GAS recursive entries), the await on checkPause() yields to
+    // the microtask queue and unwinds the synchronous JS stack, so arbitrarily
+    // deep Pyret recursion never overflows. RUNGAS is the time proxy: when it
+    // runs out we additionally yield a *macrotask* so the host event loop (and a
+    // Stop button via breakAll()) can run.
+    var BREAK_FLAG = false;
+    var NEED_MACRO = false;
+
+    function needsPause() {
+      thisRuntime.GAS -= 1;
+      thisRuntime.RUNGAS -= 1;
+      if (thisRuntime.GAS <= 0) {
+        thisRuntime.GAS = thisRuntime.INITIAL_GAS;
+        return true;
+      }
+      if (thisRuntime.RUNGAS <= 0) {
+        thisRuntime.RUNGAS = thisRuntime.INITIAL_RUNGAS;
+        NEED_MACRO = true;
+        return true;
+      }
+      return false;
+    }
+
+    async function checkPause() {
+      if (BREAK_FLAG) {
+        BREAK_FLAG = false;
+        throw new PyretFailException(thisRuntime.ffi.userBreak);
+      }
+      if (NEED_MACRO) {
+        NEED_MACRO = false;
+        await new Promise(function(resolve) { setTimeout(resolve, 0); });
+      }
+      // Otherwise: returning from this async function still costs the caller's
+      // `await` one microtask turn, which is exactly the stack unwind we want.
+      return;
+    }
+
+    // The async backend replaces the trampoline entirely: a compiled module
+    // function is an `async function`, so we just await it. `run` keeps the same
+    // external contract (RUN_ACTIVE guard, onDone with Success/FailureResult,
+    // getStats) so callers in code.pyret.org and the CLI are unaffected.
+    async function runAsync(program, namespace, options, onDone) {
+      if (RUN_ACTIVE) {
+        onDone(makeFailureResult(thisRuntime.ffi.makeMessageException("Internal: run called while already running")));
+        return;
+      }
+      RUN_ACTIVE = true;
+      var start;
+      function startTimer() {
+        if (typeof window !== "undefined" && window.performance) {
+          start = window.performance.now();
+        } else if (typeof process !== "undefined" && process.hrtime) {
+          start = process.hrtime();
+        }
+      }
+      function endTimer() {
+        if (typeof window !== "undefined" && window.performance) {
+          return window.performance.now() - start;
+        } else if (typeof process !== "undefined" && process.hrtime) {
+          return process.hrtime(start);
+        }
+      }
+      function getStats() { return { bounces: 0, tos: 0, time: endTimer() }; }
+      function finishFailure(exn) {
+        RUN_ACTIVE = false;
+        delete activeThreads[thisThread.id];
+        onDone(makeFailureResult(exn, getStats()));
+      }
+      function finishSuccess(answer) {
+        RUN_ACTIVE = false;
+        delete activeThreads[thisThread.id];
+        onDone(new SuccessResult(answer, getStats()));
+      }
+      startTimer();
+
+      var sync = options.sync || false;
+      var initialGas = options.initialGas || thisRuntime.INITIAL_GAS;
+      var initialRunGas = options.initialRunGas || initialGas * 10;
+      thisRuntime.INITIAL_GAS = initialGas;
+      // In sync mode (e.g. the self-host bootstrap) never yield macrotasks; the
+      // GAS-driven microtask unwinds are enough and keep things fast.
+      thisRuntime.INITIAL_RUNGAS = sync ? Infinity : initialRunGas;
+      thisRuntime.GAS = initialGas;
+      thisRuntime.RUNGAS = thisRuntime.INITIAL_RUNGAS;
+      thisRuntime.EXN_STACKHEIGHT = 0;
+      BREAK_FLAG = false;
+      NEED_MACRO = false;
+
+      currentThreadId += 1;
+      // Only the first concurrent thread reports userBreak; mirrors the trampoline.
+      var reportsBreak = (Object.keys(activeThreads).length === 0);
+      var thisThread = {
+        handlers: {
+          resume: function() { throw new Error("resume is not supported by the async backend"); },
+          break: function() {
+            BREAK_FLAG = true;
+            if (reportsBreak) { finishFailure(new PyretFailException(thisRuntime.ffi.userBreak)); }
+          },
+          error: function(errVal) {
+            var exn = isPyretException(errVal) ? errVal : new PyretFailException(errVal);
+            finishFailure(exn);
+          }
+        },
+        pause: function() {},
+        id: currentThreadId
+      };
+      activeThreads[currentThreadId] = thisThread;
+
+      try {
+        var answer = await program(thisRuntime, namespace);
+        finishSuccess(answer);
+      } catch(e) {
+        if (isPyretException(e)) {
+          finishFailure(e);
+        } else if (thisRuntime.isCont && thisRuntime.isCont(e)) {
+          finishFailure(thisRuntime.ffi.makeMessageException("Unexpected continuation in async run"));
+        } else {
+          finishFailure(e);
+        }
+      }
+    }
+
     function run(program, namespace, options, onDone) {
       // CONSOLE.log("In run2");
       if(RUN_ACTIVE) {
@@ -3870,6 +3997,9 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
 
     function breakAll() {
       RUN_ACTIVE = false;
+      // Observed by checkPause() in the async backend so in-flight Pyret code
+      // throws userBreak at its next fuel check.
+      BREAK_FLAG = true;
       var threadsToBreak = activeThreads;
       var keys = Object.keys(threadsToBreak);
       activeThreads = {};
@@ -5499,107 +5629,69 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     }
 
     // EFFECT: adds modules to realm
-    function runStandalone(staticMods, realm, depMap, toLoad, postLoadHooks) {
-      // Assume that toLoad is in dependency order, so all of their requires are
-      // already instantiated
-      if(toLoad.length == 0) {
-        return {
-          "complete": "runStandalone completed successfully" ,
-        };
-      }
-      else {
-        var uri = toLoad[0];
+    // Async/promise backend module loader: instantiate each module in
+    // dependency order, awaiting the (async) module function so its body
+    // actually runs to completion before we move on. Replaces the trampoline +
+    // safeCall + pauseStack version used by the cont backend.
+    async function runStandalone(staticMods, realm, depMap, toLoad, postLoadHooks) {
+      for (var idx = 0; idx < toLoad.length; idx++) {
+        var uri = toLoad[idx];
         var mod = staticMods[uri];
-        // CONSOLE.log(uri, mod);
 
         var hash = sha.create();
         hash.update(uri);
         realm.static[uri] = { mod: mod, uriHashed: hash.hex() };
 
         var reqs = mod.requires;
-        if(depMap[uri] === undefined) {
+        if (depMap[uri] === undefined) {
           throw new Error("Module has no entry in depmap: " + uri);
         }
         var reqInstantiated = reqs.map(function(d) {
           var duri = depMap[uri][depToString(d)];
-          if(duri === undefined) {
+          if (duri === undefined) {
             throw new Error("Module not found in depmap: " + depToString(d) + " while loading " + uri);
           }
-          if(realm.instantiated[duri] === undefined) {
+          if (realm.instantiated[duri] === undefined) {
             throw new Error("Module not loaded yet: " + depToString(d) + " while loading " + uri);
           }
           return getExported(realm.instantiated[duri]);
         });
 
-        return thisRuntime.safeCall(function() {
-          if (mod.nativeRequires.length === 0) {
-            // CONSOLE.log("Nothing to load, skipping stack-pause");
-            return mod.nativeRequires;
-          } else {
-            return thisRuntime.pauseStack(function(restarter) {
-              // CONSOLE.log("About to load: ", mod.nativeRequires);
-              require(mod.nativeRequires, function(/* varargs */) {
-                var nativeInstantiated = Array.prototype.slice.call(arguments);
-                //CONSOLE.log("Loaded: ", nativeInstantiated);
-                restarter.resume(nativeInstantiated);
-              });
+        // Load native (JS) requires, if any.
+        var natives;
+        if (mod.nativeRequires.length === 0) {
+          natives = mod.nativeRequires;
+        } else {
+          natives = await new Promise(function(resolve, reject) {
+            require(mod.nativeRequires, function(/* varargs */) {
+              resolve(Array.prototype.slice.call(arguments));
             });
-          }
-        }, function(natives) {
-          function continu() {
-            return runStandalone(staticMods, realm, depMap, toLoad.slice(1), postLoadHooks);
-          }
-          if(realm.instantiated[uri]) {
-            return continu();
-          }
-          return thisRuntime.safeCall(function() {
+          });
+        }
+
+        if (!realm.instantiated[uri]) {
+          var theModFunction;
+          var modResult;
+          if (typeof mod.theModule === "function") {
+            theModFunction = mod.theModule;
+            modResult = await theModFunction.apply(null, [thisRuntime, thisRuntime.namespace, uri].concat(reqInstantiated).concat(natives));
+          } else if (!util.isBrowser() && typeof mod.theModule === "string") {
             var indirectEval = eval;
-            var theModFunction;
-            if(typeof mod.theModule === "function") {
-              theModFunction = mod.theModule;
-              return theModFunction.apply(null, [thisRuntime, thisRuntime.namespace, uri].concat(reqInstantiated).concat(natives));
-            }
-            else if (!util.isBrowser() && typeof mod.theModule === "string") {
-              theModFunction = indirectEval("(" + mod.theModule + ")");
-              return theModFunction.apply(null, [thisRuntime, thisRuntime.namespace, uri].concat(reqInstantiated).concat(natives));
-            }
-            else if (util.isBrowser()) {
-              return thisRuntime.pauseStack(function(resumer) {
-                var p = loader.compileInNewScriptContext(mod.theModule);
-                var instantiated = p.then(function(theModFunction) {
-                  thisRuntime.runThunk(function() {
-                    return theModFunction.apply(null, [thisRuntime, thisRuntime.namespace, uri].concat(reqInstantiated).concat(natives));
-                  },
-                  function(r) {
-                    if(thisRuntime.isSuccessResult(r)) {
-                      resumer.resume(r.result);
-                    }
-                    else {
-                      resumer.error(r.exn);
-                    }
-                  });
-                });
-                instantiated.fail(function(val) { return resumer.error(val); });
-                // NOTE(joe): Intentionally not returning anything; this is the
-                // body of a call to pauseStack
-              });
-            }
-          },
-          function(r) {
-            // CONSOLE.log("Result from module: ", uri, r);
-            realm.instantiated[uri] = r;
-            if(uri in postLoadHooks) {
-              return thisRuntime.safeCall(function() {
-                return postLoadHooks[uri](r);
-              }, function(_) {
-                return continu();
-              }, "runStandalone, postLoadHook for " + uri);
-            } else {
-              return continu();
-            }
-          }, "runStandalone, loading " + uri);
-        }, "runStandalone, native-dep loading " + uri);
+            theModFunction = indirectEval("(" + mod.theModule + ")");
+            modResult = await theModFunction.apply(null, [thisRuntime, thisRuntime.namespace, uri].concat(reqInstantiated).concat(natives));
+          } else if (util.isBrowser()) {
+            theModFunction = await loader.compileInNewScriptContext(mod.theModule);
+            modResult = await theModFunction.apply(null, [thisRuntime, thisRuntime.namespace, uri].concat(reqInstantiated).concat(natives));
+          } else {
+            throw new Error("Cannot instantiate module: " + uri);
+          }
+          realm.instantiated[uri] = modResult;
+          if (uri in postLoadHooks) {
+            await postLoadHooks[uri](modResult);
+          }
+        }
       }
+      return { "complete": "runStandalone completed successfully" };
     }
 
     function JSModuleReturn(jsmod) {
@@ -6093,7 +6185,10 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     //String keys should be used to prevent renaming
     var thisRuntime = {
       'builtins': builtins,
-      'run': run,
+      'run': runAsync,
+      'runTrampoline': run,
+      'needsPause': needsPause,
+      'checkPause': checkPause,
       'runThunk': runThunk,
       'execThunk': execThunk,
       'safeCall': safeCall,
@@ -6119,6 +6214,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
 
       'GAS': INITIAL_GAS,
       'INITIAL_GAS': INITIAL_GAS,
+      'RUNGAS': INITIAL_GAS * 10,
+      'INITIAL_RUNGAS': INITIAL_GAS * 10,
 
       'jsnums': jsnums,
       'NumberErrbacks': NumberErrbacks,
@@ -6556,7 +6653,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
   // backend ships a parallel runtime module (runtime-async.js) that sets this to
   // "promise". compile-structs reads this (via the runtime-lib trove) to resolve
   // the `auto` stack-backend and to default the compiler to its own backend.
-  return  {'makeRuntime' : makeRuntime, 'STACK_BACKEND' : 'cont'};
+  return  {'makeRuntime' : makeRuntime, 'STACK_BACKEND' : 'promise'};
 
 
 });
