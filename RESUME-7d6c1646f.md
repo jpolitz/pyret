@@ -11,7 +11,7 @@ substantive commit at the time of writing; if you make another checkpoint, drop 
 > project memory `async-transform.md` first, then `git log --oneline` and the spec
 > `async-transform.md` in the repo root. Stages 0–1 (flag + dispatch + linkage + cache
 > fork) are done and committed; continue with Stage 2 (async runtime core) + Stage 3
-> (codegen rewrite), targeting `make sum.pjarr` running a recursive function. Verify
+> (codegen rewrite), targeting `make sum.p.jarr` running a recursive function. Verify
 > file/line refs against current code before relying on them.
 
 The persistent project memory (`async-transform.md`, auto-loaded each session) holds the
@@ -22,7 +22,7 @@ insight, and the gotchas. This file is just a findable pointer.
 
 **Done + committed (foundation, all validated):**
 - `7d6c1646f` Stage 1: gitignore promise artifacts
-- `faffd850d` Stage 1: async runtime linkage + `%.pjarr` rule + `compiled-promise/` cache fork
+- `faffd850d` Stage 1: async runtime linkage + `%.p.jarr` rule + `compiled-promise/` cache fork
 - `5a9d3b7b4` Stage 1: `js-of-pyret` dispatches codegen on `options.stack-backend`
 - `9453ee0cd` Stage 1: verbatim copies of `anf-loop-compiler.arr` + `runtime.js`
 - `5ab6687b3` Stage 0: inert `--stack-backend [promise|cont|auto]` flag plumbing
@@ -35,13 +35,13 @@ insight, and the gotchas. This file is just a findable pointer.
   drop the split/`switch`/`Cont` trampoline; emit `async` bodies, `await f.app()` for
   non-flat calls, no-await for flat, `if(needsPause()) await checkPause()` at entry,
   explicit-loop TCO. Build a stack-depth regression test up front (the fast-path needs it).
-- Milestone: `make sum.pjarr EF=' '` runs a recursive `sum`. Then Stage 4 (runtime breadth:
+- Milestone: `make sum.p.jarr EF=' '` runs a recursive `sum`. Then Stage 4 (runtime breadth:
   `raw_array_*`, `toReprLoop`, `equal3`), Stage 5 (full suite + bootstrap, add
   `all-pyret-test-promise` / `new-bootstrap-promise` targets), Stage 6 (REPORT.md).
 
 ## Build/test cheatsheet
 - **One-time:** `cd lang && npm install` (VM ships with empty `node_modules`; browserify needed).
-- Compiler gate: `make phaseA` (~1–2 min). Promise single file: `make foo.pjarr EF=' '`.
+- Compiler gate: `make phaseA` (~1–2 min). Promise single file: `make foo.p.jarr EF=' '`.
 - `EF=' '` is a literal space (keeps checks on; empty `EF` turns checks OFF).
 - Run built jarrs from inside `lang/` (else `Cannot find module 'resolve'`).
 - Value-taking CLI flags need DOUBLE dashes: `--stack-backend promise`.

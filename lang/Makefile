@@ -158,9 +158,10 @@ endif
 # Promise/async backend single-file build. Mirrors %.jarr but selects the async
 # backend, links runtime-async.js (via the -async config), and uses a SEPARATE
 # compiled-promise/ cache so async and Cont compiled modules never mix (the
-# polyglot hazard). Build one file fast with: make foo.pjarr EF=' '
-%.pjarr: $(PHASEA)/pyret.jarr %.arr
-	$(NODE) $(PHASEA)/pyret.jarr --outfile $*.pjarr \
+# polyglot hazard). The output is still a runnable standalone .jarr; the .p infix
+# just marks the backend. Build one file fast with: make foo.p.jarr EF=' '
+%.p.jarr: $(PHASEA)/pyret.jarr %.arr
+	$(NODE) $(PHASEA)/pyret.jarr --outfile $*.p.jarr \
                       --build-runnable $*.arr \
                       --builtin-js-dir src/js/trove/ \
                       --builtin-arr-dir src/arr/trove/ \

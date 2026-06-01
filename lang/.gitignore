@@ -70,7 +70,7 @@ tests/pyret/standalone/importer.jarr
 compiled/
 compiled-promise/
 tests/compiled-promise/
-*.pjarr
+*.p.jarr
 
 .pyret-parley.*.pid
 .pyret-parley.*.lock
