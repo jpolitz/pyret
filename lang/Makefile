@@ -155,6 +155,20 @@ endif
                       $(EXTRA_FLAGS) \
                       --require-config src/scripts/standalone-configA.json
 
+# Promise/async backend single-file build. Mirrors %.jarr but selects the async
+# backend, links runtime-async.js (via the -async config), and uses a SEPARATE
+# compiled-promise/ cache so async and Cont compiled modules never mix (the
+# polyglot hazard). Build one file fast with: make foo.pjarr EF=' '
+%.pjarr: $(PHASEA)/pyret.jarr %.arr
+	$(NODE) $(PHASEA)/pyret.jarr --outfile $*.pjarr \
+                      --build-runnable $*.arr \
+                      --builtin-js-dir src/js/trove/ \
+                      --builtin-arr-dir src/arr/trove/ \
+                      --compiled-dir compiled-promise/ \
+                      --stack-backend promise \
+                      $(EXTRA_FLAGS) \
+                      --require-config src/scripts/standalone-configA-async.json
+
 %.html: $(PHASEA)/pyret.jarr %.arr
 	$(NODE) $(PHASEA)/pyret.jarr --outfile $*.jarr \
                       --build-runnable $*.arr \
@@ -302,11 +316,13 @@ clean:
 	$(call RMDIR,$(PHASEC))
 	$(call RMDIR,build/show-comp/compiled)
 	$(call RMDIR,$(RELEASE_DIR))
+	$(call RMDIR,compiled-promise)
 	$(call RM,$(BUNDLED_DEPS))
 
 .PHONY : test-clean
 test-clean:
 	$(call RMDIR, tests/compiled)
+	$(call RMDIR, tests/compiled-promise)
 
 # Written this way because cmd.exe complains about && in command lines
 new-bootstrap: no-diff-standalone $(PHASE0BUILD)
