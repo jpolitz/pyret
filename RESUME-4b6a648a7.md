@@ -1,4 +1,4 @@
-# Resume: async-transform backend — checkpoint @ 7d6c1646f
+# Resume: async-transform backend — checkpoint @ 4b6a648a7
 
 Resume point for the async/promise compiler-backend work (spec: `async-transform.md`).
 Branch: **`async-transform`**. This file is tagged with the short hash of the last
@@ -21,6 +21,7 @@ insight, and the gotchas. This file is just a findable pointer.
 ## Status
 
 **Done + committed (foundation, all validated):**
+- `4b6a648a7` Rename promise build extension `.pjarr` -> `.p.jarr`
 - `7d6c1646f` Stage 1: gitignore promise artifacts
 - `faffd850d` Stage 1: async runtime linkage + `%.p.jarr` rule + `compiled-promise/` cache fork
 - `5a9d3b7b4` Stage 1: `js-of-pyret` dispatches codegen on `options.stack-backend`
