@@ -6552,7 +6552,11 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     return thisRuntime;
   }
 
-  return  {'makeRuntime' : makeRuntime};
+  // Identifies which control-flow backend this runtime implements. The async
+  // backend ships a parallel runtime module (runtime-async.js) that sets this to
+  // "promise". compile-structs reads this (via the runtime-lib trove) to resolve
+  // the `auto` stack-backend and to default the compiler to its own backend.
+  return  {'makeRuntime' : makeRuntime, 'STACK_BACKEND' : 'cont'};
 
 
 });
