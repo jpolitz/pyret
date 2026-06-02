@@ -310,6 +310,32 @@ pyret-test-promise: phaseA tests/pyret/main2.p.jarr
 .PHONY : all-pyret-test-promise
 all-pyret-test-promise: pyret-test-promise parse-test
 
+# --- Async-backend stack-safety / TCO / flatness guard tests ---
+# tests/async-opt/*.arr exercise the parts of the async backend most likely to
+# break under optimization: tail-call-loop soundness, flat-function correctness,
+# and re-entrant native-stack safety of the higher-order loop helpers. These run
+# as a SEPARATE target (not folded into main2) on purpose: a stack-management
+# regression here can overflow/crash the whole process, which would take an
+# unrelated chunk of a big aggregate suite down with it and obscure the cause.
+# Built on the promise backend with -check-all; each is also valid on cont (the
+# correctness ones) but the point is the async runtime. Run: make async-opt-test
+ASYNC_OPT_TESTS = tco-test flat-sanity helper-reentry-pyret helper-reentry
+
+.PHONY : async-opt-test
+async-opt-test: phaseA
+	@fail=0; for t in $(ASYNC_OPT_TESTS); do \
+	  echo "=== async-opt: $$t (promise backend) ==="; \
+	  $(NODE) $(PHASEA)/pyret.jarr --outfile tests/async-opt/$$t.p.jarr \
+	    --build-runnable tests/async-opt/$$t.arr \
+	    --builtin-js-dir src/js/trove/ --builtin-arr-dir src/arr/trove/ \
+	    --compiled-dir compiled-promise/ --stack-backend promise -check-all \
+	    --require-config src/scripts/standalone-configA-async.json \
+	    || { echo "BUILD FAILED: $$t"; fail=1; continue; }; \
+	  $(NODE) tests/async-opt/$$t.p.jarr || { echo "TESTS FAILED: $$t"; fail=1; }; \
+	done; \
+	if [ $$fail -ne 0 ]; then echo "FAIL: async-opt-test"; exit 1; \
+	else echo "PASS: async-opt-test ($(words $(ASYNC_OPT_TESTS)) files)"; fi
+
 .PHONY : pyret-io-test
 pyret-io-test: phaseA
 	$(NPM_EXEC) jest --detectOpenHandles --forceExit --verbose "tests/io-tests/io.test.js"

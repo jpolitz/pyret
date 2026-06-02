@@ -1,33 +1,37 @@
 #lang pyret
 
-# Stress test for the higher-order-helper conditional-await optimization
-# (runtime-async.js: raw_array_map / raw_array_each / raw_array_mapi / eachLoop;
-# raw-list-map shares the identical loop shape and is covered by the pure-Pyret
-# companion helper-reentry-pyret.arr).
+# Stack-safety guard for the loop helpers (runtime-async.js: raw_array_map /
+# raw_array_each / raw_array_mapi / eachLoop; raw-list-map shares the loop shape
+# and is covered by the pure-Pyret companion helper-reentry-pyret.arr).
 #
-# The scenario from async-optimization-testing.md: user code calls a helper with
-# a callback; the helper calls the callback *synchronously* (planning to check
-# for a Promise only after it returns); the callback re-enters the same helper,
-# which re-enters the loop and hits the synchronous call again; this repeats and
-# the native stack overflows.
+# The hazard (from async-optimization-testing.md): a higher-order helper calls
+# its callback *synchronously* and only decides whether to `await` afterward; if
+# the callback re-enters the same helper, the synchronous portions nest and the
+# native stack overflows. A raw-JS (FFI) callback (helper-reentry.js) with NO
+# compiled per-entry fuel check is the purest probe of whether the *helper*
+# bounds that re-entrant descent.
 #
-# The callback is a raw-JS (FFI) function (helper-reentry.js) with NO compiled
-# per-entry fuel check -- the purest probe of whether the *helper* bounds the
-# re-entrant native-stack descent. The callback honors the embedder contract
-# (it returns the helper's Promise), so a re-entrant overflow surfaces as a
-# caught failure rather than being swallowed. run-reentry returns "ok" /
-# "OVERFLOW" / "ERR:..".  Modes:
-#   "propagate" -- callback returns the helper's Promise (helper's `await res`
-#                  branch); the overflow propagates to the awaiter and is caught.
-#   "eager"     -- async callback that yields to the event loop every `gas`
-#                  levels: the "more aggressive fuel accounting" hypothesis.
+# On THIS (async/promise) backend the loop helpers charge fuel UNCONDITIONALLY
+# on every iteration -- `if (needsPause()) await checkPause();` runs before each
+# `await f.app(...)`, regardless of whether the callback returns a value or a
+# Promise. So even a fuel-less re-entrant callback is bounded: every ~INITIAL_GAS
+# levels the helper awaits, unwinding the native stack back to the event loop.
+# Re-entry is therefore stack-safe at any depth -> run-reentry returns "ok".
+#
+# This is exactly the case a future helper-loop *conditional-await* optimization
+# (skip the await + the fuel charge when a flat callback returns a value) would
+# reintroduce the overflow for. These checks pin the current sound behavior: if
+# such an optimization drops the per-iteration fuel charge, the deep cases below
+# flip from "ok" to "OVERFLOW" and this guard fails -- which is the point.
+#
+# run-reentry returns "ok" / "OVERFLOW" / "ERR:..".  Modes:
+#   "propagate" -- sync callback that re-enters and returns the helper's Promise.
+#   "eager"     -- async callback that yields every `gas` levels (gas=0 = never).
 
 import js-file("./helper-reentry") as R
 
 helpers = [list: "raw-array-map", "raw-array-each", "raw-array-mapi", "each-loop"]
 
-# Heads-up (to stderr) that the RangeError spew below is the test working -- it
-# deliberately overflows the native stack. Runs before the checks.
 R.explain-expected-noise()
 
 fun reenter(helper :: String, mode :: String, depth :: Number, gas :: Number) -> String:
@@ -35,29 +39,24 @@ fun reenter(helper :: String, mode :: String, depth :: Number, gas :: Number) ->
 end
 
 # ---------------------------------------------------------------------------
-# Headline: a fuel-less callback that re-enters a loop helper overflows the
-# native stack. The helper does NOT bound the re-entrant descent. (propagate
-# mode -> the overflow is caught and reported, not silently buried.)
+# A fuel-less callback re-entering a loop helper does NOT overflow: the helper's
+# per-iteration needsPause()/checkPause() bounds the re-entrant native-stack
+# descent, even 200k levels deep.
 # ---------------------------------------------------------------------------
-check "re-entrant fuel-less callback overflows every loop helper (propagate)":
+check "re-entrant fuel-less callback is bounded by the helper's per-iter fuel (propagate)":
   for each(h from helpers) block:
-    reenter(h, "propagate", 1000, 0) is "ok"          # shallow: fine
-    reenter(h, "propagate", 200000, 0) is "OVERFLOW"  # deep: native stack blows
+    reenter(h, "propagate", 1000, 0) is "ok"     # shallow: fine
+    reenter(h, "propagate", 200000, 0) is "ok"   # deep: still bounded by the helper
   end
 end
 
 # ---------------------------------------------------------------------------
-# The fix hypothesis (async-optimization-testing.md): "more aggressive fuel
-# accounting -- call needsPause eagerly". Expressed here at the callback: an
-# async callback that yields to the event loop every `gas` levels bounds the
-# native stack, so an arbitrarily deep re-entry completes. Contrast gas=0 (never
-# yield) which overflows just like the sync callbacks above.
+# Bounded at extreme depth, and even when the callback itself never yields
+# (gas=0): on this backend it is the HELPER's fuel, not the callback's, that
+# bounds the stack -- so an eager callback that never yields is still safe.
 # ---------------------------------------------------------------------------
-check "eager periodic yield bounds the descent (the fix direction)":
-  # 1,000,000-deep re-entry, yielding every 256 levels: completes cleanly.
+check "bounded at extreme depth and with a fuel-less (gas=0) eager callback":
   reenter("raw-array-map", "eager", 1000000, 256) is "ok"
   reenter("each-loop", "eager", 1000000, 256) is "ok"
-  # An eager (async) callback that NEVER yields still overflows -- it is the
-  # yield, not merely being async, that bounds the stack.
-  reenter("raw-array-map", "eager", 200000, 0) is "OVERFLOW"
+  reenter("raw-array-map", "eager", 200000, 0) is "ok"
 end

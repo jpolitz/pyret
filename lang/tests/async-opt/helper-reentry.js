@@ -45,29 +45,20 @@
     // on modern Node. The "Exception in PromiseRejectCallback" stderr lines are
     // intrinsic to overflowing the stack this hard and are harmless.
 
-    // Run an async Pyret-side computation from this synchronous FFI boundary and
-    // report the outcome back as a Pyret string, *catching* a stack overflow so
-    // the process survives and the .arr check can assert on it. Mirrors the
-    // pauseStack/runThunk pattern in test-each-loop.js and execThunk.
-    function driveThunk(thunk) {
-      return runtime.pauseStack(function(restarter) {
-        runtime.runThunk(
-          function(_ignoredRT, _ignoredNS) { return thunk(); },
-          function(result) {
-            var out;
-            if (runtime.isFailureResult(result)) {
-              var e = result.exn;
-              if (e instanceof RangeError) { out = "OVERFLOW"; }
-              else if (e instanceof Error) { out = "ERR:" + e.name; }
-              else if (e && e.exn) { out = "PYRETERR"; }
-              else { out = "ERR:other"; }
-            } else {
-              out = "ok";
-            }
-            restarter.resume(runtime.makeString(out));
-          },
-          {});
-      });
+    // Classify a caught failure into a Pyret string the .arr check asserts on.
+    // A native-stack overflow surfaces as a RangeError ("OVERFLOW"); anything
+    // else is reported verbatim so a regression stays legible.
+    //
+    // NOTE (adapted for this backend): the upstream probe drove the thunk with
+    // pauseStack + a nested runThunk. The async `run` here rejects a same-runtime
+    // re-entry via its RUN_ACTIVE guard (run-task runs INLINE in this backend), so
+    // instead we run the helper at the FFI boundary directly with `await` and let
+    // the compiled call site await the Promise we return.
+    function classify(e) {
+      if (e instanceof RangeError) { return "OVERFLOW"; }
+      else if (e instanceof Error) { return "ERR:" + e.name; }
+      else if (e && e.exn) { return "PYRETERR"; }
+      else { return "ERR:other"; }
     }
 
     // One synchronous re-entry into the named helper, passing `cont` as the
@@ -93,7 +84,7 @@
     //                 event loop every `gas` levels (a manual setImmediate). This
     //                 is the "more aggressive fuel accounting" hypothesis from
     //                 async-optimization-testing.md, expressed at the callback.
-    function runReentry(helperName, mode, depth, gas) {
+    async function runReentry(helperName, mode, depth, gas) {
       var toGo, counter, cb;
 
       var stepSync = runtime.makeFunction(function(_x) {
@@ -118,11 +109,14 @@
 
       cb = (mode === "eager") ? stepEager : stepSync;
 
-      return driveThunk(function() {
-        toGo = depth;
-        counter = 0;
-        return oneLevel(helperName, cb);
-      });
+      toGo = depth;
+      counter = 0;
+      try {
+        await oneLevel(helperName, cb);
+        return runtime.makeString("ok");
+      } catch (e) {
+        return runtime.makeString(classify(e));
+      }
     }
 
     // Print, to stderr, a heads-up that the scary RangeError spew below is the
@@ -133,13 +127,12 @@
         ? function(s) { process.stderr.write(s); }
         : function(s) { runtime.stdout(s); };
       w("\n");
-      w("[helper-reentry] This test DELIBERATELY overflows the native stack to show\n");
-      w("[helper-reentry] that a fuel-less re-entrant callback is not bounded by the\n");
-      w("[helper-reentry] loop helpers. The 'Exception in PromiseRejectCallback:\n");
-      w("[helper-reentry] RangeError: Maximum call stack size exceeded' lines that\n");
-      w("[helper-reentry] follow are EXPECTED and harmless -- V8's promise-rejection\n");
-      w("[helper-reentry] hook runs on the exhausted stack and throws. The overflow\n");
-      w("[helper-reentry] is caught and asserted as \"OVERFLOW\"; a passing run exits 0.\n");
+      w("[helper-reentry] Probing re-entrant native-stack safety of the loop helpers.\n");
+      w("[helper-reentry] On this backend the helpers charge fuel every iteration, so\n");
+      w("[helper-reentry] re-entry stays bounded (each case returns \"ok\"); a passing\n");
+      w("[helper-reentry] run exits 0 with no RangeError spew. If a conditional-await\n");
+      w("[helper-reentry] optimization later drops the per-iter fuel charge, the deep\n");
+      w("[helper-reentry] cases overflow and surface as \"OVERFLOW\".\n");
       w("\n");
       return runtime.nothing;
     }
