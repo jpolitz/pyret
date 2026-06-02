@@ -214,8 +214,18 @@ promise target diffs the converged pair phaseD vs phaseE.
   `ActivationRecord`-derived list — e.g. the bottom `interactions://1` REPL-call frame is absent
   and TCO frames aren't collapsed the same way. **Error *detection* is correct**: every
   interleaved `satisfies is-failure-result` check passes; only frame shape differs. Per the
-  spec, these are flagged, not "fixed" — the right follow-up is to replace exact-frame
-  assertions with backend-agnostic ones and deprecate the pinned tests.
+  spec, these are flagged, not "fixed". Following the spec's second instruction ("write new
+  tests that work under both backends to make sure your behavior is sensible"), a new test file
+  **`tests/pyret/tests/test-stacktrace-portable.arr`** re-exercises the same error scenarios and
+  asserts only the portable properties — (1) the error is detected, (2) the innermost frame
+  (index 0) is the actual error site, (3) the user's definition-site frames are present, (4) the
+  trace is non-trivial — without pinning total length, the bottom `interactions://` repl frame,
+  or TCO/recursion frame collapsing. It is imported by `tests/pyret/main2.arr`, so it runs in the
+  normal suite on both backends (`make all-pyret-test` and `make all-pyret-test-promise`) and
+  passes 74/74 on each. The existing pinned `test-repl` assertions can be deprecated in a later
+  pass. (Notable observed extreme: a deep non-tail `sum(1000)` error yields ~1002 frames under
+  cont but collapses to a single innermost frame under promise, since the async frames are
+  unwound by `await` before capture — both still pinpoint the error site.)
 - `makeDataTypeConstructor` emits a *sync* `_checkAnn` for data-field annotations. Fine for flat
   refinements (validated); a non-flat/async refinement on a data field would leak a Promise.
 - `mocha` (selenium) tests are unrunnable on this headless VM, as noted in the spec.
