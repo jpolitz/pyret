@@ -96,7 +96,7 @@ A flat lambda stays a plain `j-fun`; a non-flat one becomes `j-async-fun`.
 - `needsPause()`: decrements `GAS` (recursion depth) and `RUNGAS` (time proxy); returns true
   when either hits 0 (and resets it).
 - `async checkPause()`: throws `userBreak` if the break flag is set (Stop button); on `RUNGAS`
-  expiry additionally yields a **macrotask** (`await new Promise(r => setTimeout(r, 0))`) so the
+  expiry additionally yields a **macrotask** (`await new Promise(r => util.suspend(r))`) so the
   host event loop can run; otherwise the natural microtask of `await f.app` already unwinds the
   synchronous JS stack. In **sync mode** (`options.sync`, used by the self-host bootstrap)
   `RUNGAS = Infinity` so it never yields a macrotask.
@@ -212,7 +212,7 @@ Six microbenchmarks (pulled from a parallel optimization effort) measure the asy
 overhead vs the cont/trampoline backend. Each is pure compute that prints one number; timing is
 wall-clock of `node bench.jarr` (built `-no-check-mode`), cont = `bench.jarr`, promise =
 `bench.p.jarr`. The async backend's intrinsic cost is the per-call `await` (a microtask) plus a
-periodic macrotask yield (`setTimeout(0)` every `INITIAL_RUNGAS` = 5000 steps) — the "await tax".
+periodic macrotask yield (every `INITIAL_RUNGAS` = 5000 steps) — the "await tax".
 
 **A TCO bug the benchmarks surfaced (now fixed — `anf-loop-compiler-async.arr`).** The first runs
 showed a pathological 8.5× on `bench-tco` and an **out-of-memory crash** on `bench-flat`. Root
@@ -228,31 +228,63 @@ promise suite still 12997/13002 (only the 5 stacktrace pins fail, no new failure
 annotated 5M-deep tail loop dropped from 16.5s/3.7 GB to 3.0s/139 MB, matching the unannotated
 case.
 
-Results (best of single timed runs; all outputs verified equal across backends):
+**Two later optimizations closed most of the remaining gap (`runtime-async.js`).**
 
-| benchmark | shape | cont | promise (pre-fix) | promise (post-fix) | ratio |
+1. **`util.suspend` instead of `setTimeout(0)` for the macrotask yield.** This was the dominant
+   cost. `checkPause()` yielded its interruptibility macrotask via `await new Promise(r =>
+   setTimeout(r, 0))`, but **node clamps `setTimeout` to a ~1 ms floor**. At one yield per
+   `INITIAL_RUNGAS` = 5000 steps, a tight 80M-iteration loop does ~16k yields ≈ 16s of pure timer
+   clamp. The cont trampoline never paid this because it has always suspended via `util.suspend`
+   (`setImmediate` in node, `postMessage` in the browser, `setTimeout` only as last resort).
+   Switching `checkPause` to the same `util.suspend` removed the clamp with no loss of
+   interruptibility. *This alone took `bench-map` 2.4× → 1.2×, `bench-tco` 2.8× → 1.6×.*
+   - Diagnostic that isolated it: patching the built standalone to (a) drop the stack counter and
+     (b) drop all yields showed the stack counter's microtask yields are nearly free (2.36× vs
+     2.37×), while removing yields entirely collapsed the gap (0.92×) — so the cost was the
+     *kind* of macrotask, not the counters. (The trampoline also re-increments `GAS` on return so
+     it tracks live depth rather than operation count; we don't, but since those yields are cheap
+     microtasks it doesn't move the benchmark.)
+2. **Conditional per-element `await` in the loop helpers** (`raw_array_map/each/mapi/map1/fold/
+   build/build_opt/bool_mapper`, `raw_list_map/filter/fold`, `raw_list_join_str_last`,
+   `eachLoop`). Each helper still charges fuel *before* the callback (`if (needsPause()) await
+   checkPause()` — this is what bounds re-entrant flat callbacks; see the `helper-reentry` guard),
+   then does `var res = f.app(x); ... isThenable(res) ? await res : res`. A **flat** (synchronous,
+   value-returning) callback skips the per-element microtask entirely; a non-flat callback returns
+   a thenable and is awaited exactly as before. Soundness: the thenable test is the robust
+   `res && typeof res.then === "function"` shared with `safeCall` (a false negative would leak a
+   Promise), and fuel stays *before* the call so the re-entry bound is unchanged. This is the same
+   shape the parallel effort shipped — but they charged fuel only on the flat branch *after* the
+   call, leaving a re-entry overflow hole; charging first closes it (our `helper-reentry` guard
+   asserts the deep cases stay bounded where theirs overflows).
+
+Results (best of 3 timed runs; all outputs verified byte-equal across backends):
+
+| benchmark | shape | cont | promise (pre-fix) | promise (post-opt) | ratio |
 |---|---|---|---|---|---|
-| bench-flat | annotated tail, 20M deep, flat-builtin calls | 26.0s | **OOM** | 29.0s | **1.1×** |
-| bench-listsum | annotated tail, list build+sum | 6.1s | 23.1s | 11.0s | **1.8×** |
-| bench-nontail | non-tail `fib` (TCO N/A) | 8.2s | 19.4s | 19.9s | 2.4× |
-| bench-map | shallow tail driver + flat `map`/`fold` | 16.2s | 45.0s | 44.1s | 2.7× |
-| bench-tco | annotated tail, 200k deep × 200 | 7.9s | 66.3s | 21.7s | 2.8× |
+| bench-flat | annotated tail, 20M deep, flat-builtin calls | 21.8s | **OOM** | 23.8s | **1.09×** |
+| bench-listsum | annotated tail, list build+sum | 5.8s | 23.1s | 6.0s | **1.04×** |
+| bench-nontail | non-tail `fib` (TCO N/A) | 8.2s | 19.4s | 11.5s | **1.41×** |
+| bench-map | shallow tail driver + flat `map`/`fold` | 15.7s | 45.0s | 18.7s | **1.19×** |
+| bench-tco | annotated tail, 200k deep × 200 | 7.9s | 66.3s | 13.8s | **1.75×** |
+
+For comparison, the parallel optimization effort (which dropped the stack counter and the
+per-iteration fuel charge, leaving the re-entry overflow) reported flat 1.0×, listsum 1.7×, map
+1.0×, nontail 1.65×, tco 2.1×. We now **beat it on listsum/nontail/tco** and are close on
+flat/map — while keeping the stack-safety guarantee it gave up.
 
 Reading the numbers:
 
-- The annotated-tail benchmarks (flat/listsum/tco) improved dramatically once TCO was restored —
-  `bench-flat` went from OOM to **near-parity (1.1×)**.
-- `bench-nontail` and `bench-map` are unchanged by the fix (correctly — `fib` is genuinely
-  non-tail, and `bench-map`'s driver loop is only 2000-deep; the cost is the per-element await in
-  `map`/`fold`, not TCO). Their ~2.4–2.7× is the residual await tax.
+- The annotated-tail benchmarks (flat/listsum) are at **near-parity (1.04–1.09×)** — TCO restored
+  + the macrotask-yield fix.
+- `bench-map` (the conditional-await target) dropped 2.7× → **1.19×**; the per-element await on its
+  flat `map`/`fold` callbacks is now skipped.
+- `bench-nontail` (1.41×) and `bench-tco` (1.75×) carry the genuine residual **await tax**: a
+  microtask per non-flat call, inherent to compiling every call to `await f.app`. `fib` is truly
+  non-tail (one await per recursive call); the TCO loop awaits each iteration's body. This is the
+  floor of the async model and cannot be removed without changing it.
 - On real, mixed workloads (the full suite, `test-numbers`, the bootstrap self-compile) the async
   backend runs at roughly **1.0×** — jsnums arithmetic, parsing, and library work dominate, and
   the await tax only becomes visible in these deliberately await-bound tight loops.
-
-Remaining async overhead is inherent to the model (a microtask per non-flat call) and matches what
-the parallel optimization effort independently found; closing it further (e.g. helper-loop
-conditional-await for flat callbacks, as `bench-map` would want) is future work, not a correctness
-issue.
 
 ## Known divergences and gaps
 

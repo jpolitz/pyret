@@ -3300,6 +3300,16 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       };
     }
 
+    // Robust thenable test (Promise from any realm, or a makeFunction-wrapped
+    // async fn). `res instanceof Promise` misses cross-realm thenables; a false
+    // negative leaks a Promise into the next op ("Non Pyret value: Promise"), so
+    // this is the same shape safeCall uses. Used by the loop helpers below to
+    // skip the per-element `await` when a flat (value-returning) callback ran
+    // synchronously — KEEPING the pre-call fuel charge, which bounds re-entry.
+    function isThenable(res) {
+      return res !== null && typeof res === "object" && typeof res.then === "function";
+    }
+
     // Async-backend safeCall: run `fun`, then `after(result)`. Thenable-aware so
     // it stays SYNCHRONOUS when `fun`/`after` are synchronous (flat user code) and
     // only returns a Promise when they actually await. This matters for callers
@@ -3307,7 +3317,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     // must not be wrapped in a Promise, or the (un-awaited) result leaks.
     function safeCall(fun, after, stackFrame) {
       var funRes = fun();
-      if (funRes !== null && typeof funRes === "object" && typeof funRes.then === "function") {
+      if (isThenable(funRes)) {
         return funRes.then(function(v) { return after(v); });
       }
       return after(funRes);
@@ -3316,7 +3326,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     async function eachLoop(fun, start, stop) {
       for(var i = start; i < stop; i++) {
         if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        await fun.app(i);
+        var res = fun.app(i);
+        if(isThenable(res)) { await res; }
       }
       return thisRuntime.nothing;
     }
@@ -3336,7 +3347,12 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     // the microtask queue and unwinds the synchronous JS stack, so arbitrarily
     // deep Pyret recursion never overflows. RUNGAS is the time proxy: when it
     // runs out we additionally yield a *macrotask* so the host event loop (and a
-    // Stop button via breakAll()) can run.
+    // Stop button via breakAll()) can run. We yield that macrotask through
+    // util.suspend (setImmediate in node, postMessage in the browser) rather than
+    // setTimeout(0): node clamps setTimeout to a ~1ms floor, and at one yield per
+    // INITIAL_RUNGAS operations that floor dominated tight-loop runtime (~16k
+    // clamped timers/bench ≈ 16s). This matches the cont trampoline, which has
+    // always suspended via util.suspend (runtime.js iter loop).
     var BREAK_FLAG = false;
     var NEED_MACRO = false;
 
@@ -3362,7 +3378,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       }
       if (NEED_MACRO) {
         NEED_MACRO = false;
-        await new Promise(function(resolve) { setTimeout(resolve, 0); });
+        await new Promise(function(resolve) { util.suspend(resolve); });
       }
       // Otherwise: returning from this async function still costs the caller's
       // `await` one microtask turn, which is exactly the stack unwind we want.
@@ -4135,7 +4151,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var arr = new Array();
       for (var curIdx = 0; curIdx < len; curIdx++) {
         if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        arr.push(await f.app(curIdx));
+        var res = f.app(curIdx);
+        arr.push(isThenable(res) ? await res : res);
       }
       return arr;
     };
@@ -4148,7 +4165,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var arr = new Array();
       for (var curIdx = 0; curIdx < len; curIdx++) {
         if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        var res = await f.app(curIdx);
+        var res = f.app(curIdx);
+        if(isThenable(res)) { res = await res; }
         if (thisRuntime.ffi.isSome(res)) {
           arr.push(thisRuntime.getField(res, "value"));
         }
@@ -4264,7 +4282,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var length = arr.length;
       for(var currentIndex = 0; currentIndex < length; currentIndex++) {
         if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        currentAcc = await f.app(currentAcc, arr[currentIndex], currentIndex + start);
+        var res = f.app(currentAcc, arr[currentIndex], currentIndex + start);
+        currentAcc = isThenable(res) ? await res : res;
       }
       return currentAcc;
     };
@@ -4278,7 +4297,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         var length = arr.length;
         for(var currentIndex = start; currentIndex < length; currentIndex++) {
           if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-          var res = await f.app(arr[currentIndex], currentIndex);
+          var res = f.app(arr[currentIndex], currentIndex);
+          if(isThenable(res)) { res = await res; }
           if(res === bad) { return res; }
         }
         return good;
@@ -4297,7 +4317,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var newArray = new Array(length);
       for(var currentIndex = 0; currentIndex < length; currentIndex++) {
         if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        newArray[currentIndex] = await f.app(arr[currentIndex]);
+        var res = f.app(arr[currentIndex]);
+        newArray[currentIndex] = isThenable(res) ? await res : res;
       }
       return newArray;
     };
@@ -4309,7 +4330,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var length = arr.length;
       for(var currentIndex = 0; currentIndex < length; currentIndex++) {
         if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        await f.app(arr[currentIndex]);
+        var res = f.app(arr[currentIndex]);
+        if(isThenable(res)) { await res; }
       }
       return nothing;
     };
@@ -4322,7 +4344,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var newArray = new Array(length);
       for(var currentIndex = 0; currentIndex < length; currentIndex++) {
         if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        newArray[currentIndex] = await f.app(arr[currentIndex], currentIndex);
+        var res = f.app(arr[currentIndex], currentIndex);
+        newArray[currentIndex] = isThenable(res) ? await res : res;
       }
       return newArray;
     };
@@ -4337,7 +4360,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
         var currentFst = thisRuntime.getColonField(currentLst, "first");
         currentLst = thisRuntime.getColonField(currentLst, "rest");
-        currentAcc.push(await f.app(currentFst));
+        var res = f.app(currentFst);
+        currentAcc.push(isThenable(res) ? await res : res);
       }
       return thisRuntime.ffi.makeList(currentAcc);
     };
@@ -4353,7 +4377,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
         var currentFst = thisRuntime.getColonField(currentLst, "first");
         currentLst = thisRuntime.getColonField(currentLst, "rest");
-        currentAcc.push(await tostring.app(currentFst));
+        var res = tostring.app(currentFst);
+        currentAcc.push(isThenable(res) ? await res : res);
       }
       if (currentAcc.length <= 1) { return currentAcc.join(sep); }
       var lastElem = currentAcc.pop();
@@ -4373,7 +4398,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       for(var currentIndex = 0; currentIndex < length; currentIndex++) {
         if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
         var toCall = currentIndex === 0 ? f1 : f;
-        newArray[currentIndex] = await toCall.app(arr[currentIndex]);
+        var res = toCall.app(arr[currentIndex]);
+        newArray[currentIndex] = isThenable(res) ? await res : res;
       }
       return newArray;
     };
@@ -4388,7 +4414,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
         var currentFst = thisRuntime.getColonField(currentLst, "first");
         currentLst = thisRuntime.getColonField(currentLst, "rest");
-        var res = await f.app(currentFst);
+        var res = f.app(currentFst);
+        if(isThenable(res)) { res = await res; }
         if(!(isBoolean(res))) {
           return thisRuntime.ffi.throwNonBooleanCondition(["raw-list-filter"], "Boolean", res);
         }
@@ -4407,7 +4434,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var newArray = new Array();
       for(var currentIndex = 0; currentIndex < length; currentIndex++) {
         if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        var res = await f.app(arr[currentIndex]);
+        var res = f.app(arr[currentIndex]);
+        if(isThenable(res)) { res = await res; }
         if(!(isBoolean(res))) {
           return thisRuntime.ffi.throwNonBooleanCondition(["raw-array-filter"], "Boolean", res);
         }
@@ -4428,7 +4456,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
         var fst = thisRuntime.getColonField(currentLst, "first");
         currentLst = thisRuntime.getColonField(currentLst, "rest");
-        currentAcc = await f.app(currentAcc, fst);
+        var res = f.app(currentAcc, fst);
+        currentAcc = isThenable(res) ? await res : res;
       }
       return currentAcc;
     };
