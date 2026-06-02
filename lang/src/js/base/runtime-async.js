@@ -3808,12 +3808,26 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       }
     }
 
+    // Async-backend pauseStack: returns a real Promise that settles when the
+    // resumer calls restarter.resume / .error / .break. This lets `await
+    // pauseStack(...)` integrate with the async control flow (the cont backend's
+    // version returns a Pause continuation that its trampoline drives; here there
+    // is no trampoline, so we bridge to a Promise). A resumer that never resumes
+    // (e.g. the check-results hook, which writes output and process.exit's) just
+    // leaves the Promise pending, which is fine.
     function pauseStack(resumer) {
-      // CONSOLE.log("Pausing stack: ", RUN_ACTIVE, new Error().stack);
-      RUN_ACTIVE = false;
-      thisRuntime.EXN_STACKHEIGHT = 0;
-      var pause = new PausePackage();
-      return makePause(pause, resumer);
+      return new Promise(function(resolve, reject) {
+        var restarter = {
+          resume: function(val) { resolve(val); },
+          error: function(err) {
+            reject(isPyretException(err) ? err : new PyretFailException(err));
+          },
+          break: function() {
+            reject(new PyretFailException(thisRuntime.ffi.userBreak));
+          }
+        };
+        resumer(restarter);
+      });
     }
 
     function pauseAwait(p) {

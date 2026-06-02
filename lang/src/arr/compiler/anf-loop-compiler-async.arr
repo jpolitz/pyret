@@ -1138,6 +1138,13 @@ fun ann-check-stmts(compiler, b :: N.ABind) -> CL.ConcatList<J.JStmt>:
   # or we get `await` in a sync function (JS syntax error) or an unawaited Promise.
   if A.is-a-blank(b.ann) or A.is-a-any(b.ann):
     cl-empty
+  else if A.is-a-tuple(b.ann) and b.ann.fields.all(lam(a): A.is-a-blank(a) or A.is-a-any(a) end):
+    # A tuple-destructuring bind with no field annotations: just check the tuple
+    # shape/length (checkTupleBind raises "bad-tuple-bind"). This mirrors the cont
+    # backend; the general tuple-ann _checkAnn gives a different ("annotation")
+    # error that a few tests pin on.
+    cl-sing(j-expr(rt-method("checkTupleBind",
+          [clist: j-id(js-id-of(b.id)), j-num(b.ann.fields.length()), compiler.get-loc(b.ann.l)])))
   else:
     ca = compile-ann(b.ann, none, compiler)
     is-flat = is-flat-enough(FL.ann-flatness(b.ann, compiler.flatness-env,
