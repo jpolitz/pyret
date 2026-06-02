@@ -1945,7 +1945,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         cache.equal.push(thisRuntime.ffi.equal);
         return cache.equal.length;
       }
-      function equalHelp() {
+      async function equalHelp() {
         var current, curLeft, curRight;
         while (toCompare.stack.length > 0 && !thisRuntime.ffi.isNotEqual(toCompare.curAns)) {
           current = toCompare.stack.pop();
@@ -2056,10 +2056,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
                 }
                 else if (isObject(curLeft) && curLeft.dict["_equals"]) {
                   /* Two objects with the same brands and the left has an _equals method */
-                  // If this call stack-returns,
-                  var newAns = getColonField(curLeft, "_equals").full_meth(curLeft, curRight, equalFunPy);
-                  if(isContinuation(newAns)) { return newAns; }
-                  // the continuation stacklet will get the result, and combine them manually
+                  // _equals may run user code (async); await it.
+                  var newAns = await getColonField(curLeft, "_equals").full_meth(curLeft, curRight, equalFunPy);
                   toCompare.curAns = combineEquality(toCompare.curAns, newAns);
                 }
                 else if (isDataValue(curLeft) && isDataValue(curRight)) {
@@ -2101,71 +2099,22 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         }
         return toCompare.curAns;
       }
-      var stackFrameDesc = [alwaysFlag ? "runtime equal-always" : "runtime equal-now"];
-      function equalFun($ar) {
-        var $step = 0;
-        var $ans = undefined;
-        if (thisRuntime.isActivationRecord($ar)) {
-          $step = $ar.step;
-          $ans = $ar.ans;
-        }
-        while(true) {
-          switch($step) {
-          case 0:
-            $step = 1;
-            $ans = equalHelp();
-            if(isContinuation($ans)) {
-              $ans.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-                stackFrameDesc,
-                equalFun,
-                $step,
-                [],
-                []);
-            }
-            return $ans;
-          case 1:
-            toCompare.curAns = combineEquality(toCompare.curAns, $ans);
-            $step = 0;
-            break;
+      // Async-native equality (replaces the equalFun/reenterEqualFun trampoline).
+      // equalHelp drains the worklist, awaiting any user _equals method. Returns
+      // an EqualityResult. equalFunPy is handed to user _equals for recursion.
+      async function reenterEqualFun(left, right) {
+        stackOfToCompare.push(toCompare);
+        toCompare = {stack: [{left: left, right: right, path: "the-value"}], curAns: thisRuntime.ffi.equal};
+        var ans = await equalHelp();
+        // If the loop short-circuited on NotEqual, settle any pending cache markers.
+        for(var i = 0; i < toCompare.stack.length; i++) {
+          var current = toCompare.stack[i];
+          if(current.setCache) {
+            cache.equal[current.index - 1] = ans;
           }
         }
-      }
-      function reenterEqualFun(left, right) {
-        // arity check
-        var $step = 0;
-        var $ans = undefined;
-        if (thisRuntime.isActivationRecord(left)) {
-          $step = left.step;
-          $ans = left.ans;
-        }
-        while(true) {
-          switch($step) {
-          case 0:
-            stackOfToCompare.push(toCompare);
-            toCompare = {stack: [{left: left, right: right, path: "the-value"}], curAns: thisRuntime.ffi.equal};
-            $step = 1;
-            $ans = equalFun();
-            if(isContinuation($ans)) {
-              $ans.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-                stackFrameDesc,
-                reenterEqualFun,
-                $step,
-                [],
-                []);
-              return $ans;
-            }
-            break;
-          case 1:
-            for(var i = 0; i < toCompare.stack.length; i++) {
-              var current = toCompare.stack[i];
-              if(current.setCache) {
-                cache.equal[current.index - 1] = $ans;
-              }
-            }
-            toCompare = stackOfToCompare.pop();
-            return $ans;
-          }
-        }
+        toCompare = stackOfToCompare.pop();
+        return ans;
       }
       var equalFunPy = makeFunction(reenterEqualFun, "equalFun");
       return reenterEqualFun(left, right);
@@ -3351,50 +3300,17 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       };
     }
 
+    // Async-backend safeCall: run `fun`, then `after(result)`. Thenable-aware so
+    // it stays SYNCHRONOUS when `fun`/`after` are synchronous (flat user code) and
+    // only returns a Promise when they actually await. This matters for callers
+    // like _checkAnn whose await is gated statically on flatness: a flat refinement
+    // must not be wrapped in a Promise, or the (un-awaited) result leaks.
     function safeCall(fun, after, stackFrame) {
-      var $ans = undefined;
-      var $step = 0;
-      var skipLoop = false;
-      if (thisRuntime.isActivationRecord(fun)) {
-        var $ar = fun;
-        $step = $ar.step;
-        $ans = $ar.ans;
-        fun = $ar.args[0];
-        after = $ar.args[1];
-        stackFrame = $ar.args[2];
-        $fun_ans = $ar.vars[0];
+      var funRes = fun();
+      if (funRes !== null && typeof funRes === "object" && typeof funRes.then === "function") {
+        return funRes.then(function(v) { return after(v); });
       }
-      if (--thisRuntime.GAS <= 0 || --thisRuntime.RUNGAS <= 0) {
-        thisRuntime.EXN_STACKHEIGHT = 0;
-        skipLoop = true;
-        $ans = thisRuntime.makeCont();
-      }
-      while(!skipLoop) {
-        switch($step) {
-        case 0:
-          $step = 1;
-          $ans = fun();
-          if(isContinuation($ans)) { break;}
-          continue;
-        case 1:
-          var $fun_ans = $ans;
-          $step = 2;
-          $ans = after($fun_ans);
-          if(isContinuation($ans)) { break;}
-          continue;
-        case 2: ++thisRuntime.GAS; return $ans;
-        }
-        break;
-      }
-      $ans.stack[thisRuntime.EXN_STACKHEIGHT++] =
-        thisRuntime.makeActivationRecord(
-          "safeCall for " + stackFrame,
-          safeCall,
-          $step,
-          [ fun, after, stackFrame ],
-          [ $fun_ans ]
-        );
-      return $ans;
+      return after(funRes);
     }
 
     async function eachLoop(fun, start, stop) {
@@ -3988,37 +3904,25 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return thisRuntime.run(f, thisRuntime.namespace, options || {}, then);
     }
 
-    function execThunk(thunk) {
+    // run-task: run `thunk`, catching any Pyret exception and returning an
+    // Either (left = value, right = exn-as-opaque). In the async backend we run
+    // the thunk inline with await + try/catch instead of suspending the stack and
+    // starting a nested run (which the RUN_ACTIVE guard would reject anyway).
+    async function execThunk(thunk) {
       if (arguments.length !== 1) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["run-task"], 1, $a, false); }
-      function wrapResult(res) {
-        if(isSuccessResult(res)) {
-          return thisRuntime.ffi.makeLeft(res.result);
-        } else if (isFailureResult(res)) {
-          if(isPyretException(res.exn)) {
-            return thisRuntime.ffi.makeRight(makeOpaque(res.exn));
-          }
-          else {
-            return thisRuntime.ffi.makeRight(makeOpaque(makePyretFailException(thisRuntime.ffi.makeMessageException(String(res.exn + "\n" + res.exn.stack)))));
-          }
+      try {
+        var result = await thunk.app();
+        return thisRuntime.ffi.makeLeft(result);
+      } catch(e) {
+        if (isPyretException(e)) {
+          // A user break should propagate, not be captured as a task failure.
+          if (thisRuntime.ffi.isUserBreak(e.exn)) { throw e; }
+          return thisRuntime.ffi.makeRight(makeOpaque(e));
         } else {
-          CONSOLE.error("Bad execThunk result: ", res);
-          return;
+          return thisRuntime.ffi.makeRight(makeOpaque(makePyretFailException(
+            thisRuntime.ffi.makeMessageException(String(e + "\n" + (e && e.stack))))));
         }
       }
-      return thisRuntime.pauseStack(function(restarter) {
-        thisRuntime.run(function(_, __) {
-          return thunk.app();
-        }, thisRuntime.namespace, {
-          sync: false
-        }, function(result) {
-          if(isFailureResult(result) &&
-             isPyretException(result.exn) &&
-             thisRuntime.ffi.isUserBreak(result.exn.exn)) { restarter.break(); }
-          else {
-            restarter.resume(wrapResult(result));
-          }
-        });
-      });
     }
 
     function runWhileRunning(thunk) {
@@ -4209,125 +4113,33 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return arr;
     };
 
-    var raw_array_build = function(f, len) {
-      if (thisRuntime.isActivationRecord(f)) {
-        var $ar = f;
-        $step = $ar.step;
-        $ans = $ar.ans;
-        curIdx = $ar.vars[0];
-        arr = $ar.vars[1];
-        f = $ar.args[0];
-        len = $ar.args[1];
-      } else {
-        if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-build"], 2, $a, false); }
-        thisRuntime.checkArgsInternal2("RawArrays", "raw-array-build",
-          f, thisRuntime.Function, len, thisRuntime.Number);
-        var curIdx = 0;
-        var arr = new Array();
-        var $ans;
-        var $step = 0;
-      }
-      var cleanQuit = true;
-      if (--thisRuntime.GAS <= 0) {
-        thisRuntime.EXN_STACKHEIGHT = 0;
-        cleanQuit = false;
-        $ans = thisRuntime.makeCont();
-      }
-
+    var raw_array_build = async function(f, len) {
+      if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-build"], 2, $a, false); }
+      thisRuntime.checkArgsInternal2("RawArrays", "raw-array-build",
+        f, thisRuntime.Function, len, thisRuntime.Number);
       check_array_size("raw-array-build", len);
-
-      while (cleanQuit && (curIdx < len)) {
-        if (--thisRuntime.RUNGAS <= 0) {
-          thisRuntime.EXN_STACKHEIGHT = 0;
-          cleanQuit = false;
-          $ans = thisRuntime.makeCont();
-          break;
-        }
-        switch($step) {
-        case 0:
-          $step = 1;
-          $ans = f.app(curIdx);
-          if(isContinuation($ans)) {
-            cleanQuit = false;
-            break;
-          }
-        case 1:
-          arr.push($ans);
-          $step = 0;
-          curIdx++;
-          continue;
-        }
-        break;
+      var arr = new Array();
+      for (var curIdx = 0; curIdx < len; curIdx++) {
+        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        arr.push(await f.app(curIdx));
       }
-      if(cleanQuit) {
-        return arr;
-      }
-      else {
-        $ans.stack[thisRuntime.EXN_STACKHEIGHT++] =
-          thisRuntime.makeActivationRecord(["raw-array-build"], raw_array_build, $step, [f, len], [curIdx, arr]);
-        return $ans;
-      }
+      return arr;
     };
 
-    var raw_array_build_opt = function(f, len) {
-      if (thisRuntime.isActivationRecord(f)) {
-        var $ar = f;
-        $step = $ar.step;
-        $ans = $ar.ans;
-        curIdx = $ar.vars[0];
-        arr = $ar.vars[1];
-        f = $ar.args[0];
-        len = $ar.args[1];
-      } else {
-        if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-build-opt"], 2, $a, false); }
-        thisRuntime.checkArgsInternal2("RawArrays", "raw-array-build-opt",
-          f, thisRuntime.Function, len, thisRuntime.Number);
-        var curIdx = 0;
-        var arr = new Array();
-        var $ans;
-        var $step = 0;
-      }
-      var cleanQuit = true;
-      if (--thisRuntime.GAS <= 0) {
-        thisRuntime.EXN_STACKHEIGHT = 0;
-        $ans = thisRuntime.makeCont();
-        cleanQuit = false;
-      }
-
+    var raw_array_build_opt = async function(f, len) {
+      if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-build-opt"], 2, $a, false); }
+      thisRuntime.checkArgsInternal2("RawArrays", "raw-array-build-opt",
+        f, thisRuntime.Function, len, thisRuntime.Number);
       check_array_size("raw-array-build-opt", len);
-      while (cleanQuit && curIdx < len) {
-        if (--thisRuntime.RUNGAS <= 0) {
-          thisRuntime.EXN_STACKHEIGHT = 0;
-          $ans = thisRuntime.makeCont();
-          cleanQuit = false;
+      var arr = new Array();
+      for (var curIdx = 0; curIdx < len; curIdx++) {
+        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        var res = await f.app(curIdx);
+        if (thisRuntime.ffi.isSome(res)) {
+          arr.push(thisRuntime.getField(res, "value"));
         }
-        switch($step) {
-        case 0:
-          $step = 1;
-          $ans = f.app(curIdx);
-          // no need to break
-        case 1:
-          if (thisRuntime.isContinuation($ans)) {
-            cleanQuit = false;
-            break;
-          }
-          if (thisRuntime.ffi.isSome($ans)) {
-            arr.push(thisRuntime.getField($ans, "value"));
-          }
-          $step = 0;
-          curIdx++;
-          continue;
-        }
-        break;
       }
-      if(cleanQuit) {
-        return arr;
-      }
-      else {
-        $ans.stack[thisRuntime.EXN_STACKHEIGHT++] =
-          thisRuntime.makeActivationRecord(["raw-array-build-opt"], raw_array_build_opt, $step, [f, len], [curIdx, arr]);
-        return $ans;
-      }
+      return arr;
     };
 
     var raw_array_get = function(arr, ix) {
