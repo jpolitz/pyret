@@ -1519,9 +1519,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return '"' + replaceUnprintableStringChars(s) + '"';
     };
 
-    function toReprLoop(val, reprMethods) {
+    async function toReprLoop(val, reprMethods) {
       var stack = [];
-      var stackOfStacks = [];
       function makeCache(type) {
         var cyclicCounter = 1;
         // Note (Ben): using concat was leading to quadratic copying times and memory usage...
@@ -1567,182 +1566,97 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
           extra: extra
         });
       }
-      function toReprHelp() {
-        var top;
-        function finishVal(str) {
-          top.todo.pop();
-          top.done.push(str);
-        }
-        function implicitRefs(stackFrame) {
-          return stackFrame.extra && stackFrame.extra.implicitRefs;
-        }
-        while (stack.length > 0 && stack[0].todo.length > 0) {
-          top = stack[stack.length - 1];
-          if (top.todo.length > 0) {
-            var next = top.todo[top.todo.length - 1];
-            if(isNumber(next)) { finishVal(reprMethods["number"](next)); }
-            else if (isBoolean(next)) { finishVal(reprMethods["boolean"](next)); }
-            else if (isNothing(next)) { finishVal(reprMethods["nothing"](next)); }
-            else if (isFunction(next)) { finishVal(reprMethods["function"](next)); }
-            else if (isMethod(next)) { finishVal(reprMethods["method"](next)); }
-            else if (isString(next)) { finishVal(reprMethods["string"](next)); }
-            else if (isOpaque(next)) { finishVal(reprMethods["opaque"](next)); }
-            else if (isArray(next)) {
-              // NOTE(joe): need to copy the array below because we will pop from it
-              // Baffling bugs will result if next is passed directly
-              var arrayHasBeenSeen = findSeenArray(top.arrays, next);
-              if(typeof arrayHasBeenSeen === "string") {
-                finishVal(reprMethods["cyclic"](arrayHasBeenSeen));
-              }
-              else {
-                reprMethods["array"](next, pushTodo);
-              }
-            }
-            else if(isTuple(next)) {
-              reprMethods["tuple"](next, pushTodo);
-            }
-            else if(isRef(next)) {
-              var refHasBeenSeen = findSeenRef(top.refs, next);
-              var implicit = implicitRefs(top) && top.extra.implicitRefs[top.todo.length - 1];
-              if(typeof refHasBeenSeen === "string") {
-                finishVal(reprMethods["cyclic"](refHasBeenSeen));
-              }
-              else if(!isRefSet(next)) {
-                finishVal(reprMethods["cyclic"]("<uninitialized-ref>"));
-              }
-              else {
-                reprMethods["ref"](next, implicit, pushTodo);
-              }
-            }
-            else if(isObject(next)) {
-              var objHasBeenSeen = findSeenObject(top.objects, next);
-              if(typeof objHasBeenSeen === "string") {
-                finishVal(reprMethods["cyclic"](objHasBeenSeen));
-              }
-              else if (next.dict["_output"] && isMethod(next.dict["_output"])) {
-                var m = getColonField(next, "_output");
-                var s = m.full_meth(next);
-                // Early exit for user-thrown exception here
-                if(isContinuation(s)) { return s; }
-                reprMethods["valueskeleton"](next, thisRuntime.unwrap(s), pushTodo);
-              }
-              else if(isDataValue(next)) {
-                reprMethods["data"](next, pushTodo);
-              }
-              else {
-                reprMethods["object"](next, pushTodo);
-              }
+      function implicitRefs(stackFrame) {
+        return stackFrame.extra && stackFrame.extra.implicitRefs;
+      }
+      stack.push({
+        arrays: undefined,
+        objects: undefined,
+        refs: undefined,
+        todo: [val],
+        done: [],
+        extra: { implicitRefs: [false] },
+        root: val
+      });
+      var top;
+      function finishVal(str) {
+        top.todo.pop();
+        top.done.push(str);
+      }
+      // Straight-line async stack machine (replaces the cont-trampoline
+      // toReprHelp/toReprFun/reenterToReprFun). The only user code reachable is a
+      // value's `_output` method, which is async, so we await it inline.
+      while (stack.length > 0 && stack[0].todo.length > 0) {
+        top = stack[stack.length - 1];
+        if (top.todo.length > 0) {
+          var next = top.todo[top.todo.length - 1];
+          if(isNumber(next)) { finishVal(reprMethods["number"](next)); }
+          else if (isBoolean(next)) { finishVal(reprMethods["boolean"](next)); }
+          else if (isNothing(next)) { finishVal(reprMethods["nothing"](next)); }
+          else if (isFunction(next)) { finishVal(reprMethods["function"](next)); }
+          else if (isMethod(next)) { finishVal(reprMethods["method"](next)); }
+          else if (isString(next)) { finishVal(reprMethods["string"](next)); }
+          else if (isOpaque(next)) { finishVal(reprMethods["opaque"](next)); }
+          else if (isArray(next)) {
+            // NOTE(joe): need to copy the array below because we will pop from it
+            // Baffling bugs will result if next is passed directly
+            var arrayHasBeenSeen = findSeenArray(top.arrays, next);
+            if(typeof arrayHasBeenSeen === "string") {
+              finishVal(reprMethods["cyclic"](arrayHasBeenSeen));
             }
             else {
-              CONSOLE.log("UNKNOWN VALUE: ", next);
-              console.trace();
-              finishVal(reprMethods["string"]("<Unknown value: details logged to console>"));
+              reprMethods["array"](next, pushTodo);
+            }
+          }
+          else if(isTuple(next)) {
+            reprMethods["tuple"](next, pushTodo);
+          }
+          else if(isRef(next)) {
+            var refHasBeenSeen = findSeenRef(top.refs, next);
+            var implicit = implicitRefs(top) && top.extra.implicitRefs[top.todo.length - 1];
+            if(typeof refHasBeenSeen === "string") {
+              finishVal(reprMethods["cyclic"](refHasBeenSeen));
+            }
+            else if(!isRefSet(next)) {
+              finishVal(reprMethods["cyclic"]("<uninitialized-ref>"));
+            }
+            else {
+              reprMethods["ref"](next, implicit, pushTodo);
+            }
+          }
+          else if(isObject(next)) {
+            var objHasBeenSeen = findSeenObject(top.objects, next);
+            if(typeof objHasBeenSeen === "string") {
+              finishVal(reprMethods["cyclic"](objHasBeenSeen));
+            }
+            else if (next.dict["_output"] && isMethod(next.dict["_output"])) {
+              var m = getColonField(next, "_output");
+              var s = await m.full_meth(next);
+              reprMethods["valueskeleton"](next, thisRuntime.unwrap(s), pushTodo);
+            }
+            else if(isDataValue(next)) {
+              reprMethods["data"](next, pushTodo);
+            }
+            else {
+              reprMethods["object"](next, pushTodo);
             }
           }
           else {
-            // Done with object, array, or ref, so pop the todo list, and pop
-            // the object/array/ref itself
-            stack.pop();
-            var prev = stack[stack.length - 1];
-            prev.todo.pop();
-            prev.done.push(reprMethods[top.type](top));
+            CONSOLE.log("UNKNOWN VALUE: ", next);
+            console.trace();
+            finishVal(reprMethods["string"]("<Unknown value: details logged to console>"));
           }
         }
-        var finalAns = stack[0].done[0];
-        return finalAns;
-      }
-      function toReprFun($ar) {
-        var $step = 0;
-        var $ans = undefined;
-        if (thisRuntime.isActivationRecord($ar)) {
-          $step = $ar.step;
-          $ans = $ar.ans;
-        }
-        while(true) {
-          switch($step) {
-          case 0:
-            $step = 1;
-            $ans = toReprHelp();
-            if(isContinuation($ans)) { break; }
-            return $ans;
-          case 1:
-            if (stack.length === 0) {
-              thisRuntime.ffi.throwInternalError("Somehow we've drained the toRepr worklist, but have results coming back");
-            }
-            var top = stack[stack.length - 1];
-            var a = thisRuntime.unwrap($ans);
-            if (thisRuntime.ffi.isValueSkeleton(a)) {
-              reprMethods["valueskeleton"](top.todo[top.todo.length - 1], a, pushTodo);
-            } else {
-              // this is essentially finishVal
-              top.todo.pop();
-              top.done.push(a);
-            }
-            $step = 0;
-            continue;
-          }
-          break;
-        }
-        if(isContinuation($ans)) {
-          $ans.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["runtime torepr"],
-            toReprFun,
-            $step,
-            [],
-            []);
-          return $ans;
+        else {
+          // Done with object, array, or ref, so pop the todo list, and pop
+          // the object/array/ref itself
+          stack.pop();
+          var prev = stack[stack.length - 1];
+          prev.todo.pop();
+          prev.done.push(reprMethods[top.type](top));
         }
       }
-      function reenterToReprFun(val) {
-        // arity check
-        var $step = 0;
-        var $ans = undefined;
-        var oldStack = stack;
-        function getOld(name) {
-          if(oldStack.length > 0) {
-            return oldStack[oldStack.length - 1][name];
-          }
-          else {
-            return undefined;
-          }
-        }
-        if (thisRuntime.isActivationRecord(val)) {
-          $step = val.step;
-          $ans = val.ans;
-        }
-        while(true) {
-          switch($step) {
-          case 0:
-            stackOfStacks.push(stack);
-            stack = [{
-              arrays: getOld("arrays"),
-              objects: getOld("objects"),
-              refs: getOld("refs"),
-              todo: [val],
-              done: [],
-              extra: { implicitRefs: [false] },
-              root: val
-            }];
-            $step = 1;
-            $ans = toReprFun();
-            if(isContinuation($ans)) { break; }
-            continue;
-          case 1:
-            stack = stackOfStacks.pop();
-            return $ans;
-          }
-          break;
-        }
-        $ans.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-          ["runtime torepr (reentrant)"],
-          reenterToReprFun,
-          $step,
-          [],
-          []);
-        return $ans;
-      }
-      var toReprFunPy = makeFunction(reenterToReprFun, "toReprFun");
-      return reenterToReprFun(val);
+      return stack[0].done[0];
     }
 
     /**
@@ -1775,18 +1689,15 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
 
        @return {!PBase} the value given in
     */
-    var displayAsString = function(val) {
+    var displayAsString = async function(val) {
       if (isString(val)) {
         theOutsideWorld.stdout(val);
         return val;
       }
       else {
-        return thisRuntime.safeCall(function() {
-          return toReprJS(val, ReprMethods._tostring);
-        }, function(repr) {
-          theOutsideWorld.stdout(repr);
-          return val;
-        }, "display");
+        var repr = await toReprJS(val, ReprMethods._tostring);
+        theOutsideWorld.stdout(repr);
+        return val;
       }
     }
 
@@ -1822,18 +1733,15 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
 
        @return {!PBase} the value given in
     */
-    var errorDisplayAsString = function(val) {
+    var errorDisplayAsString = async function(val) {
       if (isString(val)) {
         theOutsideWorld.stderr(val);
         return val;
       }
       else {
-        return thisRuntime.safeCall(function() {
-          return toReprJS(val, ReprMethods._tostring);
-        }, function(repr) {
-          theOutsideWorld.stderr(repr);
-          return val;
-        }, "display-error");
+        var repr = await toReprJS(val, ReprMethods._tostring);
+        theOutsideWorld.stderr(repr);
+        return val;
       }
     };
     var print_error = makeFunction(
@@ -3489,36 +3397,12 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return $ans;
     }
 
-    function eachLoop(fun, start, stop) {
-      var i = start;
-      function restart(_) {
-        var res = thisRuntime.nothing;
-        if (--thisRuntime.GAS <= 0) {
-          thisRuntime.EXN_STACKHEIGHT = 0;
-          res = thisRuntime.makeCont();
-        }
-        while(!thisRuntime.isContinuation(res)) {
-          if (--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            res = thisRuntime.makeCont();
-          }
-          else {
-            if(i >= stop) {
-              ++thisRuntime.GAS;
-              // NOTE(joe): this is the one true return value/exit of the loop
-              return thisRuntime.nothing;
-            }
-            else {
-              res = fun.app(i);
-              i = i + 1;
-            }
-          }
-        }
-        res.stack[thisRuntime.EXN_STACKHEIGHT++] =
-          thisRuntime.makeActivationRecord("eachLoop", restart, true, [], []);
-        return res;
+    async function eachLoop(fun, start, stop) {
+      for(var i = start; i < stop; i++) {
+        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        await fun.app(i);
       }
-      return restart();
+      return thisRuntime.nothing;
     }
 
     var RUN_ACTIVE = false;
@@ -4546,76 +4430,32 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       make5: makeFunction(function(a, b, c, d, e) { return [a, b, c, d, e]; }, "raw-array:make5"),
     });
 
-    var raw_array_fold = function(f, init, arr, start) {
+    var raw_array_fold = async function(f, init, arr, start) {
       if (arguments.length !== 4) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-fold"], 4, $a, false); }
       thisRuntime.checkArgsInternalInline("RawArrays", "raw-array-fold",
         f, thisRuntime.Function, init, thisRuntime.Any, arr, thisRuntime.RawArray, start, thisRuntime.Number);
-      var currentIndex = -1;
       var currentAcc = init;
       var length = arr.length;
-      function foldHelp() {
-        while(currentIndex < (length - 1)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          currentIndex += 1;
-          var res = f.app(currentAcc, arr[currentIndex], currentIndex + start);
-          if(isContinuation(res)) { return res; }
-          currentAcc = res;
-        }
-        return currentAcc;
+      for(var currentIndex = 0; currentIndex < length; currentIndex++) {
+        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        currentAcc = await f.app(currentAcc, arr[currentIndex], currentIndex + start);
       }
-      function foldFun($ar) {
-        if (thisRuntime.isInitializedActivationRecord($ar)) {
-          currentAcc = $ar.ans;
-        }
-        var res = foldHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-array-fold"],
-            foldFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return foldFun();
+      return currentAcc;
     };
 
 
     var raw_array_bool_mapper = function(name, good, bad) {
-      return function(f, arr, start) {
+      return async function(f, arr, start) {
         if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC([name], 3, $a, false); }
         thisRuntime.checkArgsInternal3("RawArrays", name,
           f, thisRuntime.Function, arr, thisRuntime.RawArray, start, thisRuntime.Number);
-        var currentIndex = start - 1;
         var length = arr.length;
-        function foldHelp() {
-          while(currentIndex < (length - 1)) {
-            if(--thisRuntime.RUNGAS <= 0) {
-              thisRuntime.EXN_STACKHEIGHT = 0;
-              return thisRuntime.makeCont();
-            }
-            currentIndex += 1;
-            var res = f.app(arr[currentIndex], currentIndex);
-            if(isContinuation(res)) { return res; }
-            if(res === bad) { return res; }
-          }
-          return good;
+        for(var currentIndex = start; currentIndex < length; currentIndex++) {
+          if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+          var res = await f.app(arr[currentIndex], currentIndex);
+          if(res === bad) { return res; }
         }
-        function foldFun($ar) {
-          var res = foldHelp();
-          if(isContinuation(res)) {
-            res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-              [name],
-              foldFun,
-              0, // step doesn't matter here
-              [], []);
-          }
-          return res;
-        }
-        return foldFun();
+        return good;
       };
     };
 
@@ -4623,354 +4463,148 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     var raw_array_or_mapi = raw_array_bool_mapper("raw-array-or-mapi", false, true);
 
 
-    var raw_array_map = function(f, arr) {
+    var raw_array_map = async function(f, arr) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-map"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-map",
         f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var currentIndex = -1;
       var length = arr.length;
       var newArray = new Array(length);
-      function mapHelp() {
-        while(currentIndex < (length - 1)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          currentIndex += 1;
-          var res = f.app(arr[currentIndex]);
-          if(isContinuation(res)) { return res; }
-          newArray[currentIndex] = res;
-        }
-        return newArray;
+      for(var currentIndex = 0; currentIndex < length; currentIndex++) {
+        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        newArray[currentIndex] = await f.app(arr[currentIndex]);
       }
-      function mapFun($ar) {
-        if (thisRuntime.isInitializedActivationRecord($ar)) {
-          newArray[currentIndex] = $ar.ans;
-        }
-        var res = mapHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-array-map"],
-            mapFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return mapFun();
+      return newArray;
     };
 
-    var raw_array_each = function(f, arr) {
+    var raw_array_each = async function(f, arr) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-each"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-each",
         f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var currentIndex = -1;
       var length = arr.length;
-      function eachHelp() {
-        while(currentIndex < (length - 1)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          currentIndex += 1;
-          var res = f.app(arr[currentIndex]);
-          if(isContinuation(res)) { return res; }
-        }
-        return nothing;
+      for(var currentIndex = 0; currentIndex < length; currentIndex++) {
+        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        await f.app(arr[currentIndex]);
       }
-      function eachFun($ar) {
-        var res = eachHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-array-each"],
-            eachFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return eachFun();
+      return nothing;
     };
 
-    var raw_array_mapi = function(f, arr) {
+    var raw_array_mapi = async function(f, arr) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-mapi"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-mapi",
         f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var currentIndex = -1;
       var length = arr.length;
       var newArray = new Array(length);
-      function mapHelp() {
-        while(currentIndex < (length - 1)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          currentIndex += 1;
-          var res = f.app(arr[currentIndex], currentIndex);
-          if(isContinuation(res)) { return res; }
-          newArray[currentIndex] = res;
-        }
-        return newArray;
+      for(var currentIndex = 0; currentIndex < length; currentIndex++) {
+        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        newArray[currentIndex] = await f.app(arr[currentIndex], currentIndex);
       }
-      function mapFun($ar) {
-        if (thisRuntime.isInitializedActivationRecord($ar)) {
-          newArray[currentIndex] = $ar.ans;
-        }
-        var res = mapHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-array-mapi"],
-            mapFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return mapFun();
+      return newArray;
     };
 
-    var raw_list_map = function(f, lst) {
+    var raw_list_map = async function(f, lst) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-map"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("Lists", "raw-list-map",
         f, thisRuntime.Function, lst, thisRuntime.List);
       var currentAcc = [];
       var currentLst = lst;
-      var currentFst;
-      function foldHelp() {
-        while(thisRuntime.ffi.isLink(currentLst)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          currentFst = thisRuntime.getColonField(currentLst, "first");
-          currentLst = thisRuntime.getColonField(currentLst, "rest");
-          var res = f.app(currentFst);
-          if(isContinuation(res)) { return res; }
-          currentAcc.push(res);
-        }
-        return thisRuntime.ffi.makeList(currentAcc);
+      while(thisRuntime.ffi.isLink(currentLst)) {
+        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        var currentFst = thisRuntime.getColonField(currentLst, "first");
+        currentLst = thisRuntime.getColonField(currentLst, "rest");
+        currentAcc.push(await f.app(currentFst));
       }
-      function foldFun($ar) {
-        if (thisRuntime.isInitializedActivationRecord($ar)) {
-          currentAcc.push($ar.ans);
-        }
-        var res = foldHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-list-map"],
-            foldFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return foldFun();
+      return thisRuntime.ffi.makeList(currentAcc);
     };
 
 
-    var raw_list_join_str_last = function(lst, sep, lastSep) {
+    var raw_list_join_str_last = async function(lst, sep, lastSep) {
       if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-join-str-last"], 3, $a, false); }
       thisRuntime.checkArgsInternal3("Lists", "raw-list-join-str-last",
         lst, thisRuntime.List, sep, thisRuntime.String, lastSep, thisRuntime.String);
       var currentAcc = [];
       var currentLst = lst;
-      var currentFst;
-      function foldHelp() {
-        while(thisRuntime.ffi.isLink(currentLst)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          currentFst = thisRuntime.getColonField(currentLst, "first");
-          currentLst = thisRuntime.getColonField(currentLst, "rest");
-          var res = tostring.app(currentFst);
-          if(isContinuation(res)) { return res; }
-          currentAcc.push(res);
-        }
-        if (currentAcc.length <= 1) { return currentAcc.join(sep); }
-        var lastElem = currentAcc.pop();
-        return currentAcc.join(sep) + lastSep + lastElem;
+      while(thisRuntime.ffi.isLink(currentLst)) {
+        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        var currentFst = thisRuntime.getColonField(currentLst, "first");
+        currentLst = thisRuntime.getColonField(currentLst, "rest");
+        currentAcc.push(await tostring.app(currentFst));
       }
-      function foldFun($ar) {
-        if (thisRuntime.isInitializedActivationRecord($ar)) {
-          currentAcc.push($ar.ans);
-        }
-        var res = foldHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-list-join-str-last"],
-            foldFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return foldFun();
+      if (currentAcc.length <= 1) { return currentAcc.join(sep); }
+      var lastElem = currentAcc.pop();
+      return currentAcc.join(sep) + lastSep + lastElem;
     };
 
     /**
      * Similar to `raw_array_map`, but applies a specific function to
      * the first item in the array
      */
-    var raw_array_map1 = function(f1, f, arr) {
+    var raw_array_map1 = async function(f1, f, arr) {
       if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-map1"], 3, $a, false); }
       thisRuntime.checkArgsInternal3("RawArrays", "raw-array-map1",
         f1, thisRuntime.Function, f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var currentIndex = -1;
       var length = arr.length;
       var newArray = new Array(length);
-      function mapHelp() {
-        while(currentIndex < (length - 1)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          currentIndex += 1;
-          var toCall = currentIndex === 0 ? f1 : f;
-          var res = toCall.app(arr[currentIndex]);
-          if(isContinuation(res)) { return res; }
-          newArray[currentIndex] = res;
-        }
-        return newArray;
+      for(var currentIndex = 0; currentIndex < length; currentIndex++) {
+        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        var toCall = currentIndex === 0 ? f1 : f;
+        newArray[currentIndex] = await toCall.app(arr[currentIndex]);
       }
-      function mapFun($ar) {
-        if (thisRuntime.isInitializedActivationRecord($ar)) {
-          newArray[currentIndex] = $ar.ans;
-        }
-        var res = mapHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-array-map1"],
-            mapFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return mapFun();
+      return newArray;
     };
 
-    var raw_list_filter = function(f, lst) {
+    var raw_list_filter = async function(f, lst) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-filter"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("Lists", "raw-list-filter",
         f, thisRuntime.Function, lst, thisRuntime.List);
       var currentAcc = [];
       var currentLst = lst;
-      var currentFst;
-      function foldHelp() {
-        while(thisRuntime.ffi.isLink(currentLst)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          currentFst = thisRuntime.getColonField(currentLst, "first");
-          currentLst = thisRuntime.getColonField(currentLst, "rest");
-          var res = f.app(currentFst);
-          if(isContinuation(res)) { return res; }
-          if(!(isBoolean(res))) {
-            return thisRuntime.ffi.throwNonBooleanCondition(["raw-list-filter"], "Boolean", res);
-          }
-          if(isPyretTrue(res)){
-            currentAcc.push(currentFst);
-          }
+      while(thisRuntime.ffi.isLink(currentLst)) {
+        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        var currentFst = thisRuntime.getColonField(currentLst, "first");
+        currentLst = thisRuntime.getColonField(currentLst, "rest");
+        var res = await f.app(currentFst);
+        if(!(isBoolean(res))) {
+          return thisRuntime.ffi.throwNonBooleanCondition(["raw-list-filter"], "Boolean", res);
         }
-        return thisRuntime.ffi.makeList(currentAcc);
+        if(isPyretTrue(res)){
+          currentAcc.push(currentFst);
+        }
       }
-      function foldFun($ar) {
-        if (thisRuntime.isInitializedActivationRecord($ar)) {
-          if($ar.ans) {
-            currentAcc.push(currentFst);
-          }
-        }
-        var res = foldHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-list-filter"],
-            foldFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return foldFun();
+      return thisRuntime.ffi.makeList(currentAcc);
     };
 
-    var raw_array_filter = function(f, arr) {
+    var raw_array_filter = async function(f, arr) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-filter"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-filter",
         f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var currentIndex = -1;
       var length = arr.length;
       var newArray = new Array();
-      function filterHelp() {
-        while(currentIndex < (length - 1)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          currentIndex += 1;
-          var res = f.app(arr[currentIndex]);
-          if(isContinuation(res)) { return res; }
-          if(!(isBoolean(res))) {
-            return thisRuntime.ffi.throwNonBooleanCondition(["raw-array-filter"], "Boolean", res);
-          }
-          if(isPyretTrue(res)){
-            newArray.push(arr[currentIndex]);
-          }
+      for(var currentIndex = 0; currentIndex < length; currentIndex++) {
+        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        var res = await f.app(arr[currentIndex]);
+        if(!(isBoolean(res))) {
+          return thisRuntime.ffi.throwNonBooleanCondition(["raw-array-filter"], "Boolean", res);
         }
-        return newArray;
+        if(isPyretTrue(res)){
+          newArray.push(arr[currentIndex]);
+        }
       }
-      function filterFun($ar) {
-        if (thisRuntime.isInitializedActivationRecord($ar)) {
-          if($ar.ans) { newArray.push(arr[currentIndex]); }
-        }
-        var res = filterHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-array-filter"],
-            filterFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return filterFun();
+      return newArray;
     };
 
-    var raw_list_fold = function(f, init, lst) {
+    var raw_list_fold = async function(f, init, lst) {
       if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-fold"], 3, $a, false); }
       thisRuntime.checkArgsInternal3("Lists", "raw-list-fold",
         f, thisRuntime.Function, init, thisRuntime.Any, lst, thisRuntime.List);
       var currentAcc = init;
       var currentLst = lst;
-      function foldHelp() {
-        while(thisRuntime.ffi.isLink(currentLst)) {
-          if(--thisRuntime.RUNGAS <= 0) {
-            thisRuntime.EXN_STACKHEIGHT = 0;
-            return thisRuntime.makeCont();
-          }
-          var fst = thisRuntime.getColonField(currentLst, "first");
-          currentLst = thisRuntime.getColonField(currentLst, "rest");
-          currentAcc = f.app(currentAcc, fst);
-          if(isContinuation(currentAcc)) { return currentAcc; }
-        }
-        return currentAcc;
+      while(thisRuntime.ffi.isLink(currentLst)) {
+        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        var fst = thisRuntime.getColonField(currentLst, "first");
+        currentLst = thisRuntime.getColonField(currentLst, "rest");
+        currentAcc = await f.app(currentAcc, fst);
       }
-      function foldFun($ar) {
-        if (thisRuntime.isInitializedActivationRecord($ar)) {
-          currentAcc = $ar.ans;
-        }
-        var res = foldHelp();
-        if(isContinuation(res)) {
-          res.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-            ["raw-list-fold"],
-            foldFun,
-            0, // step doesn't matter here
-            [], []);
-        }
-        return res;
-      }
-      return foldFun();
+      return currentAcc;
     };
 
 

@@ -1131,15 +1131,21 @@ fun compile-aexpr-async(compiler, e :: N.AExpr) -> CL.ConcatList<J.JStmt>:
 end
 
 fun ann-check-stmts(compiler, b :: N.ABind) -> CL.ConcatList<J.JStmt>:
-  # Re-bind `b` to the result of checking its annotation. _checkAnn may run a
-  # user refinement (async), so we await it.
+  # Re-bind `b` to the result of checking its annotation. A non-flat annotation
+  # may run a user refinement (async, returns a Promise), so we await it; a flat
+  # annotation's _checkAnn is synchronous. This gate must agree with the flatness
+  # analysis (which folds ann-flatness into the enclosing function's flatness),
+  # or we get `await` in a sync function (JS syntax error) or an unawaited Promise.
   if A.is-a-blank(b.ann) or A.is-a-any(b.ann):
     cl-empty
   else:
     ca = compile-ann(b.ann, none, compiler)
-    cl-snoc(ca.other-stmts, j-expr(j-assign(js-id-of(b.id),
-          j-await(rt-method("_checkAnn",
-              [clist: compiler.get-loc(ann-loc(b.ann)), ca.exp, j-id(js-id-of(b.id))])))))
+    is-flat = is-flat-enough(FL.ann-flatness(b.ann, compiler.flatness-env,
+        compiler.type-flatness-env, compiler.module-bindings, compiler.env))
+    check-call = rt-method("_checkAnn",
+      [clist: compiler.get-loc(ann-loc(b.ann)), ca.exp, j-id(js-id-of(b.id))])
+    checked = if is-flat: check-call else: j-await(check-call) end
+    cl-snoc(ca.other-stmts, j-expr(j-assign(js-id-of(b.id), checked)))
   end
 end
 
@@ -1151,7 +1157,17 @@ end
 
 fun compile-app-async(compiler, l, f :: N.AVal, args :: List<N.AVal>, app-info :: A.AppInfo) -> CL.ConcatList<J.JStmt>:
   is-safe-id = N.is-a-id(f) or N.is-a-id-safe-letrec(f)
-  is-flat = is-safe-id and is-function-flat(compiler.flatness-env, f.id.key())
+  # is-flat must agree with the flatness analysis (flatness.arr), which decides
+  # whether the enclosing function is emitted sync (j-fun) or async (j-async-fun).
+  # If they disagree we either emit `await` inside a sync function (a JS syntax
+  # error) or fail to await a Promise. For module-ref calls, the analysis uses
+  # get-flatness-for-module-call, so we mirror it here.
+  is-flat =
+    if is-safe-id: is-function-flat(compiler.flatness-env, f.id.key())
+    else if N.is-a-id-modref(f):
+      is-flat-enough(FL.get-flatness-for-module-call(f.id, f.name, compiler.module-bindings, compiler.env))
+    else: false
+    end
   is-fn = is-safe-id and is-id-fn-name(compiler.flatness-env, f.id.key())
   f-ce = f.visit(compiler)
   arg-ces = args.map(_.visit(compiler))
