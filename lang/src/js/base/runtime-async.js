@@ -5649,6 +5649,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       'runTrampoline': run,
       'needsPause': needsPause,
       'checkPause': checkPause,
+      // Lets shared trove .js files (string-dict, etc.) pick the async code path.
+      'stackBackend': 'promise',
       'runThunk': runThunk,
       'execThunk': execThunk,
       'safeCall': safeCall,
