@@ -1,9 +1,11 @@
 # Resume: async/promise backend — PERFORMANCE push
 
 Forward-looking plan for the next round: close the async-backend's runtime
-overhead vs the cont/trampoline backend. Branch **`async-transform`**. Baseline
-commit when this was written: **`1f5a92b7d`**. Read the project memory
-`async-transform.md` first; this file is the perf-specific plan.
+overhead vs the cont/trampoline backend. Branch **`async-transform`**. This file
+is tagged with the short hash of the resume-point commit (**`1f5a92b7d`**, the
+last substantive work commit); if you checkpoint again, drop a new
+`RESUME-perf-<shorthash>.md`. Read the project memory `async-transform.md` first;
+this file is the perf-specific plan.
 
 The functional work is DONE and validated (full suite at parity bar 5 spec-flagged
 stacktrace pins; compiler self-hosts to a byte-stable fixpoint; TCO-through-return-
