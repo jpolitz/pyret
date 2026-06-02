@@ -1399,8 +1399,20 @@ fun compile-fun-body(l :: Loc, step :: A.Name, fun-name :: A.Name, compiler, arg
       cl-sing(j-if1(rt-method("needsPause", cl-empty),
           j-block1(j-expr(j-await(rt-method("checkPause", cl-empty))))))
     end
+  # Argument annotation contracts. Emitted at the top of the loop body so they run
+  # on initial entry AND on every explicit-loop TCO re-entry — the cont backend
+  # resets step to 0 on a tail self-call, so it re-checks args too (parity). A flat
+  # arg ann checks synchronously; a non-flat one awaits (ann-check-stmts gates this
+  # on the same flatness verdict that decided this function is sync vs async).
+  arg-ann-stmts =
+    if no-real-args: cl-empty
+    else:
+      for fold(acc from cl-empty, arg from args):
+        cl-append(acc, ann-check-stmts(local-compiler, arg))
+      end
+    end
   visited-body-stmts = compile-aexpr-async(local-compiler, body)
-  loop-body = fuel-check ^ cl-append(_, visited-body-stmts)
+  loop-body = fuel-check ^ cl-append(_, arg-ann-stmts) ^ cl-append(_, visited-body-stmts)
   body-stmts =
     if use-loop:
       cl-sing(j-while(j-true, j-block(loop-body)))

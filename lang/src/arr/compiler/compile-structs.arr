@@ -2942,6 +2942,17 @@ compiled-stack-backend :: StackBackend = ask:
   | otherwise: cont
 end
 
+# The promise and cont backends emit DIFFERENT JS for the same source, but cached
+# modules are keyed by a source-only hash — so cont- and promise-compiled builtins
+# share a filename and must live in separate directories. The promise backend uses
+# `compiled-promise/` uniformly; loading a cont-compiled builtin onto the async
+# runtime (or vice-versa) leaks Promises into annotation checks. Nested compile-and-
+# run paths (run-task / run-str) pick up this default unless overridden.
+default-compiled-cache :: String = ask:
+  | is-promise(compiled-stack-backend) then: "compiled-promise"
+  | otherwise: "compiled"
+end
+
 type CompileOptions = {
   check-mode :: Boolean,
   check-all :: Boolean,
@@ -2982,7 +2993,7 @@ default-compile-options = {
   module-eval: true,
   user-annotations: true,
   runtime-annotations: true,
-  compiled-cache: "compiled",
+  compiled-cache: default-compiled-cache,
   compiled-read-only: empty,
   display-progress: true,
   should-profile: method(_, locator): false end,
