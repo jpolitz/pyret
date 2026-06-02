@@ -285,6 +285,31 @@ tests/pyret/main2.jarr: phaseA tests/pyret/main2.arr  $(TEST_FILES)
 pyret-test: phaseA tests/pyret/main2.jarr
 	$(NODE) tests/pyret/main2.jarr
 
+# --- Promise/async backend full suite ---
+# Mirrors pyret-test/all-pyret-test but selects the async backend, links
+# runtime-async.js (via the -async config), and uses a SEPARATE
+# tests/compiled-promise/ cache so async and Cont compiled modules never mix
+# (the polyglot hazard). Run with: make all-pyret-test-promise EF=' '
+PROMISE_TEST_BUILD=$(NODE) $(PHASEA)/pyret.jarr \
+		--builtin-js-dir src/js/trove/ \
+		--builtin-arr-dir src/arr/trove/ \
+		--require-config src/scripts/standalone-configA-async.json \
+		--stack-backend promise \
+		--compiled-dir tests/compiled-promise/
+
+tests/pyret/main2.p.jarr: phaseA tests/pyret/main2.arr $(TEST_FILES)
+	$(PROMISE_TEST_BUILD) \
+		--outfile tests/pyret/main2.p.jarr \
+		--build-runnable tests/pyret/main2.arr \
+		-check-all
+
+.PHONY : pyret-test-promise
+pyret-test-promise: phaseA tests/pyret/main2.p.jarr
+	$(NODE) tests/pyret/main2.p.jarr
+
+.PHONY : all-pyret-test-promise
+all-pyret-test-promise: pyret-test-promise parse-test
+
 .PHONY : pyret-io-test
 pyret-io-test: phaseA
 	$(NPM_EXEC) jest --detectOpenHandles --forceExit --verbose "tests/io-tests/io.test.js"
@@ -318,6 +343,10 @@ clean:
 	$(call RMDIR,build/show-comp/compiled)
 	$(call RMDIR,$(RELEASE_DIR))
 	$(call RMDIR,compiled-promise)
+	$(call RMDIR,build/phaseB-promise)
+	$(call RMDIR,build/phaseC-promise)
+	$(call RMDIR,build/phaseD-promise)
+	$(call RMDIR,build/phaseE-promise)
 	$(call RM,$(BUNDLED_DEPS))
 
 .PHONY : test-clean
@@ -331,3 +360,72 @@ new-bootstrap: no-diff-standalone $(PHASE0BUILD)
 	cp -r $(PHASEC)/js $(PHASE0)/
 no-diff-standalone: phaseB phaseC
 	diff $(PHASEB)/pyret.jarr $(PHASEC)/pyret.jarr
+
+# --- Promise/async backend bootstrap ---
+# Self-hosts the COMPILER on the async backend and proves it reaches a
+# byte-stable fixpoint, the async analogue of the cont `new-bootstrap`.
+#
+# Each generation re-compiles src/arr/compiler/pyret.arr with --stack-backend
+# promise (so the output embeds runtime-async.js and every fn is an `async
+# function`); the only thing that changes generation-to-generation is WHICH
+# compiler does the compiling:
+#   phaseB-promise : built by the CONT phaseA compiler            (the seed)
+#   phaseC-promise : built by phaseB-promise   (promise builds promise)
+#   phaseD-promise : built by phaseC-promise
+#   phaseE-promise : built by phaseD-promise
+#
+# Promise compilation is deterministic *given a fixed compiler* (same compiler
+# twice => byte-identical output), so the chain converges. It takes one more
+# generation than cont to settle because the SEED (phaseB) is assembled by the
+# cont compiler, whose internal module/gensym ordering differs slightly from a
+# promise-built one; that perturbs the gensym-atom names and dependency-list
+# ordering embedded as DATA (not logic) until the builder is itself
+# promise-built-by-promise. Empirically phaseB != C != D but D == E: the
+# fixpoint. new-bootstrap-promise diffs the converged pair (D vs E).
+#
+# Each builder needs its own js/ dir because pyret.arr derives this-pyret-dir
+# from the running standalone's location (makeStandalone reads js/amd_loader.js
+# + js/handalone.js from there). Caches/js live under build/phase?-promise/ so
+# they never mix with the cont phase dirs (the polyglot hazard).
+# Run: make new-bootstrap-promise   (~4 full compiler builds)
+PHASEBP = build/phaseB-promise
+PHASECP = build/phaseC-promise
+PHASEDP = build/phaseD-promise
+PHASEEP = build/phaseE-promise
+
+# $(1) = builder pyret.jarr (the compiler doing the work); $(2) = output phase dir
+define PROMISE_SELFBUILD
+	@$(call MKDIR,$(2)/compiled)
+	$(call RMDIR,$(2)/js)
+	cp -r $(PHASEA)/js $(2)/
+	$(NODE) $(1) --outfile $(2)/pyret.jarr \
+                      --build-runnable src/arr/compiler/pyret.arr \
+                      --builtin-js-dir src/js/trove/ \
+                      --builtin-arr-dir src/arr/trove/ \
+                      --compiled-dir $(2)/compiled/ \
+                      --deps-file $(PHASEA)/bundled-node-compile-deps.js \
+                      --stack-backend promise \
+                      -no-check-mode \
+                      --require-config src/scripts/standalone-configA-async.json
+endef
+
+$(PHASEBP)/pyret.jarr: $(PHASEA)/pyret.jarr $(COMPILER_FILES) $(PHASEA)/bundled-node-compile-deps.js
+	$(call PROMISE_SELFBUILD,$(PHASEA)/pyret.jarr,$(PHASEBP))
+$(PHASECP)/pyret.jarr: $(PHASEBP)/pyret.jarr $(COMPILER_FILES) $(PHASEA)/bundled-node-compile-deps.js
+	$(call PROMISE_SELFBUILD,$(PHASEBP)/pyret.jarr,$(PHASECP))
+$(PHASEDP)/pyret.jarr: $(PHASECP)/pyret.jarr $(COMPILER_FILES) $(PHASEA)/bundled-node-compile-deps.js
+	$(call PROMISE_SELFBUILD,$(PHASECP)/pyret.jarr,$(PHASEDP))
+$(PHASEEP)/pyret.jarr: $(PHASEDP)/pyret.jarr $(COMPILER_FILES) $(PHASEA)/bundled-node-compile-deps.js
+	$(call PROMISE_SELFBUILD,$(PHASEDP)/pyret.jarr,$(PHASEEP))
+
+.PHONY : phaseB-promise phaseC-promise phaseD-promise phaseE-promise
+phaseB-promise: $(PHASEBP)/pyret.jarr
+phaseC-promise: $(PHASECP)/pyret.jarr
+phaseD-promise: $(PHASEDP)/pyret.jarr
+phaseE-promise: $(PHASEEP)/pyret.jarr
+
+# The converged fixpoint: phaseD-promise (promise-built-by-promise) reproduces
+# itself exactly as phaseE-promise.
+.PHONY : new-bootstrap-promise
+new-bootstrap-promise: phaseD-promise phaseE-promise
+	diff $(PHASEDP)/pyret.jarr $(PHASEEP)/pyret.jarr
