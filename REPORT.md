@@ -206,6 +206,54 @@ Findings:
 This is the async analogue of Cont's `new-bootstrap` (which diffs phaseB vs phaseC); the
 promise target diffs the converged pair phaseD vs phaseE.
 
+## Performance — benchmarks (`tests/async-opt/`)
+
+Six microbenchmarks (pulled from a parallel optimization effort) measure the async backend's
+overhead vs the cont/trampoline backend. Each is pure compute that prints one number; timing is
+wall-clock of `node bench.jarr` (built `-no-check-mode`), cont = `bench.jarr`, promise =
+`bench.p.jarr`. The async backend's intrinsic cost is the per-call `await` (a microtask) plus a
+periodic macrotask yield (`setTimeout(0)` every `INITIAL_RUNGAS` = 5000 steps) — the "await tax".
+
+**A TCO bug the benchmarks surfaced (now fixed — `anf-loop-compiler-async.arr`).** The first runs
+showed a pathological 8.5× on `bench-tco` and an **out-of-memory crash** on `bench-flat`. Root
+cause: a return-type annotation defeated TCO. `fun f(...) -> T:` desugars its tail self-call into
+`let ans = f(...) in _checkAnn(T, ans)`, so the call is let-bound; the async TCO test gated on the
+syntactic `compiler.tail-pos` (false inside a let), so the loop never engaged and every iteration
+awaited + retained an async frame → O(n) heap (slow, and OOM past ~20M deep). The cont backend
+keys TCO on the ANF's authoritative `app-info.is-tail` instead, which is true here. Fix: drop the
+`tail-pos` gate and trust `app-info.is-tail` (+ `in-tco-loop` so the `continue`-target exists), as
+cont does. `continue` skips the per-iteration `_checkAnn`, which is sound — the returned value is
+the base case's already-checked value (cont's trampoline skips it identically). Verified: full
+promise suite still 12997/13002 (only the 5 stacktrace pins fail, no new failures); the
+annotated 5M-deep tail loop dropped from 16.5s/3.7 GB to 3.0s/139 MB, matching the unannotated
+case.
+
+Results (best of single timed runs; all outputs verified equal across backends):
+
+| benchmark | shape | cont | promise (pre-fix) | promise (post-fix) | ratio |
+|---|---|---|---|---|---|
+| bench-flat | annotated tail, 20M deep, flat-builtin calls | 26.0s | **OOM** | 29.0s | **1.1×** |
+| bench-listsum | annotated tail, list build+sum | 6.1s | 23.1s | 11.0s | **1.8×** |
+| bench-nontail | non-tail `fib` (TCO N/A) | 8.2s | 19.4s | 19.9s | 2.4× |
+| bench-map | shallow tail driver + flat `map`/`fold` | 16.2s | 45.0s | 44.1s | 2.7× |
+| bench-tco | annotated tail, 200k deep × 200 | 7.9s | 66.3s | 21.7s | 2.8× |
+
+Reading the numbers:
+
+- The annotated-tail benchmarks (flat/listsum/tco) improved dramatically once TCO was restored —
+  `bench-flat` went from OOM to **near-parity (1.1×)**.
+- `bench-nontail` and `bench-map` are unchanged by the fix (correctly — `fib` is genuinely
+  non-tail, and `bench-map`'s driver loop is only 2000-deep; the cost is the per-element await in
+  `map`/`fold`, not TCO). Their ~2.4–2.7× is the residual await tax.
+- On real, mixed workloads (the full suite, `test-numbers`, the bootstrap self-compile) the async
+  backend runs at roughly **1.0×** — jsnums arithmetic, parsing, and library work dominate, and
+  the await tax only becomes visible in these deliberately await-bound tight loops.
+
+Remaining async overhead is inherent to the model (a microtask per non-flat call) and matches what
+the parallel optimization effort independently found; closing it further (e.g. helper-loop
+conditional-await for flat callbacks, as `bench-map` would want) is future work, not a correctness
+issue.
+
 ## Known divergences and gaps
 
 - **Stack-trace shape (the 5 suite failures).** The spec explicitly anticipates this: async

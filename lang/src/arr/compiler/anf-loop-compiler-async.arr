@@ -1180,7 +1180,17 @@ fun compile-app-async(compiler, l, f :: N.AVal, args :: List<N.AVal>, app-info :
   arg-ces = args.map(_.visit(compiler))
   compiled-args = CL.map_list(get-exp, arg-ces)
   pre = cl-append(f-ce.other-stmts, args-other-stmts(arg-ces))
-  is-tco = compiler.tail-pos and compiler.in-tco-loop and
+  # TCO-ness is decided by the ANF's `app-info.is-tail` (the authoritative tail
+  # analysis the cont backend also trusts), NOT by the syntactic `compiler.tail-pos`
+  # flag. They diverge for the return-annotation pattern: `fun f(...) -> T:` desugars
+  # the tail self-call into `let ans = f(...) in _checkAnn(T, ans)`, so the call is
+  # let-bound (tail-pos = false) yet still app-info.is-tail = true. Gating on tail-pos
+  # there wrongly defeated TCO -> the self-call awaited+accumulated an async frame per
+  # level, so a deep annotated tail loop went O(n) heap (slow, and OOM at ~20M deep).
+  # `continue` skips the per-iteration _checkAnn, which is sound: the returned value is
+  # the base case's already-checked value (cont's trampoline skips it identically).
+  # in-tco-loop ensures the `while(true)` continue-target exists.
+  is-tco = compiler.in-tco-loop and
     app-info.is-recursive and app-info.is-tail and
     compiler.allow-tco and compiler.options.proper-tail-calls and
     (compiled-args.length() == compiler.args.length())
