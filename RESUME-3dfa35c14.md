@@ -1,10 +1,12 @@
-# Resume: async/promise backend — safe-for-space complete; lazy-trace idea next
+# Resume: async/promise backend done — NEXT STAGE is code.pyret.org integration
 
 Branch **`async-transform`**. Resume-point commit **`3dfa35c14`**. The whole
 async/promise backend is done: the backend (stages 0–6), the perf push, and
-**safe-for-space tail calls for both functions AND methods**. There is no
-required next feature — this file records the state and the one open *optional*
-idea (a lazy stack-trace window). Pick it up only if trace fidelity matters.
+**safe-for-space tail calls for both functions AND methods**. **Next goal: build
+out the stages to make this new backend usable in code.pyret.org (CPO)** — the
+intended design endgame. The first task is to PLAN those stages (as with the
+original 7-stage backend plan); don't dive into CPO code before there's a staged
+plan. See "## Next stage: CPO integration" below.
 
 ## Read first
 1. Project memory `async-transform.md` — full history. The two safe-for-space
@@ -36,32 +38,41 @@ calls are all O(1) heap on the promise backend.
   (compile-app-async, compile-method-app-async, compile-a-lam, compile-a-method,
   compile-fun-body's `can-mint-tokens`/`mints-tokens`/`token-cell`).
 
-## The one open idea: a lazy stack-trace window (OPTIONAL)
-Our scheme is **eager** frame collection (the `appBody`/`full_methBody` frame
-dies at the tail call); cont is **lazy** (ActivationRecords linger, read on
-demand). That is why our traces collapse harder — the spec-flagged test-repl
-`check-block-6` pins grew 5 → 7 → 8 as functions then methods began collapsing
-caller frames. The value-flow MUST stay eagerly bounced (the O(n) proof forbids
-lazy retention of the result dependency), but the **trace is a separable object**:
+## Next stage: code.pyret.org (CPO) integration
+Goal: make the promise/async backend selectable and working in CPO, the way it
+already is for the Node standalone path in `lang/`. **NOT touched yet** — every
+change so far is in `lang/` (compiler + runtime) + the Node standalone/bootstrap
+path; CPO has zero awareness of the backend (grep for `stack-backend` /
+`runtime-async` / `promise` in `code.pyret.org/` is empty).
 
-- Make the token carry its `apploc` (compile-app-async / maybeMethodTail already
-  have `compiler.get-loc(l)` at hand). In `drive()`, keep the last K
-  `(name, apploc)` in a cyclic buffer (O(K) = O(1) memory, overwrite oldest).
-- On a raise, surface that buffer as a K-deep recent-frames trace. Recovers
-  cont's shallow-depth fidelity (most test-repl pins would close) with a correct
-  *truncated suffix* at depth. Gate behind a debug flag so the hot path (the
-  common no-error bounce) pays nothing — only stamp the ring when the flag is on.
-- DEAD END (don't): "let the await chain accumulate K frames then collapse in
-  batches." Each `.app`/`full_meth` is itself a driver, so it re-nests = O(n);
-  routing through `appBody` directly still costs one microtask per `await` on
-  descent and unwinds K awaits per batch — no time win, more peak memory. Retain
-  trace *metadata*, not live frames.
+**First action: write a staged plan** (mirror the original backend's stage list).
+Don't start editing CPO until the stages and validation gates are written down.
 
-If you build it: add the apploc to `TailCall`/`TailMethodCall`, thread a debug
-flag through the runtime, and wire `get-result-stacktrace` to read the ring when
-the synchronous JS stack is shorter than the ring. Then re-run the test-repl
-`check-block-6` pins — some should flip green; document which legitimately can't
-(true deep-recursion suffixes).
+Known integration surface (already located — starting anchors, NOT a plan):
+- `code.pyret.org/cpo-standalone.js` hardcodes
+  `requirejs(["pyret-base/js/runtime", …])` → that's `runtime.js` (cont). A
+  promise build needs it to load `runtime-async.js` (parameterize or a variant).
+- `code.pyret.org/Makefile` `$(CPOMAIN)` rule (~line 394) builds the web bundle
+  with `--require-config cpo-config.json --standalone-file cpo-standalone.js`
+  against `$(PHASEA)` and **no `--stack-backend` flag** → needs a promise build
+  target passing `--stack-backend promise`.
+- `cpo-config.json` is CPO's analogue of `standalone-configA.json`; needs a
+  promise variant mapping `pyret-base/js/runtime.js` → `runtime-async.js` (mirror
+  `lang/src/scripts/standalone-configA-async.json`).
+- Backend-keyed promise cache dirs for the CPO build (same lesson as
+  `compiled-promise/` — never mix cont/promise compiled JS).
+- In short: replicate, for the CPO bundle, what `standalone-configA-async.json` +
+  the Makefile `%.p.jarr` rule do for the `lang/` standalone path.
+
+Validation reality check: the **browser path can't be validated headless on this
+VM** (mocha/selenium are unrunnable here, per the spec) — CPO-on-promise needs
+the real code.pyret.org dev/test harness to confirm in a browser. The runtime's
+macrotask yield already uses `util.suspend` (= `postMessage` in the browser), so
+that piece should port; the unknowns are the build wiring, the require/AMD load
+of the async runtime, and any CPO-side assumptions about the cont runtime's API.
+
+(Deferred, not this stage: the lazy stack-trace ring buffer — recorded in memory
+`async-transform.md` if trace fidelity ever matters.)
 
 ## Validation gates (run ALL after any change)
 Same as before — see memory `async-transform.md`.
