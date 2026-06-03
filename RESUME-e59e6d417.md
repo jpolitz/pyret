@@ -1,6 +1,7 @@
 # Resume: code.pyret.org (CPO) integration — FULL `npm run mocha` PARITY on both backends
 
-Branch **`async-transform`**. Committed as one logical commit on top of `b86f38b10` (not pushed; see *Files changed*).
+Branch **`async-transform`**. Resume-point commit **`e59e6d417`** (this work; one commit on top of
+`b86f38b10`, not pushed; see *Files changed*).
 This continues the CPO integration stage planned in `PLAN-cpo-integration.md` (predecessor:
 `RESUME-3dfa35c14.md`). The async/promise backend (stages 0–6 + perf + safe-for-space TCO) was already
 done; **this session brought code.pyret.org itself to parity on the promise backend.**
