@@ -26,6 +26,10 @@ The backend is exercised end-to-end:
   compiler with the promise backend and shows it reproduces itself exactly (`phaseD == phaseE`).
 - **Safe-for-space mutual tail recursion.** `tests/async-opt/bench-mutual.arr` (`is-even`⇄
   `is-odd`) runs in flat ~133 MB at 1M–20M deep (matching cont), where it previously OOM'd at 5M.
+- **code.pyret.org at full parity.** The CPO browser app builds and runs on the promise backend
+  alongside cont, and the third acceptance leg — `npm run mocha` (selenium) — is **311 passing /
+  0 failing / 45 pending, byte-identical on cont and promise**. See *code.pyret.org (CPO)
+  integration* below.
 
 ## How to use it
 
@@ -436,11 +440,91 @@ for-space tail calls* above.
 - `makeDataTypeConstructor` emits a *sync* `_checkAnn` for data-field annotations. Fine for flat
   refinements (validated); a non-flat/async refinement on a data field would leak a Promise.
 - The CPO-side acceptance leg — `npm run mocha` (selenium browser integration tests in
-  `code.pyret.org/`) — has **not been exercised** here on either backend; this work covered the
-  `lang/` Node path (`make all-pyret-test` + `make new-bootstrap`, green on both). It is deferred to
-  the CPO integration stage. (An earlier draft called it "unrunnable on this headless VM" — that was
-  an *unverified assumption*, not an observed result; headless Chrome is available, so it should be
-  attempted and verified during that stage, not assumed.)
+  `code.pyret.org/`) — is now **exercised and green on both backends** (the "unrunnable on this
+  headless VM" claim was a false assumption; headless Chrome runs here). See the new
+  *code.pyret.org (CPO) integration* section below for the full story and results.
+
+## code.pyret.org (CPO) integration
+
+The intended design endgame: make **code.pyret.org build and run on either backend**, side by side,
+and pass the third acceptance leg — `npm run mocha` (CPO's selenium browser integration tests). This is
+done. **The full mocha suite is at parity on both backends: 311 passing / 0 failing / 45 pending,
+byte-identical on cont and promise** (the 45 pending are skipped on both — Google-OAuth/DB/embed infra
+not configured on this VM, not a backend gap). CPO is **untouched on the cont path** — every change is
+additive and either CPO-side or in the promise runtime only.
+
+### Both-backend build plumbing (additive; cont path unchanged)
+
+- `code.pyret.org/pyret` is a symlink to the pyret-lang root (`../lang`); CPO builds `cpo-main.arr`
+  with `pyret/build/phaseA/pyret.jarr` — the same `--build-runnable` path used in `lang/`.
+- **`cpo-config-async.json`** is the promise require-config: a copy of `cpo-config.json` with the one
+  line `pyret-base/js/runtime.js → pyret/build/phaseA/js/runtime-async.js`.
+- **`make web-promise`** (a new, additive Makefile target) builds `cpo-main.arr` with
+  `--stack-backend promise --require-config cpo-config-async.json --compiled-dir ./compiled-promise`
+  into a **separately-named** `build/web/js/cpo-main-promise.jarr`, in the **same** `build/web` so the
+  static assets are shared. Caches are backend-keyed (`compiled/` vs `compiled-promise/`, never mixed —
+  the #1 hazard). The cont jarr is byte-identical to before. The whole CPO codebase (`cpo-main.arr` +
+  all CPO trove + the pyret stdlib, 119 modules) compiles clean under the async backend with **no
+  source changes**.
+- **Side-by-side servers need no `server.js` change.** The editor loads its jarr from `window.PYRET`
+  (the `PYRET` env, injected at render time) via the static middleware, so cont and promise run as two
+  server instances over the same `build/web`, differing only by `PYRET` + `PORT`:
+  ```
+  # cont
+  node -r dotenv/config src/run.js                       # :4999, PYRET=…/cpo-main.jarr
+  # promise
+  PORT=5999 BASE_URL=http://localhost:5999 \
+    PYRET=http://localhost:5999/js/cpo-main-promise.jarr \
+    node -r dotenv/config src/run.js
+  # run a test against either:  BASE_URL=http://localhost:PORT npx mocha test/X.js --timeout 120000
+  ```
+  The server boots without redis/postgres/Google (all optional for serving `/editor`).
+
+### Two promise-only bugs found and fixed
+
+Both are the same family the spec warned about — a site assuming a call returns a **synchronous value**,
+which holds on cont but yields a `Promise` (or a guard rejection) on promise. Both were diagnosed by the
+"patch the built standalone to instrument" technique (the jarr is a self-contained, gitignored artifact;
+`code.pyret.org/test-util/console-probe.js` loads `/editor` headless and dumps the browser console + an
+optional REPL eval).
+
+1. **The editor wouldn't load — `pauseStack` kept a paused run `RUN_ACTIVE` (`runtime-async.js`).**
+   CPO's REPL runs every interaction via a **same-runtime nested run** so definitions persist —
+   `runtime.pauseStack(… runtime.runThunk(…) …)` in `load-lib.js`'s `run-program`. On cont this works
+   because a paused trampoline unwinds and is no longer "active"; on the async backend `pauseStack`
+   merely returned a Promise the outer run `await`ed, leaving the outer run `RUN_ACTIVE`, so the nested
+   `run` was rejected with *"Internal: run called while already running."* That failure's exn was a raw
+   Pyret value with no JS `.stack`, which then crashed the stack-parser — so a stack-trace difference
+   had **semantic impact** (it aborted the whole editor load), not a cosmetic divergence. **Fix:
+   `pauseStack` releases `RUN_ACTIVE` on pause and restores it on resume/error/break**, exactly
+   mirroring the cont trampoline's unwind. Validated: `all-pyret-test-promise` stays **13008/8/0
+   (byte-identical to baseline)** and `async-opt-test` is all green — no node regression.
+
+2. **Check/error-failure rendering raised `field-not-found` — `equal_always` used as a sync boolean on
+   objects (`output-ui.js`).** CPO's loc→AST `search` resolves a source location to its exact AST node
+   (so the checker can highlight the failing sub-expression). It used `runtime.equal_always(l, loc)` and
+   the srcloc `contains` method as synchronous booleans. On the async backend **`equal_always` on two
+   flat *objects* returns a `Promise`** (`equal3`'s `equalHelp` is an `async function`, so even its
+   no-await flat path returns a thenable; only `identical3` and JS-primitive comparisons stay sync).
+   A truthy `Promise` made `if (equal_always(...))` always match, so `search` returned the first
+   non-ignorable node (the enclosing `s-check` block) instead of the exact `s-check-test`, and the
+   checker's `test-ast.left` (`checker.arr:36`) hit `field-not-found`. **Fix: compare flat srclocs
+   synchronously on their char offsets in `search`** (the function's own comment already certifies
+   "srclocs are flat data"), avoiding `equal_always`/`contains` entirely. Result: promise check-blocks
+   **11→29/29** and errors **54→193/193**; cont re-verified 29/29 + 193/193 (the char-offset compare is
+   semantically equivalent to `equal_always`/`contains` for srclocs — no cont regression).
+
+### Results — `npm run mocha`, both backends (per-file)
+
+`311 passing / 0 failing / 45 pending`, **identical on cont and promise.** Highlights: `errors` 193,
+`image-equality` 64 (headless canvas/image trove), `check-blocks` 29, `chart` 10 (vega/d3), plus
+`world`, `tables`, `type-check`, `pyret` (image programs), `basic`, `number`, `embed` all at parity.
+The 45 pending (`shareUrls` 37, `modules` 5, `sheets` 2, `embed` 1) are skipped on both backends. No
+CPO-trove `.js` needed a `stackBackend` branch for what the suite exercises.
+
+**Watch (for the next person):** any *other* CPO JS site that uses `runtime.equal_always` — or a
+non-flat Pyret method via `.app` — as a **synchronous boolean on objects** carries the same latent bug
+on promise. The rendering path is clean; audit new failures with this pattern in mind.
 
 ## Build / debug notes (for the next person)
 

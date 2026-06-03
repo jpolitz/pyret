@@ -3978,13 +3978,26 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     // (e.g. the check-results hook, which writes output and process.exit's) just
     // leaves the Promise pending, which is fine.
     function pauseStack(resumer) {
+      // A paused stack is NOT actively executing Pyret code — it is suspended
+      // awaiting an external resume. So release the RUN_ACTIVE slot while paused
+      // and restore it on resume, exactly as the cont trampoline does by
+      // unwinding. This is what lets the same-runtime nested-run idiom that
+      // code.pyret.org's REPL uses (`runtime.pauseStack(... runtime.runThunk(...))`,
+      // run-program in load-lib.js) proceed instead of hitting the
+      // "run called while already running" guard. (The node suite never hit this
+      // because its nested runs use a fresh runtime; CPO shares one across REPL
+      // interactions so definitions persist.)
+      var wasActive = RUN_ACTIVE;
+      RUN_ACTIVE = false;
       return new Promise(function(resolve, reject) {
         var restarter = {
-          resume: function(val) { resolve(val); },
+          resume: function(val) { RUN_ACTIVE = wasActive; resolve(val); },
           error: function(err) {
+            RUN_ACTIVE = wasActive;
             reject(isPyretException(err) ? err : new PyretFailException(err));
           },
           break: function() {
+            RUN_ACTIVE = wasActive;
             reject(new PyretFailException(thisRuntime.ffi.userBreak));
           }
         };
