@@ -12,16 +12,20 @@ async runtime (`runtime-async.js`); the existing Cont/trampoline backend is left
 
 The motivation (per the spec, à la Stopify): turn JS stack space into heap space so deep
 Pyret recursion never overflows, while keeping pause/resume and user-interruptibility — but
-expressed natively with `async`/`await` instead of the hand-written trampoline.
+expressed natively with `async`/`await` instead of the hand-written trampoline. It is also
+**safe-for-space**: cross-function (mutual / higher-order / cross-module) tail recursion runs in
+O(1) heap, via a bounce token + driver (see *Safe-for-space tail calls*).
 
 The backend is exercised end-to-end:
 
 - **Full test suite at parity.** `make all-pyret-test-promise` builds the aggregate suite
   (`tests/pyret/main2.arr`, ~80 test files + all builtins) with the promise backend and runs
-  it: **Passed 12947, Failed 5, Errored 0 / 12952.** The 5 failures are all spec-sanctioned
+  it: **Passed 13010, Failed 7, Errored 0 / 13017.** The 7 failures are all spec-sanctioned
   stack-trace-shape divergences (see *Known divergences*); every other file matches Cont.
 - **Self-hosts to a byte-stable fixpoint.** `make new-bootstrap-promise` compiles the whole
   compiler with the promise backend and shows it reproduces itself exactly (`phaseD == phaseE`).
+- **Safe-for-space mutual tail recursion.** `tests/async-opt/bench-mutual.arr` (`is-even`⇄
+  `is-odd`) runs in flat ~133 MB at 1M–20M deep (matching cont), where it previously OOM'd at 5M.
 
 ## How to use it
 
@@ -143,6 +147,77 @@ was made **thenable-aware**: it stays synchronous when `fun`/`after` are flat an
 Promise only when `fun()` actually returns a thenable — which is what keeps the statically-gated
 `_checkAnn` await consistent with the dynamic value.
 
+## Safe-for-space tail calls (bounce token + driver)
+
+A **self** tail call already compiles to a `while(true){…;continue}` loop → O(1). A **mutual**
+(cross-function / higher-order / cross-module) tail call used to compile to `return await
+g.app(…)`, which is **not** a JS tail call: each level suspends a heap-allocated async frame the
+level above retains, so the chain is O(n) live frames. GAS bounds the *native* stack (it never
+overflows) but cannot reclaim the suspended-frame chain. Measured on
+`tests/async-opt/bench-mutual.arr` (`is-even`/`is-odd`, no return anns so the call is genuinely
+tail): promise grew ~626 B/level and OOM-aborted around 5M deep, while cont stayed flat ~136 MB.
+No JS engine helps — only JavaScriptCore ever shipped Proper Tail Calls; V8 removed its flagged
+implementation. `await`, no-`await` (promise adoption), and `Promise<Promise>` flattening are
+**all O(n)**: the leak is the result-dependency chain, not the frames or the native stack.
+
+The fix is a **bounce token + driver**, with the polarity chosen so the *safe* path is the
+default:
+
+```js
+function TailCall(fn, args) { this.fn = fn; this.args = args; }
+thisRuntime.tailCall = (fn, args) => new TailCall(fn, args);
+
+// makeTailFunction wraps a token-minting body. Public `.app` DRIVES to a value;
+// internal `appBody` (=== the body) may return a token at a tail position.
+function makeTailFunction(fun, name) {
+  var f = new PFunction(fun, fun.length, name);   // f.appBody === fun
+  f.app = async function() {                       // closure over `fun`
+    var r = await fun.apply(this, arguments);
+    while (r instanceof TailCall) r = await r.fn.appBody.apply(r.fn, r.args);
+    return r;
+  };
+  return f;
+}
+```
+
+- **`PFunction` now carries both `.app` and `.appBody`.** The constructor defaults
+  `appBody === app`, so every plain/FFI/builtin function *ends* a bounce chain by returning a
+  value (it anchors one frame — correct, and the opt-in to do better is to supply a token-minting
+  `appBody`). Only token-producing compiled functions get the driver as `.app`.
+- **The compiler mints a token at a genuine tail position** (completion is `complete-return`),
+  inside an async body, when the callee is **non-flat** — emitting `return R.tailCall(f, [args])`
+  instead of `return await f.app(args)`. A *flat* callee can't recurse deeply, so it keeps its
+  cheap direct return and forces no driver. Self tail calls keep the `continue` loop (no
+  per-iteration token alloc). The decision is recorded per-function in a mutable cell threaded on
+  the compiler; `compile-a-lam` then emits `makeTailFunction` iff the body actually minted a
+  token, else plain `makeFunction` — so `fib` and every non-tail-recursive function keep
+  `.app === .appBody` and pay **zero** overhead.
+- **Why this polarity.** The public `.app` always returns a value, so every FFI / JS-to-Pyret /
+  non-tail / loop-helper call site is unchanged and correct — `await f.app(args)` is always a
+  value, never a token. Loop helpers (`map`, `fold`) *consume* their callback's result, so they
+  are drivers by definition. Tokens are never observable as Pyret values: they exist only in
+  transit between an `appBody` return and the driver. (Guarded by
+  `tests/async-opt/mutual-tco-test.arr`, which feeds deep mutual / 3-cycle / higher-order
+  tail-recursion results through `==`, arithmetic, predicates, and `is` — a leaked token would
+  surface as a "Non Pyret value".)
+- **The driver closes over `fun` rather than reading `this.appBody`.** This is essential, not
+  cosmetic: several call sites invoke `.app` with `this` **unbound** — `cases` dispatch does
+  `self.$app_fields(getField(handlers, name).app, …)`, and trove FFI re-exposes a Pyret function's
+  `.app` under another name (`make-reactor`, `place-image`, …). A driver that read `this.appBody`
+  crashes at every such site (`Cannot read properties of undefined`); a closure over `fun` does
+  not. (`PFunction.prototype.brand` likewise detects a token-producing function by
+  `this.app !== this.appBody` to re-wrap it correctly.)
+
+Result: `bench-mutual` is now **O(1) in heap** — flat ~132/133/155 MB at depth 1M/5M/20M (cont is
+~136 MB), where promise previously OOM'd at 5M. The whole `is-even`⇄`is-odd` chain runs as
+iterations of one driver frame's loop; each `appBody` frame returns a token and dies. Coverage is
+fully dynamic (the token references a runtime function *value*), so higher-order, first-class, and
+cross-module tail calls are all safe-for-space, not just statically-named groups. **Methods**
+(`PMethod`, not `PFunction`) do not mint tokens yet — a tail call inside a method body drives to a
+value (correct, matches cont; O(n) only for the rare method-mediated mutual recursion).
+Return-annotated tail calls (`fun f(…) -> T:`) stay non-tail on both backends by design (the ann
+check consumes the result), so they are driven, not bounced.
+
 ## Caching: backend-keyed, never mixed (the #1 hazard)
 
 Cont- and promise-compiled modules share a **source-only** hash but emit **incompatible** JS
@@ -168,11 +243,13 @@ cleared the entire nested-run cluster (test-contracts, test-error-rendering, tes
 
 ### Suite — `make all-pyret-test-promise`
 
-**Passed 12947, Failed 5, Errored 0 / 12952.** Every test file is at full parity with the Cont
-backend except the 5 failures below, all in `test-repl` `check-block-6`. Per-file highlights at
-parity include test-equality (6168), test-strings (1125), test-array (637), test-rounding (401),
-test-lists (379), test-contracts (165), test-error-rendering (58), test-include (57), plus
-numbers/sets/json/tuples/tables/etc.
+**Passed 13010, Failed 7, Errored 0 / 13017.** Every test file is at full parity with the Cont
+backend except the 7 failures below, all in `test-repl` `check-block-6` (frame-shape stacktrace
+pins — see *Known divergences*). Per-file highlights at parity include test-equality (6168),
+test-strings (1125), test-array (637), test-rounding (401), test-lists (379), test-contracts
+(165), test-error-rendering (58), test-include (57), plus numbers/sets/json/tuples/tables/etc.
+(The raw assertion totals drift by a few between runs — `test-pprint` generates a
+nondeterministic count — so compare the *failing set*, not the total.)
 
 Known **parity** failures (Cont *also* fails — not promise gaps): test-within (3), test-roughnum
 (1), test-pprint (both time out), test-each-loop / test-include-block (both compile-error
@@ -286,14 +363,47 @@ Reading the numbers:
   backend runs at roughly **1.0×** — jsnums arithmetic, parsing, and library work dominate, and
   the await tax only becomes visible in these deliberately await-bound tight loops.
 
+**Re-measured after the safe-for-space tail-call work** (best of 3; outputs byte-equal across
+backends), confirming the selective driver hop lands only on token-producing functions and leaves
+the hot non-token paths untouched:
+
+| benchmark | shape | cont | promise | ratio |
+|---|---|---|---|---|
+| bench-flat | annotated tail, 20M deep | 21.6s | 22.9s | 1.06× |
+| bench-listsum | annotated tail, list build+sum | 5.7s | 6.3s | 1.11× |
+| bench-nontail | non-tail `fib` | 8.1s | 11.8s | 1.47× |
+| bench-map | shallow tail driver + flat `map`/`fold` | 15.7s | 18.4s | 1.17× |
+| bench-tco | annotated tail, 200k × 200 | 7.7s | 13.2s | 1.71× |
+| bench-boids | image construction (real workload) | 21.7s | 29.7s | 1.37× |
+| bench-boids-raster | color-at-position rasterization | 5.0s | 6.4s | 1.29× |
+
+All ratios are within measurement noise of the pre-feature numbers (flat 1.09, listsum 1.04,
+nontail 1.41, map 1.19, tco 1.75, boids 1.32, raster 1.24) — the deltas are symmetric (some
+better, some worse). Crucially `bench-tco` (self-recursion → `continue` loop), `bench-nontail`
+(non-tail), and `bench-flat` (flat) — the cases that would regress if the extra `.app → appBody`
+hop landed broadly — are unchanged, which is the empirical proof of selectivity (~30% of stdlib
+functions get `makeTailFunction`, but none on these hot paths).
+
+**`bench-mutual` is the safe-for-space *acceptance*, not a speed ratio.** It measures heap, not
+time: promise is now flat ~132/133/155 MB at depth 1M/5M/20M (cont ~136 MB), completing 20M-deep
+mutual recursion in ~6s — where it previously grew ~626 B/level and OOM-aborted at 5M. See *Safe-
+for-space tail calls* above.
+
 ## Known divergences and gaps
 
-- **Stack-trace shape (the 5 suite failures).** The spec explicitly anticipates this: async
+- **Stack-trace shape (the 7 suite failures).** The spec explicitly anticipates this: async
   frames are heap-allocated and V8 adds `await` frames, so any test that pins an exact frame
   list (`get-result-stacktrace(...) is [raw-array: ...]`) diverges from the trampoline's
   `ActivationRecord`-derived list — e.g. the bottom `interactions://1` REPL-call frame is absent
   and TCO frames aren't collapsed the same way. **Error *detection* is correct**: every
-  interleaved `satisfies is-failure-result` check passes; only frame shape differs. Per the
+  interleaved `satisfies is-failure-result` check passes; only frame shape (and now length)
+  differs. The count grew from 5 to 7 with the safe-for-space tail-call work: a **cross-function
+  tail call to a non-flat callee now collapses the caller's frame** (the `appBody` frame bounces
+  away — exactly the O(1) behavior), where cont keeps it because its trace comes from a separate
+  `ActivationRecord` stack. So e.g. `fun g(): f(x) end` (f non-flat, tail) shows just the error
+  site on promise vs `[error-site, g's call site, interactions://]` on cont. This is the same
+  family as the original divergence, made slightly broader by a correctly-implemented feature; the
+  innermost (error-site) frame is still correct in every case. Per the
   spec, these are flagged, not "fixed". Following the spec's second instruction ("write new
   tests that work under both backends to make sure your behavior is sensible"), a new test file
   **`tests/pyret/tests/test-stacktrace-portable.arr`** re-exercises the same error scenarios and
@@ -308,6 +418,11 @@ Reading the numbers:
   unwound by `await` before capture — both still pinpoint the error site.)
 - `makeDataTypeConstructor` emits a *sync* `_checkAnn` for data-field annotations. Fine for flat
   refinements (validated); a non-flat/async refinement on a data field would leak a Promise.
+- **Methods don't participate in safe-for-space bouncing yet.** A method's value shape is
+  `PMethod` (`meth`/`full_meth`), not a `PFunction` with `.app`/`.appBody`, so a tail call inside a
+  method body drives to a value instead of minting a token — correct and matching cont, but O(n)
+  for the (rare) case of mutual recursion routed *through* a method. Plain-function tail calls
+  (including higher-order/first-class/cross-module) are fully covered.
 - `mocha` (selenium) tests are unrunnable on this headless VM, as noted in the spec.
 
 ## Build / debug notes (for the next person)

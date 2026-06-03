@@ -750,6 +750,14 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       /**@type {Function}*/
       this.app   = fun;
 
+      /**@type {Function}
+       * Internal entry that may return a TailCall token at a tail position.
+       * Defaults to `app` so plain/FFI functions return a value and END a bounce
+       * chain (they anchor one frame, which is correct). Token-producing compiled
+       * functions (see makeTailFunction) override `app` with the driver and keep
+       * `appBody` as the token-minting body. */
+      this.appBody = fun;
+
       /**@type {string}*/
       this.name = name || "anonymous";
     }
@@ -759,7 +767,14 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
        @return {!PFunction} With same app and dict
     */
     PFunction.prototype.brand = function(b) {
-      var newFun = makeFunction(this.app, this.name);
+      // Preserve the driver/appBody split: a token-producing function has its own
+      // driver closure as `.app` (≠ appBody), so re-wrap via makeTailFunction
+      // (carrying the real body as appBody) rather than makeFunction (which would
+      // set app = appBody = the driver and loop forever when called). A plain
+      // function has app === appBody.
+      var newFun = (this.app !== this.appBody)
+        ? makeTailFunction(this.appBody, this.name)
+        : makeFunction(this.app, this.name);
       return brandClone(newFun, this, b);
     };
 
@@ -779,6 +794,57 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     }
     function makeFunctionArity(fun, arity, name) {
       return new PFunction(fun, arity, name);
+    }
+
+    /*********************
+        Safe-for-space tail calls (bounce token + driver)
+    **********************
+       A *mutual* (cross-function / higher-order / cross-module) tail call would
+       otherwise compile to `return await g.app(...)`, retaining an O(n) chain of
+       suspended async frames (V8 has no PTC; await / no-await / Promise<Promise>
+       are all O(n) — the leak is the result-dependency chain). To keep such
+       recursion O(1) in heap, a tail call instead MINTS a TailCall token and a
+       DRIVER loop pumps it.
+
+       Polarity (the key design decision): the *public* `.app` DRIVES — it always
+       returns a real value, never a token — so all FFI / JS-to-Pyret / non-tail
+       call sites are unchanged and correct (`await f.app(args)` is always a value).
+       The token-producing entry is the *internal* `appBody`. The driver calls
+       `appBody` (NOT `.app`), so chains never nest: the whole bounce runs as
+       iterations of one driver frame's loop; each `appBody` frame returns a token
+       and dies. Tokens exist only in transit between an `appBody` return and the
+       driver — they are never observable as Pyret values. */
+    function TailCall(fn, args) {
+      this.fn = fn;
+      this.args = args;
+    }
+    function tailCall(fn, args) {
+      return new TailCall(fn, args);
+    }
+    // Like makeFunction, but `fun` is the token-minting body (kept as `appBody`)
+    // and the public `.app` is a driver that pumps any bounce chain to a value.
+    // Used by the compiler for functions whose body can end in a non-self tail
+    // call. Non-token functions keep app === appBody (zero overhead).
+    //
+    // The driver CLOSES OVER `fun` rather than reading `this.appBody`: several call
+    // sites extract `.app` as a bare reference and invoke it with `this` unbound —
+    // cases dispatch (`self.$app_fields(handlers.foo.app, …)`), and trove FFI that
+    // re-exposes a Pyret function's `.app` under another name (e.g. make-reactor,
+    // place-image). A driver that depended on `this` would crash at every such
+    // site. The body itself never uses `this` (Pyret closures capture lexically),
+    // so `this` is merely forwarded. The loop reads `r.fn.appBody`, which is always
+    // defined: every PFunction has appBody (the constructor defaults it to app).
+    function makeTailFunction(fun, name) {
+      var f = new PFunction(fun, fun.length, name);
+      // f.appBody stays === fun (set by the PFunction constructor)
+      f.app = async function() {
+        var r = await fun.apply(this, arguments);
+        while (r instanceof TailCall) {
+          r = await r.fn.appBody.apply(r.fn, r.args);
+        }
+        return r;
+      };
+      return f;
     }
 
     /*********************
@@ -5799,6 +5865,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       'makeBoolean'  : makeBoolean,
       'makeString'   : makeString,
       'makeFunction' : makeFunction,
+      'makeTailFunction' : makeTailFunction,
+      'tailCall'     : tailCall,
       'makeMethod'   : makeMethod,
       'makeMethod0'   : makeMethod0,
       'makeMethod1'   : makeMethod1,

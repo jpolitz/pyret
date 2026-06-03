@@ -319,7 +319,7 @@ all-pyret-test-promise: pyret-test-promise parse-test
 # unrelated chunk of a big aggregate suite down with it and obscure the cause.
 # Built on the promise backend with -check-all; each is also valid on cont (the
 # correctness ones) but the point is the async runtime. Run: make async-opt-test
-ASYNC_OPT_TESTS = tco-test flat-sanity helper-reentry-pyret helper-reentry
+ASYNC_OPT_TESTS = tco-test mutual-tco-test flat-sanity helper-reentry-pyret helper-reentry
 
 .PHONY : async-opt-test
 async-opt-test: phaseA

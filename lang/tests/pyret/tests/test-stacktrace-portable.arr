@@ -66,13 +66,24 @@ check "error in a non-tail call chain (f calls g)":
 end
 
 check "error in a method call chain":
+  # g calls f in NON-tail position (let-bound), so g's call-site frame is retained
+  # on BOTH backends. A *tail* call to a non-flat callee is now collapsed on the
+  # promise backend (safe-for-space mutual TCO bounces the frame away) but kept on
+  # cont (its trace comes from a separate ActivationRecord stack) -- a legitimate,
+  # spec-flagged frame-shape divergence we don't assert here. See the deep
+  # non-tail-recursion note below; same family.
   _ = restart("fun f(o): o.x() end\n" +
-              "fun g(): f({x: 5})\n end", false)
+              "fun g():\n" +
+              "  ans = f({x: 5})\n" +
+              "  ans\n" +
+              "end", false)
   result = next-interaction("g()")
   result.v satisfies L.is-failure-result
   st = L.get-result-stacktrace(result.v)
+  # innermost frame is the `o.x()` method application on line 1
   st-top(st) is "definitions://: line 1, column 10"
-  st-has(st, "definitions://: line 2, column 9") is true
+  # f's (non-tail) call site on line 3 is in the trace
+  st-has(st, "definitions://: line 3, column 8") is true
   (st-len(st) >= 2) is true
 end
 

@@ -968,7 +968,7 @@ fun compile-cases-branch(compiler, compiled-val, branch :: N.ACasesBranch, cases
       j-list(false, cl-empty)
     end
     compiled-branch-fun =
-      compile-fun-body(branch.body.l, step, temp-branch, compiler.{allow-tco: false, options: compiler.options.{should-profile: false}}, branch-args, none, branch.body, true, false, false)
+      compile-fun-body(branch.body.l, step, temp-branch, compiler.{allow-tco: false, options: compiler.options.{should-profile: false}}, branch-args, none, branch.body, true, false, false, false)
     preamble = cases-preamble(compiler, compiled-val, branch, cases-loc)
     deref-fields = j-expr(j-assign(compiler.cur-ans, j-method(compiled-val, "$app_fields", [clist: j-id(temp-branch), ref-binds-mask])))
     actual-app =
@@ -1201,9 +1201,23 @@ fun compile-app-async(compiler, l, f :: N.AVal, args :: List<N.AVal>, app-info :
     cl-append(pre, cl-snoc(CL.from_list(asgn-pre + asgn-post), j-continue))
   else:
     fn-check = if is-fn: cl-empty else: cl-sing(check-fun(l, compiler.get-loc(l), f-ce.exp)) end
-    call-base = app(l, f-ce.exp, compiled-args)
-    value = if is-flat: call-base else: j-await(call-base) end
-    cl-append(pre, cl-append(fn-check, compiler.complete(value)))
+    # Safe-for-space tail call: in genuine tail position (complete-return), inside a
+    # token-producing async body, calling a non-flat callee, mint a bounce token
+    # instead of `return await f.app(...)`. The nearest driver (the public `.app`
+    # wrapper, installed by makeTailFunction) pumps it — O(1) heap for mutual /
+    # higher-order / cross-module tail recursion. A flat callee can't recurse deeply
+    # (bounded), so we keep its cheap direct return and don't force a driver. The
+    # token references the callee VALUE (f-ce.exp), whose `appBody` the driver calls.
+    mint-token = compiler.mints-tokens and compiler.tail-pos and not(is-flat)
+    if mint-token block:
+      compiler.token-cell.set-now("minted", true)
+      token = rt-method("tailCall", [clist: f-ce.exp, j-list(false, compiled-args)])
+      cl-append(pre, cl-append(fn-check, cl-sing(j-return(token))))
+    else:
+      call-base = app(l, f-ce.exp, compiled-args)
+      value = if is-flat: call-base else: j-await(call-base) end
+      cl-append(pre, cl-append(fn-check, compiler.complete(value)))
+    end
   end
 end
 
@@ -1331,7 +1345,7 @@ fun compile-lettable-async(compiler, e :: N.ALettable) -> CL.ConcatList<J.JStmt>
   end
 end
 
-fun compile-fun-body(l :: Loc, step :: A.Name, fun-name :: A.Name, compiler, args :: List<N.ABind>, opt-arity :: Option<Number>, body :: N.AExpr, should-report-error-frame :: Boolean, is-flat :: Boolean, is-method :: Boolean) -> J.JBlock block:
+fun compile-fun-body(l :: Loc, step :: A.Name, fun-name :: A.Name, compiler, args :: List<N.ABind>, opt-arity :: Option<Number>, body :: N.AExpr, should-report-error-frame :: Boolean, is-flat :: Boolean, is-method :: Boolean, can-mint-tokens :: Boolean) -> J.JBlock block:
   # Detect whether a formal argument is captured by an inner lambda; if so we
   # cannot do explicit-loop TCO (the loop would clobber the captured binding).
   var in-lam = false
@@ -1366,6 +1380,14 @@ fun compile-fun-body(l :: Loc, step :: A.Name, fun-name :: A.Name, compiler, arg
     end
   apploc = fresh-id(compiler-name("al"))
   use-loop = not(is-flat) and compiler.allow-tco and compiler.options.proper-tail-calls
+  # `mints-tokens` is true exactly when this function is allowed to emit a bounce
+  # token at a non-self tail call: it must be a real closure body (can-mint-tokens
+  # — NOT the toplevel module fn or a cases-branch fn, whose results are consumed
+  # directly and never driven) AND emitted async (a sync/flat fn can't return a
+  # token to its non-awaiting caller without leaking it). `token-cell` records
+  # whether the body actually minted one, so the caller (compile-a-lam) can choose
+  # makeTailFunction (driver) vs makeFunction (zero overhead) — see the design doc.
+  mints-tokens = can-mint-tokens and not(is-flat)
   local-compiler = compiler.{
     cur-step: step,
     cur-apploc: apploc,
@@ -1373,6 +1395,7 @@ fun compile-fun-body(l :: Loc, step :: A.Name, fun-name :: A.Name, compiler, arg
     complete: complete-return,
     tail-pos: true,
     in-tco-loop: use-loop,
+    mints-tokens: mints-tokens,
     cur-let-bind: none
   }
   # Shadow formals, assigned immediately to the "real" arg names (mirrors the
@@ -1467,7 +1490,11 @@ fun compile-a-lam(compiler, l :: Loc, name :: String, args :: List<N.ABind>, ret
     if len > 0: args
     else: [list: N.a-bind(l, compiler.resumer, A.a-blank)]
     end
-  fun-body = compile-fun-body(l, new-step, temp, compiler.{allow-tco: true}, effective-args, some(len), body, true, is-flat, false)
+  # A fresh cell records whether this body actually minted a bounce token at some
+  # tail position; if so the function value needs the driving `.app` wrapper
+  # (makeTailFunction), otherwise it keeps app === appBody for zero overhead.
+  token-cell = D.make-mutable-string-dict()
+  fun-body = compile-fun-body(l, new-step, temp, compiler.{allow-tco: true, token-cell: token-cell}, effective-args, some(len), body, true, is-flat, false, true)
   fun-args = CL.map_list(lam(arg): formal-shadow-name(arg.id) end, effective-args)
   # Flat functions stay synchronous; everything else is an async function so its
   # body can `await` non-flat calls and the fuel check.
@@ -1475,8 +1502,9 @@ fun compile-a-lam(compiler, l :: Loc, name :: String, args :: List<N.ABind>, ret
     if is-flat: j-fun(J.next-j-fun-id(), make-fun-name(compiler, l), fun-args, fun-body)
     else: j-async-fun(J.next-j-fun-id(), make-fun-name(compiler, l), fun-args, fun-body)
     end
+  maker = if token-cell.has-key-now("minted"): "makeTailFunction" else: "makeFunction" end
   c-exp(
-    rt-method("makeFunction", [clist: j-id(temp), j-str(name)]),
+    rt-method(maker, [clist: j-id(temp), j-str(name)]),
     [clist: j-var(temp, the-fun)])
 end
 
@@ -1794,7 +1822,11 @@ compiler-visitor = {
       j-var(temp-full,
         j-async-fun(J.next-j-fun-id(), make-fun-name(self, l),
           CL.map_list(lam(a): formal-shadow-name(a.id) end, args),
-          compile-fun-body(l, step, temp-full, self.{allow-tco: true}, args, some(len), body, true, false, true)
+          # Methods don't participate in token bouncing yet (their value shape is
+          # PMethod, not a PFunction with .app/.appBody); a tail call inside a method
+          # body drives to a value (correct, matches cont; O(n) only for the rare
+          # method-mediated mutual recursion). can-mint-tokens = false.
+          compile-fun-body(l, step, temp-full, self.{allow-tco: true}, args, some(len), body, true, false, true, false)
         ))
     method-expr = if len < 9:
       rt-method(string-append("makeMethod", tostring(len - 1)), [clist: j-id(temp-full), j-str(name)])
@@ -2469,9 +2501,13 @@ fun compile-module(self, l, prog-provides, imports-in, prog, freevars, provides,
     allow-tco: false,
     dispatches: cases-dispatches
   }
+  # The toplevel module fn is called directly (`await bodyName()`) and its result
+  # is the module value, not driven through a `.app` wrapper, so it must NEVER mint
+  # a token: can-mint-tokens = false. A tail-position call at program top drives to
+  # a value via the callee's own `.app`.
   visited-body = compile-fun-body(l, step, toplevel-name,
     body-compiler, # resumer gets js-id-of'ed in compile-fun-body
-    [list: resumer-bind], none, prog, true, false, false)
+    [list: resumer-bind], none, prog, true, false, false, false)
   toplevel-fun = j-async-fun(J.next-j-fun-id(), make-fun-name(body-compiler, l), [clist: formal-shadow-name(resumer)], visited-body)
   define-locations = j-var(LOCS, j-list(true, locations))
   module-body = j-block(
