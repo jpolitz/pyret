@@ -39,37 +39,11 @@ calls are all O(1) heap on the promise backend.
   compile-fun-body's `can-mint-tokens`/`mints-tokens`/`token-cell`).
 
 ## Next stage: code.pyret.org (CPO) integration
-Goal: make the promise/async backend selectable and working in CPO, the way it
-already is for the Node standalone path in `lang/`. **NOT touched yet** — every
-change so far is in `lang/` (compiler + runtime) + the Node standalone/bootstrap
-path; CPO has zero awareness of the backend (grep for `stack-backend` /
-`runtime-async` / `promise` in `code.pyret.org/` is empty).
-
-**First action: write a staged plan** (mirror the original backend's stage list).
-Don't start editing CPO until the stages and validation gates are written down.
-
-Known integration surface (already located — starting anchors, NOT a plan):
-- `code.pyret.org/cpo-standalone.js` hardcodes
-  `requirejs(["pyret-base/js/runtime", …])` → that's `runtime.js` (cont). A
-  promise build needs it to load `runtime-async.js` (parameterize or a variant).
-- `code.pyret.org/Makefile` `$(CPOMAIN)` rule (~line 394) builds the web bundle
-  with `--require-config cpo-config.json --standalone-file cpo-standalone.js`
-  against `$(PHASEA)` and **no `--stack-backend` flag** → needs a promise build
-  target passing `--stack-backend promise`.
-- `cpo-config.json` is CPO's analogue of `standalone-configA.json`; needs a
-  promise variant mapping `pyret-base/js/runtime.js` → `runtime-async.js` (mirror
-  `lang/src/scripts/standalone-configA-async.json`).
-- Backend-keyed promise cache dirs for the CPO build (same lesson as
-  `compiled-promise/` — never mix cont/promise compiled JS).
-- In short: replicate, for the CPO bundle, what `standalone-configA-async.json` +
-  the Makefile `%.p.jarr` rule do for the `lang/` standalone path.
-
-Validation reality check: the **browser path can't be validated headless on this
-VM** (mocha/selenium are unrunnable here, per the spec) — CPO-on-promise needs
-the real code.pyret.org dev/test harness to confirm in a browser. The runtime's
-macrotask yield already uses `util.suspend` (= `postMessage` in the browser), so
-that piece should port; the unknowns are the build wiring, the require/AMD load
-of the async runtime, and any CPO-side assumptions about the cont runtime's API.
+Goal: make the promise/async backend usable in CPO — the intended design endgame.
+Untouched so far: all work is the `lang/` backend + the Node standalone/bootstrap
+path. **First action: write a staged plan with its validation gates** (mirror the
+original 7-stage backend plan); scope it out before editing anything in
+`code.pyret.org/`.
 
 (Deferred, not this stage: the lazy stack-trace ring buffer — recorded in memory
 `async-transform.md` if trace fidelity ever matters.)
