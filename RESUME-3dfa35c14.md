@@ -39,11 +39,25 @@ calls are all O(1) heap on the promise backend.
   compile-fun-body's `can-mint-tokens`/`mints-tokens`/`token-cell`).
 
 ## Next stage: code.pyret.org (CPO) integration
-Goal: make the promise/async backend usable in CPO — the intended design endgame.
+Goal: make CPO work on the promise/async backend — the intended design endgame.
 Untouched so far: all work is the `lang/` backend + the Node standalone/bootstrap
 path. **First action: write a staged plan with its validation gates** (mirror the
 original 7-stage backend plan); scope it out before editing anything in
 `code.pyret.org/`.
+
+Two pieces of guidance that should shape every edit:
+- **(a) Compatible with EITHER backend — not a switch.** CPO is NOT migrating to
+  promises; it must build and run on **both** cont and promise, selectably, with
+  both versions easy to build/run/test side by side. Every change keeps cont
+  working and adds the promise path alongside it (flag/variant), never replacing
+  it. Make testing-both the easy default.
+- **(b) Watch raw `.app()` usage.** CPO's JS calls `.app()` fairly liberally and
+  leans on it returning a value *synchronously* — which holds on cont always, but
+  on promise only for FLAT callees (a non-flat `.app()` returns a Promise; for a
+  token-producing fn it's the driver). So promise breakage will tend to surface
+  as the familiar **"Non Pyret value: Promise"** leak where a value was expected.
+  It "works out" on cont; the implicit flatness-or-related assumption at those
+  `.app` sites is the likely gotcha on promise — audit them.
 
 (Deferred, not this stage: the lazy stack-trace ring buffer — recorded in memory
 `async-transform.md` if trace fidelity ever matters.)
