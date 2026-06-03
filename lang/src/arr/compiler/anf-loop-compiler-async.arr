@@ -1229,7 +1229,18 @@ fun compile-method-app-async(compiler, l, obj :: N.AVal, methname :: String, arg
   argcount = compiled-args.length()
   helper-name = if argcount <= 7: "maybeMethodCall" + tostring(argcount) else: "maybeMethodCall" end
   compiled-obj = obj-ce.exp
-  if J.is-j-id(compiled-obj):
+  if compiler.mints-tokens and compiler.tail-pos block:
+    # Safe-for-space tail call THROUGH a method: mint a token instead of driving.
+    # maybeMethodTail resolves obj.methname (obj evaluated once, as a single arg)
+    # and returns a TailMethodCall (method field) or TailCall (function field);
+    # the nearest driver pumps it. Same gate as compile-app-async, and it records
+    # the mint so the enclosing closure/method gets a driving wrapper.
+    compiler.token-cell.set-now("minted", true)
+    token = wrap-with-srcnode(l,
+      rt-method("maybeMethodTail",
+        cl-append([clist: compiled-obj, j-str(methname), compiler.get-loc(l)], compiled-args)))
+    cl-append(pre, cl-sing(j-return(token)))
+  else if J.is-j-id(compiled-obj):
     call = wrap-with-srcnode(l,
       rt-method(helper-name,
         cl-append([clist: compiled-obj, j-str(methname), compiler.get-loc(l)], compiled-args)))
@@ -1818,20 +1829,22 @@ compiler-visitor = {
     step = fresh-id(compiler-name("step"))
     temp-full = fresh-id(compiler-name("temp_full"))
     len = args.length()
+    # Methods participate in safe-for-space bouncing: a tail call inside the body
+    # (to a function OR another method) mints a token, and the body is wrapped with
+    # makeTailMethod (a driving full_meth) when it does. The token-cell records it,
+    # exactly like compile-a-lam; methods are non-flat, so mints-tokens = can-mint.
+    token-cell = D.make-mutable-string-dict()
     full-var =
       j-var(temp-full,
         j-async-fun(J.next-j-fun-id(), make-fun-name(self, l),
           CL.map_list(lam(a): formal-shadow-name(a.id) end, args),
-          # Methods don't participate in token bouncing yet (their value shape is
-          # PMethod, not a PFunction with .app/.appBody); a tail call inside a method
-          # body drives to a value (correct, matches cont; O(n) only for the rare
-          # method-mediated mutual recursion). can-mint-tokens = false.
-          compile-fun-body(l, step, temp-full, self.{allow-tco: true}, args, some(len), body, true, false, true, false)
+          compile-fun-body(l, step, temp-full, self.{allow-tco: true, token-cell: token-cell}, args, some(len), body, true, false, true, true)
         ))
+    maker = if token-cell.has-key-now("minted"): "makeTailMethod" else: "makeMethod" end
     method-expr = if len < 9:
-      rt-method(string-append("makeMethod", tostring(len - 1)), [clist: j-id(temp-full), j-str(name)])
+      rt-method(string-append(maker, tostring(len - 1)), [clist: j-id(temp-full), j-str(name)])
     else:
-      rt-method("makeMethodN", [clist: j-id(temp-full), j-str(name)])
+      rt-method(maker + "N", [clist: j-id(temp-full), j-str(name)])
     end
     c-exp(method-expr, [clist: full-var])
   end,

@@ -103,6 +103,13 @@ check "error at the bottom of a tail-recursive function":
   (st-len(st) >= 1) is true
 end
 
+# The two loop-helper traces below assert ONLY the innermost frame (the callback's
+# error site) + detection. They deliberately do NOT assert the helper call site is
+# present or st-len >= 2: `f` tail-calls the helper (`.map` / `raw-list-map` are
+# method-apps, now safe-for-space tokens), so f's caller frame collapses on the
+# promise backend; and async await-unwinding makes the surviving frame COUNT depend
+# on ambient context (the identical code shows >= 2 frames inside the aggregate
+# suite but 1 standalone). Error-site + detection are the stable portable props.
 check "stack trace through list .map()":
   _ = restart("fun f():\n" +
               "h = lam(x): 9() end\n" +
@@ -113,9 +120,6 @@ check "stack trace through list .map()":
   st = L.get-result-stacktrace(result.v)
   # innermost: the `9()` application inside the lambda
   st-top(st) is "definitions://: line 2, column 12"
-  # the map call site is present
-  st-has(st, "definitions://: line 3, column 0") is true
-  (st-len(st) >= 2) is true
 end
 
 check "stack trace through builtins.raw-list-map":
@@ -127,8 +131,6 @@ check "stack trace through builtins.raw-list-map":
   result.v satisfies L.is-failure-result
   st = L.get-result-stacktrace(result.v)
   st-top(st) is "definitions://: line 2, column 12"
-  st-has(st, "definitions://: line 3, column 0") is true
-  (st-len(st) >= 2) is true
 end
 
 check "error in a deeply non-tail recursion (sum)":

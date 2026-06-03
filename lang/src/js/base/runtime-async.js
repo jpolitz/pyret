@@ -821,10 +821,40 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     function tailCall(fn, args) {
       return new TailCall(fn, args);
     }
+    // The method analogue: a tail call THROUGH a method mints this token carrying
+    // the resolved method value, the receiver `obj`, and the args; the driver runs
+    // the method's token-minting body `full_methBody(obj, ...args)`. A function can
+    // tail-call a method and a method can tail-call a function, so the single
+    // driver below pumps both kinds — a mixed function⇄method chain stays O(1).
+    function TailMethodCall(m, obj, args) {
+      this.m = m;
+      this.obj = obj;
+      this.args = args;
+    }
+    function tailMethodCall(m, obj, args) {
+      return new TailMethodCall(m, obj, args);
+    }
+    // The shared bounce driver: pumps a chain of TailCall / TailMethodCall tokens
+    // to a real value. It reads no `this` (every step uses the token's own fields),
+    // which is what lets makeTailFunction/makeTailMethod install bare-callable
+    // entries. The TailCall (function) branch is checked first — it is the hot path
+    // (function-only mutual recursion never produces a method token), and when it
+    // matches the second `instanceof` is short-circuited away.
+    async function drive(r) {
+      while (true) {
+        if (r instanceof TailCall) {
+          r = await r.fn.appBody.apply(r.fn, r.args);
+        } else if (r instanceof TailMethodCall) {
+          r = await r.m.full_methBody(r.obj, ...r.args);
+        } else {
+          return r;
+        }
+      }
+    }
     // Like makeFunction, but `fun` is the token-minting body (kept as `appBody`)
-    // and the public `.app` is a driver that pumps any bounce chain to a value.
-    // Used by the compiler for functions whose body can end in a non-self tail
-    // call. Non-token functions keep app === appBody (zero overhead).
+    // and the public `.app` drives any bounce chain to a value. Used by the
+    // compiler for functions whose body can end in a non-self tail call. Non-token
+    // functions keep app === appBody (zero overhead).
     //
     // The driver CLOSES OVER `fun` rather than reading `this.appBody`: several call
     // sites extract `.app` as a bare reference and invoke it with `this` unbound —
@@ -832,17 +862,12 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     // re-exposes a Pyret function's `.app` under another name (e.g. make-reactor,
     // place-image). A driver that depended on `this` would crash at every such
     // site. The body itself never uses `this` (Pyret closures capture lexically),
-    // so `this` is merely forwarded. The loop reads `r.fn.appBody`, which is always
-    // defined: every PFunction has appBody (the constructor defaults it to app).
+    // so `this` is merely forwarded.
     function makeTailFunction(fun, name) {
       var f = new PFunction(fun, fun.length, name);
       // f.appBody stays === fun (set by the PFunction constructor)
       f.app = async function() {
-        var r = await fun.apply(this, arguments);
-        while (r instanceof TailCall) {
-          r = await r.fn.appBody.apply(r.fn, r.args);
-        }
-        return r;
+        return drive(await fun.apply(this, arguments));
       };
       return f;
     }
@@ -864,6 +889,13 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       /**@type {Function}*/
       this['full_meth']   = full_meth;
 
+      /**@type {Function}
+       * Internal full body that may return a TailCall/TailMethodCall token at a
+       * tail position. Defaults to `full_meth` so a plain method returns a value
+       * and ENDS a bounce chain. A token-producing method (makeTailMethod)
+       * overrides `full_meth` with a driver and keeps `full_methBody` as the body. */
+      this['full_methBody'] = full_meth;
+
       /**@type {string}*/
       this.name = name || "anonymous";
 
@@ -874,7 +906,12 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
        @return {!PMethod} With same meth and dict
     */
     PMethod.prototype.brand = function(b) {
-      var newMeth = makeMethod(this['meth'], this['full_meth'], this['name']);
+      // Preserve the driver/full_methBody split (parallels PFunction.brand): a
+      // token-producing method has a driver as full_meth (≠ full_methBody), so
+      // re-wrap via makeTailMethod carrying the real body; else a plain makeMethod.
+      var newMeth = (this['full_meth'] !== this['full_methBody'])
+        ? makeTailMethod(this['full_methBody'], this['name'])
+        : makeMethod(this['meth'], this['full_meth'], this['name']);
       return brandClone(newMeth, this, b);
     };
 
@@ -1026,6 +1063,26 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       }
     }
 
+    // The tail-position analogue of maybeMethodCall: resolve `obj.fieldname` and
+    // return a TOKEN (the driver will run the body) instead of calling it. A
+    // method field → TailMethodCall; a plain function field (method-syntax call of
+    // a function) → TailCall; a non-callable → the same throwNonFunApp as the
+    // value path. obj is evaluated once (it is a single argument). Used by the
+    // compiler at a genuine tail method-app inside a token-producing body.
+    function maybeMethodTail(obj, fieldname, loc, ...args) {
+      var R = thisRuntime;
+      var field = R.getColonFieldLoc(obj,fieldname,loc);
+      if(R.isMethod(field)) {
+        return new TailMethodCall(field, obj, args);
+      }
+      else {
+        if(!(R.isFunction(field))) {
+          R.ffi.throwNonFunApp(loc,field);
+        }
+        return new TailCall(field, args);
+      }
+    }
+
     function makeMethodFromFun(meth, name) {
       return new PMethod(appN, meth, name);
     }
@@ -1039,6 +1096,29 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     var makeMethod6 = makeMethodN;
     var makeMethod7 = makeMethodN;
     var makeMethod8 = makeMethodN;
+
+    // Like makeMethodFromFun, but `fullBody` is the token-minting method body
+    // (kept as `full_methBody`); the public `full_meth` drives any bounce to a
+    // value, and the curried `meth` (appN) calls `full_meth`, so it drives too.
+    // Closes over `fullBody`, not `this`, for the same reason as makeTailFunction.
+    function makeTailMethod(fullBody, name) {
+      var m = new PMethod(appN, fullBody, name);
+      // m.full_methBody === fullBody (set by the PMethod constructor)
+      m['full_meth'] = async function() {
+        return drive(await fullBody.apply(this, arguments));
+      };
+      return m;
+    }
+    var makeTailMethodN = makeTailMethod;
+    var makeTailMethod0 = makeTailMethod;
+    var makeTailMethod1 = makeTailMethod;
+    var makeTailMethod2 = makeTailMethod;
+    var makeTailMethod3 = makeTailMethod;
+    var makeTailMethod4 = makeTailMethod;
+    var makeTailMethod5 = makeTailMethod;
+    var makeTailMethod6 = makeTailMethod;
+    var makeTailMethod7 = makeTailMethod;
+    var makeTailMethod8 = makeTailMethod;
 
     function callIfPossible0(L, fun, obj) {
       if (isMethod(fun)) {
@@ -5867,6 +5947,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       'makeFunction' : makeFunction,
       'makeTailFunction' : makeTailFunction,
       'tailCall'     : tailCall,
+      'tailMethodCall' : tailMethodCall,
       'makeMethod'   : makeMethod,
       'makeMethod0'   : makeMethod0,
       'makeMethod1'   : makeMethod1,
@@ -5878,8 +5959,20 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       'makeMethod7'   : makeMethod7,
       'makeMethod8'   : makeMethod8,
       'makeMethodN'   : makeMethodN,
+      'makeTailMethod'  : makeTailMethod,
+      'makeTailMethod0' : makeTailMethod0,
+      'makeTailMethod1' : makeTailMethod1,
+      'makeTailMethod2' : makeTailMethod2,
+      'makeTailMethod3' : makeTailMethod3,
+      'makeTailMethod4' : makeTailMethod4,
+      'makeTailMethod5' : makeTailMethod5,
+      'makeTailMethod6' : makeTailMethod6,
+      'makeTailMethod7' : makeTailMethod7,
+      'makeTailMethod8' : makeTailMethod8,
+      'makeTailMethodN' : makeTailMethodN,
       'makeMethodFromFun' : makeMethodFromFun,
       'maybeMethodCall': maybeMethodCall,
+      'maybeMethodTail': maybeMethodTail,
       'maybeMethodCall0': maybeMethodCall0,
       'maybeMethodCall1': maybeMethodCall1,
       'maybeMethodCall2': maybeMethodCall2,

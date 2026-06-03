@@ -20,7 +20,7 @@ The backend is exercised end-to-end:
 
 - **Full test suite at parity.** `make all-pyret-test-promise` builds the aggregate suite
   (`tests/pyret/main2.arr`, ~80 test files + all builtins) with the promise backend and runs
-  it: **Passed 13010, Failed 7, Errored 0 / 13017.** The 7 failures are all spec-sanctioned
+  it: **Passed 13008, Failed 8, Errored 0 / 13016.** The 8 failures are all spec-sanctioned
   stack-trace-shape divergences (see *Known divergences*); every other file matches Cont.
 - **Self-hosts to a byte-stable fixpoint.** `make new-bootstrap-promise` compiles the whole
   compiler with the promise backend and shows it reproduces itself exactly (`phaseD == phaseE`).
@@ -212,11 +212,22 @@ Result: `bench-mutual` is now **O(1) in heap** — flat ~132/133/155 MB at depth
 ~136 MB), where promise previously OOM'd at 5M. The whole `is-even`⇄`is-odd` chain runs as
 iterations of one driver frame's loop; each `appBody` frame returns a token and dies. Coverage is
 fully dynamic (the token references a runtime function *value*), so higher-order, first-class, and
-cross-module tail calls are all safe-for-space, not just statically-named groups. **Methods**
-(`PMethod`, not `PFunction`) do not mint tokens yet — a tail call inside a method body drives to a
-value (correct, matches cont; O(n) only for the rare method-mediated mutual recursion).
+cross-module tail calls are all safe-for-space, not just statically-named groups.
 Return-annotated tail calls (`fun f(…) -> T:`) stay non-tail on both backends by design (the ann
 check consumes the result), so they are driven, not bounced.
+
+**Methods participate too.** A tail call *through a method* (`self.od(n-1)` ⇄ `self.ev(n-1)`) is
+also O(1). `PMethod` gained the same split — `full_methBody` (default `=== full_meth`, so a plain
+method ends a chain) and a driving `full_meth` installed by `makeTailMethod` — and a second token
+kind `TailMethodCall(m, obj, args)` carries the receiver. The **single** `drive()` loop pumps both
+`TailCall` and `TailMethodCall`, so a mixed function⇄method chain (a method tail-calls a free
+function which tail-calls the method) stays flat through one driver. The compiler mints the method
+token via a `maybeMethodTail(obj, name, loc, …args)` resolver — it returns a `TailMethodCall` for a
+method field or a `TailCall` for a function field, throwing the same `throwNonFunApp` for a
+non-callable; `compile-a-method` emits `makeTailMethod*` exactly when the body minted (else plain
+`makeMethod`). Heap-verified: a method `ev`⇄`od` is flat ~150 MB at 1M–20M (was O(n)). The hot
+function path is unchanged — `drive()` checks `TailCall` first and short-circuits, and `bench-mutual`
+holds at ~0.58 s / 155 MB.
 
 ## Caching: backend-keyed, never mixed (the #1 hazard)
 
@@ -243,8 +254,8 @@ cleared the entire nested-run cluster (test-contracts, test-error-rendering, tes
 
 ### Suite — `make all-pyret-test-promise`
 
-**Passed 13010, Failed 7, Errored 0 / 13017.** Every test file is at full parity with the Cont
-backend except the 7 failures below, all in `test-repl` `check-block-6` (frame-shape stacktrace
+**Passed 13008, Failed 8, Errored 0 / 13016.** Every test file is at full parity with the Cont
+backend except the 8 failures below, all in `test-repl` `check-block-6` (frame-shape stacktrace
 pins — see *Known divergences*). Per-file highlights at parity include test-equality (6168),
 test-strings (1125), test-array (637), test-rounding (401), test-lists (379), test-contracts
 (165), test-error-rendering (58), test-include (57), plus numbers/sets/json/tuples/tables/etc.
@@ -391,19 +402,25 @@ for-space tail calls* above.
 
 ## Known divergences and gaps
 
-- **Stack-trace shape (the 7 suite failures).** The spec explicitly anticipates this: async
+- **Stack-trace shape (the 8 suite failures).** The spec explicitly anticipates this: async
   frames are heap-allocated and V8 adds `await` frames, so any test that pins an exact frame
   list (`get-result-stacktrace(...) is [raw-array: ...]`) diverges from the trampoline's
   `ActivationRecord`-derived list — e.g. the bottom `interactions://1` REPL-call frame is absent
   and TCO frames aren't collapsed the same way. **Error *detection* is correct**: every
   interleaved `satisfies is-failure-result` check passes; only frame shape (and now length)
-  differs. The count grew from 5 to 7 with the safe-for-space tail-call work: a **cross-function
-  tail call to a non-flat callee now collapses the caller's frame** (the `appBody` frame bounces
-  away — exactly the O(1) behavior), where cont keeps it because its trace comes from a separate
+  differs. The count grew from 5 → 7 → 8 as the safe-for-space work landed: a **tail call to a
+  non-flat callee now collapses the caller's frame** (the `appBody` frame bounces away — exactly
+  the O(1) behavior), where cont keeps it because its trace comes from a separate
   `ActivationRecord` stack. So e.g. `fun g(): f(x) end` (f non-flat, tail) shows just the error
-  site on promise vs `[error-site, g's call site, interactions://]` on cont. This is the same
-  family as the original divergence, made slightly broader by a correctly-implemented feature; the
-  innermost (error-site) frame is still correct in every case. Per the
+  site on promise vs `[error-site, g's call site, interactions://]` on cont; extending this to
+  method-apps (a method tail-call now collapses its frame too) added the 8th. Same family as the
+  original divergence, made slightly broader by a correctly-implemented feature; the innermost
+  (error-site) frame is still correct in every case. (Correspondingly, the portable
+  `test-stacktrace-portable.arr` no longer asserts caller-frame presence or `st-len` for tail
+  calls through loop helpers — frame *count* there is not portable: the identical code shows ≥2
+  frames inside the aggregate suite but 1 standalone, because async await-unwinding leaves only
+  what is synchronously on the JS stack at throw time. It still asserts detection + the innermost
+  error-site frame, and passes 70/70 on both backends.) Per the
   spec, these are flagged, not "fixed". Following the spec's second instruction ("write new
   tests that work under both backends to make sure your behavior is sensible"), a new test file
   **`tests/pyret/tests/test-stacktrace-portable.arr`** re-exercises the same error scenarios and
@@ -418,11 +435,6 @@ for-space tail calls* above.
   unwound by `await` before capture — both still pinpoint the error site.)
 - `makeDataTypeConstructor` emits a *sync* `_checkAnn` for data-field annotations. Fine for flat
   refinements (validated); a non-flat/async refinement on a data field would leak a Promise.
-- **Methods don't participate in safe-for-space bouncing yet.** A method's value shape is
-  `PMethod` (`meth`/`full_meth`), not a `PFunction` with `.app`/`.appBody`, so a tail call inside a
-  method body drives to a value instead of minting a token — correct and matching cont, but O(n)
-  for the (rare) case of mutual recursion routed *through* a method. Plain-function tail calls
-  (including higher-order/first-class/cross-module) are fully covered.
 - `mocha` (selenium) tests are unrunnable on this headless VM, as noted in the spec.
 
 ## Build / debug notes (for the next person)

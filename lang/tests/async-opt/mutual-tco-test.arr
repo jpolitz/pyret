@@ -189,12 +189,11 @@ check "a loop helper drives a token-producing callback to a value":
   (for fold(acc from 0, x from [list: 100, 200, 300]): count-ev(x, acc) end) is 600
 end
 
-# === Methods: mutual recursion THROUGH methods (the known gap) =================
-# Methods are PMethod (meth/full_meth), not PFunction with .app/.appBody, so a
-# method-app in tail position drives to a value instead of minting a token —
-# correct and matching cont, but O(n) heap (depth kept modest). This pins the
-# current behavior; if methods later mint tokens, these stay green and a memory
-# check would flip to O(1).
+# === Methods: mutual recursion THROUGH methods is now safe-for-space ===========
+# A method-app in tail position mints a TailMethodCall token (PMethod now carries
+# full_methBody + a driving full_meth, via makeTailMethod); the shared driver
+# pumps it. So method-mediated mutual recursion is O(1) heap too (heap-verified
+# separately: flat ~150 MB at 1M-20M).
 data PingPong:
   | pp
 sharing:
@@ -202,9 +201,25 @@ sharing:
   method od(self, n): if n == 0: "odd" else: self.ev(n - 1) end end
 end
 
-check "mutual recursion through methods is correct (driven to a value, O(n))":
-  pp.ev(100000) is "even"
-  pp.od(100000) is "odd"
-  pp.ev(100001) is "odd"
-  pp.od(100001) is "even"
+check "mutual recursion through methods is correct and O(1)":
+  pp.ev(1000000) is "even"
+  pp.od(1000000) is "odd"
+  pp.ev(1000001) is "odd"
+  pp.od(1000001) is "even"
+end
+
+# A single chain that alternates BOTH token kinds through the ONE driver: a method
+# tail-calls a free function (mints a TailCall inside a method body) and that
+# function tail-calls the method (mints a TailMethodCall inside a function body).
+data Mixed:
+  | mx
+sharing:
+  method mstep(self, n): if n == 0: 0 else: fstep(self, n - 1) end end
+end
+fun fstep(o, n): if n == 0: 0 else: o.mstep(n - 1) end end
+
+check "mixed function<->method tail chain (both token kinds, one driver)":
+  mx.mstep(1000000) is 0
+  fstep(mx, 1000000) is 0
+  (mx.mstep(1000000) + 5) is 5     # result usable in arithmetic => not a leaked token
 end
