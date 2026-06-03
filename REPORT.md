@@ -435,7 +435,12 @@ for-space tail calls* above.
   unwound by `await` before capture — both still pinpoint the error site.)
 - `makeDataTypeConstructor` emits a *sync* `_checkAnn` for data-field annotations. Fine for flat
   refinements (validated); a non-flat/async refinement on a data field would leak a Promise.
-- `mocha` (selenium) tests are unrunnable on this headless VM, as noted in the spec.
+- The CPO-side acceptance leg — `npm run mocha` (selenium browser integration tests in
+  `code.pyret.org/`) — has **not been exercised** here on either backend; this work covered the
+  `lang/` Node path (`make all-pyret-test` + `make new-bootstrap`, green on both). It is deferred to
+  the CPO integration stage. (An earlier draft called it "unrunnable on this headless VM" — that was
+  an *unverified assumption*, not an observed result; headless Chrome is available, so it should be
+  attempted and verified during that stage, not assumed.)
 
 ## Build / debug notes (for the next person)
 

@@ -59,6 +59,17 @@ Two pieces of guidance that should shape every edit:
   It "works out" on cont; the implicit flatness-or-related assumption at those
   `.app` sites is the likely gotcha on promise — audit them.
 
+Validation = the spec's unfinished acceptance leg. The original spec's acceptance
+set is `make all-pyret-test`, `make new-bootstrap`, and **`npm run mocha`** (CPO
+selenium browser integration tests in `code.pyret.org/`) — all three on both
+backends. The first two are done/green; **`npm run mocha` is the one never
+exercised here**, on either backend. Verify it EARLY in this stage and aim for it
+green on both cont and promise. NOTE: prior notes called mocha "unrunnable on
+this headless VM" — that was an *unverified assumption, never actually attempted*;
+headless Chrome is available, so try it, don't inherit the claim. (Selenium will
+still want a chromedriver + the CPO server up — confirm that setup, but the
+"can't run headless" premise is wrong.)
+
 (Deferred, not this stage: the lazy stack-trace ring buffer — recorded in memory
 `async-transform.md` if trace fidelity ever matters.)
 
