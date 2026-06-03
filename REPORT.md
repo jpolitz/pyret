@@ -522,9 +522,52 @@ optional REPL eval).
 The 45 pending (`shareUrls` 37, `modules` 5, `sheets` 2, `embed` 1) are skipped on both backends. No
 CPO-trove `.js` needed a `stackBackend` branch for what the suite exercises.
 
-**Watch (for the next person):** any *other* CPO JS site that uses `runtime.equal_always` — or a
-non-flat Pyret method via `.app` — as a **synchronous boolean on objects** carries the same latent bug
-on promise. The rendering path is clean; audit new failures with this pattern in mind.
+### Audit — the `equal_always`/`.app`-as-sync-boolean-on-objects pattern (done)
+
+The forward-looking caution above was swept systematically. The bug class precisely: on the promise
+backend a JS→Pyret call (`X.app(...)`, `.full_meth(...)`, `runtime.equal_always`/`equal_now` on
+**objects**) returns a **Promise**, and the bug bites only when JS consumes that result *synchronously*
+(an `if`/`&&`/ternary/`.filter`, arithmetic, a field access — a truthy Promise silently passes). Flat
+callees (type predicates like `is-Srcloc`, simple accessors, and **`srcloc.format`** — only string `+`
+and `tostring`-of-number) stay sync on both backends and are safe; results consumed via
+`safeCall`/`.then`/`runThunk`/`restarter.resume` or *returned out of a `makeFunction` to async-aware
+compiled Pyret* are also safe (the consumer awaits).
+
+- **All CPO web JS (`code.pyret.org/src/web/js/*.js`): clean.** The only `equal_always` site was the
+  already-fixed `output-ui.js` `search`. Every `.app` site either calls a flat callee (predicates,
+  `format`, brand application, data constructors) or is consumed async-aware. (`format`/`brand`/JSX
+  flags raised during the sweep are false positives — those callees are flat; corroborated by `errors`
+  193/193 in mocha, which renders locations through `format`.)
+- **`lang/src/js/trove/table.js`: clean.** Both `equal_always` sites are consumed via a `safeCall`
+  continuation / returned out of a `makeFunction` into async-aware `stable-sort-by`.
+- **`lang/src/js/trove/image-lib.js`: one *real* bug, found and fixed** (below).
+
+### Image color equality — a real promise-only bug (found by the audit, fixed)
+
+Images are opaque values whose `.equals` the runtime invokes **synchronously** (the `isOpaque` branch
+of `equal3`, via `makeOpaque(i, image.imageEquals)` in `make-image.js`/`charts-lib.js`). Several image
+`.equals` methods compared colors with `equals(this.color, other.color)` where `equals =
+RUNTIME.equal_always`. A `color` is a data-value **object**, so on promise `equal_always` returned a
+truthy `Promise` consumed in a synchronous `&&` → **two same-size/same-vertex images differing only in
+color compared *equal*.** Reproduced: `circle(30,"solid","red") == circle(30,"solid","blue")` →
+`true` on promise, `false` on cont. (Most tests escaped it because interned color *strings* hit
+`equal_always`'s primitive fast path, and size/shape mismatches short-circuit before the color compare.)
+
+**Fix** (`image-lib.js`): a synchronous `colorEquals` that mirrors `equal_always`'s structural compare
+of the `Color` data value — channel-wise `jsnums.equals` on `red/green/blue/alpha` when both are
+colors, else strict `===` (matching the primitive fast path) — replacing `equal_always` at the 4 color
+sites (`BaseImage`, `TextImage`, `EllipseImage`, `WedgeImage`; the other types route through these).
+A regression check is committed in `tests/pyret/tests/test-images.arr` (covering all four colored image
+types with distinct-but-equal color objects + an alpha case); it runs in both `make all-pyret-test` and
+`make all-pyret-test-promise` (bundled via `main2.arr`). Validated **153/153 on both backends** (was
+147; the 6 new assertions would have failed before the fix), full promise suite 13014/8 (the 8 are the
+unchanged `test-repl.arr` stacktrace pins); cont unchanged.
+
+**Watch (still latent, lower priority):** the bug class is "non-flat result consumed synchronously by
+JS." The remaining theoretical surface is any *future* JS that calls `equal_always`/a non-flat method
+and uses the result in the same JS function without `safeCall`/`.then`. The opaque-`.equals` path is
+the sharp edge (only images use a custom structural equals); all other troves use single-arg
+`makeOpaque` (identity equals, sync).
 
 ## Build / debug notes (for the next person)
 

@@ -127,6 +127,25 @@
     };
     var equals = RUNTIME.equal_always;
 
+    // Color equality must be SYNCHRONOUS here. The runtime invokes an image's
+    // opaque `.equals` synchronously (see equal3's isOpaque branch), so we must
+    // NOT use RUNTIME.equal_always for colors: on the promise backend equal_always
+    // returns a Promise for object operands (a Color is a data value), and a truthy
+    // Promise would make every color compare as equal (e.g. red == blue). Comparing
+    // the channels directly reproduces equal_always's structural comparison of the
+    // Color data value, and stays sync on both backends. Strings/mixed fall back to
+    // strict equality, matching equal_always's primitive fast path.
+    var colorEquals = function(c1, c2) {
+      if (c1 === c2) { return true; }
+      if (isColor(c1) && isColor(c2)) {
+        return jsnums.equals(unwrap(gf(c1, "red")),   unwrap(gf(c2, "red")))   &&
+               jsnums.equals(unwrap(gf(c1, "green")), unwrap(gf(c2, "green"))) &&
+               jsnums.equals(unwrap(gf(c1, "blue")),  unwrap(gf(c2, "blue")))  &&
+               jsnums.equals(unwrap(gf(c1, "alpha")), unwrap(gf(c2, "alpha")));
+      }
+      return c1 === c2;
+    };
+
     var imageEquals = function(left, right) {
       if (!isImage(left) || !isImage(right)) { return false; }
       return left.equals(right);
@@ -517,7 +536,7 @@
       if(this.vertices && other.vertices){
         return (this.style    === other.style &&
                 verticesEqual(this.vertices, other.vertices) &&
-                equals(this.color, other.color));
+                colorEquals(this.color, other.color));
       }
       // if it's something more sophisticated, render both images to canvases
       // First check canvas dimensions, then go pixel-by-pixel
@@ -1531,7 +1550,7 @@
               this.weight   === other.weight    &&
               this.font     === other.font      &&
               this.underline === other.underline &&
-              equals(this.color, other.color))
+              colorEquals(this.color, other.color))
             || BaseImage.prototype.equals.call(this, other);
     };
 
@@ -1665,7 +1684,7 @@
              this.width    === other.width &&
              this.height   === other.height &&
              this.style    === other.style &&
-             equals(this.color, other.color))
+             colorEquals(this.color, other.color))
       || BaseImage.prototype.equals.call(this, other);
     };
 
@@ -1730,7 +1749,7 @@
              this.radius  === other.radius &&
              this.angle   === other.angle &&
              this.style   === other.style &&
-             equals(this.color, other.color))
+             colorEquals(this.color, other.color))
       || BaseImage.prototype.equals.call(this, other);
     };
 

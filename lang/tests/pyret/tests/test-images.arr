@@ -241,6 +241,24 @@ check "Crop":
   cropsquare is sq
 end
 
+check "color equality through image equality (regression for async equal_always-as-sync-bool)":
+  # An image is an opaque value whose `.equals` the runtime invokes SYNCHRONOUSLY.
+  # It used to compare colors with equal_always, which on the promise backend yields
+  # a (truthy) Promise for Color objects when consumed in a synchronous `and` — so two
+  # images identical except for color compared EQUAL. These guard the synchronous
+  # color compare across all four colored image types, on BOTH backends.
+  col-red-a = color(255, 0, 0, 1)
+  col-red-b = color(255, 0, 0, 1)       # structurally equal but a distinct Color object
+  col-blue = color(0, 0, 255, 1)
+  col-faint-red = color(255, 0, 0, 0.5) # same r/g/b, different alpha
+  (circle(30, mode-solid, col-red-a) == circle(30, mode-solid, col-red-b)) is true
+  (circle(30, mode-solid, col-red-a) == circle(30, mode-solid, col-blue)) is false
+  (circle(30, mode-solid, col-red-a) == circle(30, mode-solid, col-faint-red)) is false
+  (ellipse(40, 20, mode-solid, col-red-a) == ellipse(40, 20, mode-solid, col-blue)) is false
+  (wedge(30, 90, mode-solid, col-red-a) == wedge(30, 90, mode-solid, col-blue)) is false
+  (text("hi", 20, col-red-a) == text("hi", 20, col-blue)) is false
+end
+
 logo = image-file("img/pyret-logo.png")
 check:
   image-width(logo) is 501
