@@ -1,5 +1,6 @@
 node_modules
 .env
+.env.promise
 src/web/teachpacks
 build/
 *.swp
