@@ -22,6 +22,13 @@ var SHAREURL_PROXY_TIMEOUT_MS = 10 * 1000;        // 10 s
 function start(config, onServerReady) {
   var defaultOpts = {
       PYRET: process.env.PYRET,
+      // TypeScript-compiler flavor (opt-in; see editor.html). The ts jarr
+      // URL defaults to the stock jarr URL with -ts inserted, and the
+      // compiler bundle is served alongside it.
+      PYRET_TS: process.env.PYRET_TS ||
+        (process.env.PYRET ? process.env.PYRET.replace("cpo-main.jarr", "cpo-main-ts.jarr") : ""),
+      PYRET_TS_COMPILER: process.env.PYRET_TS_COMPILER || (config.baseUrl + "/js/ts-compiler.js"),
+      CPO_COMPILER: process.env.CPO_COMPILER || "pyret",
       BASE_URL: config.baseUrl,
       GOOGLE_API_KEY: config.google.apiKey,
       GOOGLE_APP_ID: config.google.appId,
