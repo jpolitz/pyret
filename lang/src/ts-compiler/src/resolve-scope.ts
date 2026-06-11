@@ -310,9 +310,9 @@ export function addLetrecBind(bg: BindingGroup, lrb: A.LetrecBind, stmts: A.Expr
 
 export function addLetrecBinds(bg: BindingGroup, lrbs: A.LetrecBind[], stmts: A.Expr[]): A.Expr {
   if (isLetrecBinds(bg)) {
-    return desugarScopeBlock(stmts, new LetrecBinds(bg.contracts, [...lrbs, ...bg.binds]));
+    return dsbDefer(stmts, new LetrecBinds(bg.contracts, [...lrbs, ...bg.binds]));
   } else {
-    return bindWrap(bg, desugarScopeBlock(stmts, new LetrecBinds([], lrbs)));
+    return dsbDeferWrapped((e) => bindWrap(bg, e), stmts, new LetrecBinds([], lrbs));
   }
 }
 
@@ -375,9 +375,9 @@ export function addLetBinds(bg: BindingGroup, lbs: A.LetBind[], stmts: A.Expr[])
     }
   }
   if (isLetBinds(bg)) {
-    return desugarScopeBlock(stmts, new LetBinds(bg.contracts, [...simplifiedLbs, ...bg.binds]));
+    return dsbDefer(stmts, new LetBinds(bg.contracts, [...simplifiedLbs, ...bg.binds]));
   } else {
-    return bindWrap(bg, desugarScopeBlock(stmts, new LetBinds([], simplifiedLbs)));
+    return dsbDeferWrapped((e) => bindWrap(bg, e), stmts, new LetBinds([], simplifiedLbs));
   }
 }
 
@@ -387,9 +387,9 @@ export function addLetBind(bg: BindingGroup, lb: A.LetBind, stmts: A.Expr[]): A.
 
 export function addTypeLetBind(bg: BindingGroup, tlb: A.TypeLetBind, stmts: A.Expr[]): A.Expr {
   if (isTypeLetBinds(bg)) {
-    return desugarScopeBlock(stmts, new TypeLetBinds([tlb, ...bg.binds]));
+    return dsbDefer(stmts, new TypeLetBinds([tlb, ...bg.binds]));
   } else {
-    return bindWrap(bg, desugarScopeBlock(stmts, new TypeLetBinds([tlb])));
+    return dsbDeferWrapped((e) => bindWrap(bg, e), stmts, new TypeLetBinds([tlb]));
   }
 }
 
@@ -406,21 +406,67 @@ export function addContracts(bg: BindingGroup, cs: Contract[], stmts: A.Expr[]):
     // all actual processing to that function
     if (A.isSRec(first) || A.isSFun(first) || A.isSDataExpr(first) || A.isSCheck(first)) {
       if (isLetrecBinds(bg)) { // keep the current binding group going
-        return desugarScopeBlock(stmts, new LetrecBinds([...cs, ...bg.contracts], bg.binds));
+        return dsbDefer(stmts, new LetrecBinds([...cs, ...bg.contracts], bg.binds));
       } else {
-        return bindWrap(bg, desugarScopeBlock(stmts, new LetrecBinds(cs, [])));
+        return dsbDeferWrapped((e) => bindWrap(bg, e), stmts, new LetrecBinds(cs, []));
       }
     } else {
       if (isLetBinds(bg)) { // keep the current binding group going
-        return desugarScopeBlock(stmts, new LetBinds([...cs, ...bg.contracts], bg.binds));
+        return dsbDefer(stmts, new LetBinds([...cs, ...bg.contracts], bg.binds));
       } else {
-        return bindWrap(bg, desugarScopeBlock(stmts, new LetBinds(cs, [])));
+        return dsbDeferWrapped((e) => bindWrap(bg, e), stmts, new LetBinds(cs, []));
       }
     }
   }
 }
 
+/*
+  The per-statement recursion through desugarScopeBlock <-> add*Bind(s) is
+  one full activation per block statement (all calls are tail calls or a
+  single wrap around a tail call), which overflows fixed-size stacks
+  (e.g. browsers) on long blocks. desugarScopeBlock drives the per-step
+  worker iteratively instead: a step either returns a final expression or
+  defers (optionally with a wrap to apply to the eventual result, in
+  original unwind order). Side effects (atom generation) happen in the
+  worker steps, in the same order as the recursive formulation.
+*/
+let dsbPending: { stmts: A.Expr[]; bg: BindingGroup; wrap?: (e: A.Expr) => A.Expr } | undefined = undefined;
+const dsbSentinel: A.Expr = undefined as unknown as A.Expr;
+
+function dsbDefer(stmts: A.Expr[], bg: BindingGroup): A.Expr {
+  dsbPending = { stmts, bg };
+  return dsbSentinel;
+}
+
+function dsbDeferWrapped(wrap: (e: A.Expr) => A.Expr, stmts: A.Expr[], bg: BindingGroup): A.Expr {
+  dsbPending = { stmts, bg, wrap };
+  return dsbSentinel;
+}
+
 export function desugarScopeBlock(stmts: A.Expr[], bindingGroup: BindingGroup): A.Expr {
+  const wraps: Array<(e: A.Expr) => A.Expr> = [];
+  let curStmts = stmts;
+  let curBg = bindingGroup;
+  for (;;) {
+    dsbPending = undefined;
+    const result = desugarScopeBlockStep(curStmts, curBg);
+    if (dsbPending === undefined) {
+      let out = result;
+      for (let i = wraps.length - 1; i >= 0; i--) {
+        out = wraps[i](out);
+      }
+      return out;
+    }
+    const pending: { stmts: A.Expr[]; bg: BindingGroup; wrap?: (e: A.Expr) => A.Expr } = dsbPending;
+    if (pending.wrap !== undefined) {
+      wraps.push(pending.wrap);
+    }
+    curStmts = pending.stmts;
+    curBg = pending.bg;
+  }
+}
+
+function desugarScopeBlockStep(stmts: A.Expr[], bindingGroup: BindingGroup): A.Expr {
   // Treating stmts as a block, resolve scope.
   // There should be no blocks left after this stage of the compiler pipeline.
   if (stmts.length === 0) {
@@ -487,14 +533,15 @@ export function desugarScopeBlock(stmts: A.Expr[], bindingGroup: BindingGroup): 
     if (restStmts.length === 0) {
       return bindWrap(bindingGroup, f);
     } else {
-      const restStmt = desugarScopeBlock(restStmts, new LetBinds([], []));
-      let newRestStmts: A.Expr[];
-      if (A.isSBlock(restStmt)) {
-        newRestStmts = [f, ...restStmt.stmts];
-      } else {
-        newRestStmts = [f, restStmt];
-      }
-      return bindWrap(bindingGroup, new A.SBlock(f.l, newRestStmts));
+      return dsbDeferWrapped((restStmt) => {
+        let newRestStmts: A.Expr[];
+        if (A.isSBlock(restStmt)) {
+          newRestStmts = [f, ...restStmt.stmts];
+        } else {
+          newRestStmts = [f, restStmt];
+        }
+        return bindWrap(bindingGroup, new A.SBlock(f.l, newRestStmts));
+      }, restStmts, new LetBinds([], []));
     }
   }
 }

@@ -27,8 +27,11 @@ import * as P from './parse-pyret';
 import { Either, left, right, mapSet } from './shared';
 
 // Result is whatever the host's run produces (a load-lib result in CPO).
+// run may be synchronous or return a Promise (a browser host has to thread
+// execution through the Pyret runtime's trampoline, which is async); the
+// repl awaits it either way, so its own entry points return Promises.
 export interface ReplExecutor<Realm = any, Result = any> {
-  run(realm: Realm, programJsSource: string, options: CS.CompileOptions): Result;
+  run(realm: Realm, programJsSource: string, options: CS.CompileOptions): Result | Promise<Result>;
   isSuccessResult(result: Result): boolean;
   getResultRealm(result: Result): Realm;
 }
@@ -72,30 +75,30 @@ export function addGlobalsFromEnv(postEnv: CS.ComputedEnv, g: CS.Globals): CS.Gl
 // Mirrors CL.run-program from compile-lib.arr for the repl's use: filter
 // compile errors, build the standalone program, hand its JS source to the
 // executor.
-function runProgramWith<Realm, Result>(
+async function runProgramWith<Realm, Result>(
   executor: ReplExecutor<Realm, Result>,
   ws: CL.ToCompile[],
   prog: CL.CompiledProgram,
   realm: Realm,
   options: CS.CompileOptions
-): Either<any[], Result> {
+): Promise<Either<any[], Result>> {
   const errors = prog.loadables.filter(CL.isErrorCompilation);
   if (errors.length === 0) {
     const program = CL.makeStandalone(ws, prog, options);
     if (program.$name === 'left') {
       return left(program.v as any[]);
     }
-    return right(executor.run(realm, program.v.jsAst.toUglySource(), options));
+    return right(await executor.run(realm, program.v.jsAst.toUglySource(), options));
   } else {
     return left(errors.map((e) => e.resultPrinter));
   }
 }
 
 export interface Repl<A2, Realm = any, Result = any> {
-  restartInteractions(defsLocator: CL.Locator, options: CS.CompileOptions): Either<any[], Result>;
+  restartInteractions(defsLocator: CL.Locator, options: CS.CompileOptions): Promise<Either<any[], Result>>;
   makeInteractionLocator(getInteractions: () => string): CL.Locator;
   makeDefinitionsLocator(getDefs: () => string, globals: CS.Globals): CL.Locator;
-  runInteraction(locator: CL.Locator): Either<any[], Result>;
+  runInteraction(locator: CL.Locator): Promise<Either<any[], Result>>;
 }
 
 export function makeRepl<A2, Realm = any, Result = any>(
@@ -131,13 +134,13 @@ export function makeRepl<A2, Realm = any, Result = any>(
     currentRealm = executor.getResultRealm(result);
   }
 
-  function runInteraction(locator: CL.Locator): Either<any[], Result> {
+  async function runInteraction(locator: CL.Locator): Promise<Either<any[], Result>> {
     const worklist = CL.compileWorklistKnownModules(finder, locator, compileContext, currentModules as any);
     const compiled = CL.compileProgramWith(worklist, currentModules, currentCompileOptions);
     for (const [k, v] of compiled.modules) {
       currentModules.set(k, v);
     }
-    const result = runProgramWith(executor, worklist, compiled, currentRealm, currentCompileOptions);
+    const result = await runProgramWith(executor, worklist, compiled, currentRealm, currentCompileOptions);
     if (result.$name === 'right') {
       if (executor.isSuccessResult(result.v)) {
         updateEnv(result.v, locator, compiled.loadables[compiled.loadables.length - 1]);
@@ -146,7 +149,7 @@ export function makeRepl<A2, Realm = any, Result = any>(
     return result;
   }
 
-  function restartInteractions(defsLocator: CL.Locator, options: CS.CompileOptions): Either<any[], Result> {
+  function restartInteractions(defsLocator: CL.Locator, options: CS.CompileOptions): Promise<Either<any[], Result>> {
     currentInteraction = 0;
     currentCompileOptions = options;
     currentRealm = realm;

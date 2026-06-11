@@ -58,32 +58,21 @@ function safeEvalDefine(moduleString: string, define: (answer: any) => void): vo
   vm.runInNewContext('define(' + moduleString + ')', { define: define });
 }
 
-export function builtinRawLocatorFromStr(content: string): RawBuiltinLocator {
-  const noModuleContent = {};
-  let moduleContent: any = noModuleContent;
-
-  function getData(moduleString: string): any {
-    if (moduleContent === noModuleContent) {
-      const setAns = (answer: any) => {
-        moduleContent = answer;
-      };
-      try {
-        safeEvalDefine(moduleString, setAns);
-        return moduleContent;
-      } catch (e) {
-        console.error("Content was: ", content);
-        throw e;
-      }
-    } else {
-      return moduleContent;
-    }
-  }
+// Builds a raw locator from an already-evaluated module record (the
+// parenthesized-object-literal value itself). This is the entry point a
+// browser host uses: the page's staticModules are live JS objects, so no
+// vm/fs is involved. getModule is a thunk so hosts can keep laziness.
+export function builtinRawLocatorFromModule(
+  getModule: () => any,
+  getCompiled: () => string
+): RawBuiltinLocator {
+  const getData = (_ignored?: any) => getModule();
 
   const t = typeUtil();
 
   return {
     getRawDependencies(): any[] {
-      const m = getData(content);
+      const m = getData();
       if (m.requires) {
         return m.requires.map(function (req: any) {
           // NOTE(joe): This allows us to use builtin imports
@@ -99,7 +88,7 @@ export function builtinRawLocatorFromStr(content: string): RawBuiltinLocator {
       }
     },
     getRawNativeModules(): string[] {
-      const m = getData(content);
+      const m = getData();
       if (Array.isArray(m.nativeRequires)) {
         return m.nativeRequires.map((s: any) => passThroughRuntime.makeString(s));
       } else {
@@ -107,7 +96,7 @@ export function builtinRawLocatorFromStr(content: string): RawBuiltinLocator {
       }
     },
     getRawDatatypeProvides(): any[] {
-      const m = getData(content);
+      const m = getData();
       if (m.provides && m.provides.datatypes) {
         const dts = m.provides.datatypes;
         if (typeof dts === "object") {
@@ -126,7 +115,7 @@ export function builtinRawLocatorFromStr(content: string): RawBuiltinLocator {
       return [];
     },
     getRawModuleProvides(): any[] {
-      const m = getData(content);
+      const m = getData();
       if (typeof m.provides.modules === "object") {
         const mods = m.provides.modules;
         return Object.keys(mods).map(function (k) {
@@ -140,7 +129,7 @@ export function builtinRawLocatorFromStr(content: string): RawBuiltinLocator {
       }
     },
     getRawAliasProvides(): any[] {
-      const m = getData(content);
+      const m = getData();
       if (m.provides) {
         if (Array.isArray(m.provides.types)) {
           return m.provides.types;
@@ -159,7 +148,7 @@ export function builtinRawLocatorFromStr(content: string): RawBuiltinLocator {
       return [];
     },
     getRawValueProvides(): any[] {
-      const m = getData(content);
+      const m = getData();
       if (m.provides) {
         if (Array.isArray(m.provides.values)) {
           return m.provides.values;
@@ -178,9 +167,33 @@ export function builtinRawLocatorFromStr(content: string): RawBuiltinLocator {
       return [];
     },
     getRawCompiled(): string {
-      return content;
+      return getCompiled();
     }
   };
+}
+
+export function builtinRawLocatorFromStr(content: string): RawBuiltinLocator {
+  const noModuleContent = {};
+  let moduleContent: any = noModuleContent;
+
+  // Lazily evaluates the module text on first use, mirroring the original
+  // loader.safeEval("define(" + content + ")", { define }) discipline.
+  function getModule(): any {
+    if (moduleContent === noModuleContent) {
+      const setAns = (answer: any) => {
+        moduleContent = answer;
+      };
+      try {
+        safeEvalDefine(content, setAns);
+      } catch (e) {
+        console.error("Content was: ", content);
+        throw e;
+      }
+    }
+    return moduleContent;
+  }
+
+  return builtinRawLocatorFromModule(getModule, () => content);
 }
 
 // Mirrors getBuiltinLocator: resolves path + ".js" and reads it eagerly;

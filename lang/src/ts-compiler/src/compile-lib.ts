@@ -6,7 +6,7 @@
   throw TODOError; everything else is ported fully.
 */
 
-import * as crypto from 'crypto';
+import { sha256 } from './sha256';
 import * as A from './ast';
 import * as AU from './ast-util';
 import * as CL from './concat-lists';
@@ -633,7 +633,7 @@ export function makeStandalone(
 
     const uris = new J.JObj(CL.map_list<ToCompile, J.JFieldT>((w) => {
       const uri = w.locator.uri();
-      const hashed = crypto.createHash('sha256').update(uri).digest('hex');
+      const hashed = sha256(uri);
       return new J.JField(hashed, new J.JStr(uri));
     }, wl));
 
