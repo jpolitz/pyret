@@ -391,7 +391,7 @@ ts-pyret-test: tests/pyret/main2-ts.jarr
 	$(NODE) tests/pyret/main2-ts.jarr
 
 .PHONY : ts-test
-ts-test: ts-unit-test ts-parity-test ts-pyret-test ts-type-check-test ts-regression-test ts-io-test
+ts-test: ts-unit-test ts-parity-test ts-repl-test ts-pyret-test ts-type-check-test ts-regression-test ts-io-test
 
 .PHONY : ts-clean
 ts-clean:
@@ -444,3 +444,7 @@ tests/pyret/all-ts.jarr: ts-compiler $(TEST_FILES) $(TYPE_TEST_FILES) $(REG_TEST
 .PHONY : all-ts-pyret-test
 all-ts-pyret-test: tests/pyret/all-ts.jarr
 	$(NODE) tests/pyret/all-ts.jarr
+
+.PHONY : ts-repl-test
+ts-repl-test: ts-compiler
+	$(NODE) src/ts-compiler/tests/repl-test.js

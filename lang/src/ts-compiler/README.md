@@ -86,9 +86,14 @@ and parse-error messages.
    *order* (never the content) of: object-literal fields in serialized
    provides, saved-vars in activation records, the module-preamble `var`
    bindings, and `--help` option ordering.
-4. **`repl.arr` is not ported**: it is exclusively an in-process
-   `runtime-lib`/`load-lib` realm API (used by code.pyret.org embedding),
-   not reachable from the CLI. `server.arr` *is* ported (`--serve`).
+4. **`repl.arr` is ported as a host-parameterized library** (`repl.ts`):
+   the compile side (provide rewriting, globals chaining across
+   interactions, locator caching) is fully implemented; the three
+   runtime-realm touchpoints (`run-program`, `is-success-result`,
+   `get-result-realm`) are factored into an injected `ReplExecutor` that
+   the host supplies (code.pyret.org wraps load-lib; tests use a stub).
+   See `tests/repl-test.js` / `make ts-repl-test`. `server.arr` is also
+   ported (`--serve`).
 5. The CLI re-execs node once with `--stack-size=8192` (the Pyret-hosted
    compiler recurses on the runtime's segmented stack; the port uses the
    JS stack). Set `PYRET_TS_NO_RESPAWN=1` or pass `--stack-size` yourself
