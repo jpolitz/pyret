@@ -414,6 +414,50 @@ $(CPOGZ): $(CPOMAIN)
 	npx uglifyjs --compress -o $(CPOMAIN).min -- $(CPOMAIN)
 	gzip -c -f $(CPOMAIN).min > $(CPOGZ)
 
+# ============================================================
+# TypeScript compiler flavor (strictly additive, opt-in).
+# Builds a second jarr (cpo-main-ts.jarr, no Pyret-hosted compiler
+# modules) plus a browser bundle of lang/src/ts-compiler. The editor
+# page selects between flavors via ?compiler=ts or CPO_COMPILER=ts
+# (see src/web/editor.html and src/server.js).
+# ============================================================
+
+TS_CPOMAIN=build/web/js/cpo-main-ts.jarr
+TS_CPOGZ=build/web/js/cpo-main-ts.jarr.gz.js
+TS_COMPILER_JS=build/web/js/ts-compiler.js
+
+.PHONY: ts-libpyret
+ts-libpyret:
+	$(MAKE) ts-compiler -C pyret/
+
+$(TS_COMPILER_JS): src/scripts/make-ts-compiler-entry.js ts-libpyret
+	@$(call MKDIR,build/web/js)
+	node src/scripts/make-ts-compiler-entry.js build/ts-compiler-entry.js
+	npx browserify build/ts-compiler-entry.js -s PyretTSCompiler -o $(TS_COMPILER_JS)
+
+$(TS_CPOMAIN): $(BUNDLED_DEPS) $(TROVE_JS) $(TROVE_ARR) $(WEBJS) src/web/js/*.js src/web/arr/*.arr cpo-standalone.js cpo-config.json src/web/arr/cpo-main-ts.arr $(PHASEA)
+	mkdir -p compiled/;
+	node pyret/build/phaseA/pyret.jarr \
+    --builtin-js-dir src/web/js/trove/ \
+    --builtin-js-dir pyret/src/js/trove/ \
+    -allow-builtin-overrides \
+    --builtin-arr-dir src/web/arr/trove/ \
+    --builtin-arr-dir pyret/src/arr/trove/ \
+    --require-config cpo-config.json \
+    --build-runnable src/web/arr/cpo-main-ts.arr \
+    --standalone-file cpo-standalone.js \
+    --compiled-dir ./compiled \
+    --deps-file $(BUNDLED_DEPS) \
+    --outfile $(TS_CPOMAIN) -no-check-mode
+
+$(TS_CPOGZ): $(TS_CPOMAIN)
+	cp $(TS_CPOMAIN) $(TS_CPOMAIN).js
+	npx uglifyjs --compress -o $(TS_CPOMAIN).min -- $(TS_CPOMAIN)
+	gzip -c -f $(TS_CPOMAIN).min > $(TS_CPOGZ)
+
+.PHONY: web-ts
+web-ts: $(TS_COMPILER_JS) $(TS_CPOMAIN) $(TS_CPOGZ)
+
 clean:
 	rm -rf build/
 	rm -rf compiled/
