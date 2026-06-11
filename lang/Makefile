@@ -314,3 +314,133 @@ new-bootstrap: no-diff-standalone $(PHASE0BUILD)
 	cp -r $(PHASEC)/js $(PHASE0)/
 no-diff-standalone: phaseB phaseC
 	diff $(PHASEB)/pyret.jarr $(PHASEC)/pyret.jarr
+
+# ============================================================
+# TypeScript compiler port (strictly additive; see src/ts-compiler/)
+# Builds a TS implementation of the arr/compiler pipeline that
+# accepts the same CLI options and emits the same module format.
+# ============================================================
+
+TS_COMP_DIR      = src/ts-compiler
+TS_COMP_OUT      = build/ts-compiler
+TS_PYRET         = $(NODE) $(TS_COMP_OUT)/pyret.js
+TS_COMP_SRC      = $(wildcard $(TS_COMP_DIR)/src/*.ts) $(wildcard $(TS_COMP_DIR)/src/*/*.ts)
+
+$(TS_COMP_OUT)/js/pyret-parser.js: src/$(JSBASE)/pyret-grammar.bnf src/$(JSBASE)/pyret-tokenizer.js $(wildcard lib/jglr/*.js)
+	@$(call MKDIR,$(TS_COMP_OUT)/js)
+	$(NODE) lib/jglr/parser-generator.js src/$(JSBASE)/pyret-grammar.bnf $(TS_COMP_OUT)/js/pyret-grammar.js "../../../lib/jglr" "jglr/jglr" "pyret-base/js/pyret-parser"
+	$(NODE) $(TS_COMP_OUT)/js/pyret-grammar.js $(TS_COMP_OUT)/js/pyret-parser.js
+
+$(TS_COMP_DIR)/node_modules/.bin/tsc:
+	npm --prefix $(TS_COMP_DIR) install --no-audit --no-fund
+
+$(TS_COMP_OUT)/pyret.js: $(TS_COMP_SRC) $(TS_COMP_DIR)/tsconfig.json $(TS_COMP_DIR)/node_modules/.bin/tsc $(TS_COMP_OUT)/js/pyret-parser.js
+	$(TS_COMP_DIR)/node_modules/.bin/tsc -p $(TS_COMP_DIR)
+
+
+# Runtime/support files for the TS compiler's output dir (mirrors PHASEA_ALL_DEPS)
+TS_COMP_ALL_DEPS := $(patsubst src/%,$(TS_COMP_OUT)/%,$(COPY_JS)) $(patsubst lib/jglr/%.js,$(TS_COMP_OUT)/js/%.js,$(COPY_LIB)) $(TS_COMP_OUT)/bundled-node-compile-deps.js $(TS_COMP_OUT)/bundled-node-deps.js $(TS_COMP_OUT)/config.json
+
+$(TS_COMP_OUT)/js/%.js: src/js/base/%.js
+	@$(call MKDIR,$(TS_COMP_OUT)/js)
+	cp $< $@
+
+$(TS_COMP_OUT)/js/%.js: lib/jglr/%.js
+	@$(call MKDIR,$(TS_COMP_OUT)/js)
+	cp $< $@
+
+$(TS_COMP_OUT)/bundled-node-compile-deps.js: src/js/trove/require-node-compile-dependencies.js
+	$(NPM_EXEC) browserify src/js/trove/require-node-compile-dependencies.js -o $@
+
+$(TS_COMP_OUT)/bundled-node-deps.js: src/js/trove/require-node-dependencies.js
+	$(NPM_EXEC) browserify src/js/trove/require-node-dependencies.js -o $@
+
+$(TS_COMP_OUT)/config.json: src/scripts/node_modules-config.json
+	cp $< $@
+
+.PHONY : ts-compiler
+ts-compiler: $(TS_COMP_OUT)/pyret.js $(TS_COMP_ALL_DEPS)
+
+# Unit tests for the TS compiler implementation itself
+.PHONY : ts-unit-test
+ts-unit-test: ts-compiler
+	$(NODE) $(TS_COMP_DIR)/tests/run-unit-tests.js
+
+# Parity: compile and run the same programs with the Pyret-hosted
+# compiler (phaseA) and the TS compiler, with the same options, and
+# compare results.
+.PHONY : ts-parity-test
+ts-parity-test: ts-compiler $(PHASEA)/pyret.jarr
+	bash $(TS_COMP_DIR)/tests/parity-test.sh
+
+# Build and run the main Pyret test suite using the TS compiler
+TS_TEST_BUILD=$(TS_PYRET) \
+	  --builtin-js-dir src/js/trove/ \
+		--builtin-arr-dir src/arr/trove/ \
+		--require-config src/scripts/standalone-configA.json \
+		--compiled-dir tests/ts-compiled/
+
+tests/pyret/main2-ts.jarr: ts-compiler tests/pyret/main2.arr $(TEST_FILES)
+	$(TS_TEST_BUILD) \
+		--outfile tests/pyret/main2-ts.jarr \
+		--build-runnable tests/pyret/main2.arr \
+		-check-all
+
+.PHONY : ts-pyret-test
+ts-pyret-test: tests/pyret/main2-ts.jarr
+	$(NODE) tests/pyret/main2-ts.jarr
+
+.PHONY : ts-test
+ts-test: ts-unit-test ts-parity-test ts-pyret-test ts-type-check-test ts-regression-test ts-io-test
+
+.PHONY : ts-clean
+ts-clean:
+	$(call RMDIR,$(TS_COMP_OUT))
+	$(call RMDIR,tests/ts-compiled)
+	$(call RM,tests/pyret/main2-ts.jarr)
+	$(call RM,tests/pyret/regression-ts.jarr)
+	$(call RM,tests/type-check/main-ts.jarr)
+	$(call RM,tests/pyret/all-ts.jarr)
+
+# Analogous to the %.jarr rule above, but using the TypeScript compiler:
+# `make path/to/foo.ts.jarr` builds path/to/foo.arr into path/to/foo.ts.jarr.
+# Same flag override applies (EF="..." to replace -no-check-mode).
+%.ts.jarr: $(TS_COMP_OUT)/pyret.js %.arr
+	$(TS_PYRET) --outfile $*.ts.jarr \
+                      --build-runnable $*.arr \
+                      --builtin-js-dir src/js/trove/ \
+                      --builtin-arr-dir src/arr/trove/ \
+                      --compiled-dir compiled-ts/ \
+                      $(EXTRA_FLAGS) \
+                      --require-config src/scripts/standalone-configA.json
+
+# TS-compiler analogues of the remaining test entry points
+tests/pyret/regression-ts.jarr: ts-compiler tests/pyret/regression.arr $(REG_TEST_FILES)
+	$(TS_TEST_BUILD) \
+		--build-runnable tests/pyret/regression.arr --outfile tests/pyret/regression-ts.jarr
+
+.PHONY : ts-regression-test
+ts-regression-test: tests/pyret/regression-ts.jarr
+	$(NODE) tests/pyret/regression-ts.jarr
+
+tests/type-check/main-ts.jarr: ts-compiler tests/type-check/main.arr $(TYPE_TEST_FILES)
+	$(TS_TEST_BUILD) \
+		--build-runnable tests/type-check/main.arr --outfile tests/type-check/main-ts.jarr
+
+.PHONY : ts-type-check-test
+ts-type-check-test: ts-compiler tests/type-check/main-ts.jarr
+	$(NODE) tests/type-check/main-ts.jarr
+
+.PHONY : ts-io-test
+ts-io-test: ts-compiler
+	$(NPM_EXEC) jest --detectOpenHandles --forceExit --verbose "src/ts-compiler/tests/io-ts.test.js"
+
+tests/pyret/all-ts.jarr: ts-compiler $(TEST_FILES) $(TYPE_TEST_FILES) $(REG_TEST_FILES) $(MAIN_TEST_FILES)
+	$(TS_TEST_BUILD) \
+		--build-runnable tests/all.arr \
+    --outfile tests/pyret/all-ts.jarr \
+		-check-all
+
+.PHONY : all-ts-pyret-test
+all-ts-pyret-test: tests/pyret/all-ts.jarr
+	$(NODE) tests/pyret/all-ts.jarr

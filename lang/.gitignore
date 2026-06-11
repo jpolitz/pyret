@@ -72,3 +72,6 @@ compiled/
 .pyret-parley.*.pid
 .pyret-parley.*.lock
 
+build/ts-compiler
+tests/ts-compiled/
+compiled-ts/
