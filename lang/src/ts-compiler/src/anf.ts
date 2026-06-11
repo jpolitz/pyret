@@ -93,19 +93,62 @@ export function anfName(expr: A.Expr, nameHint: string, k: (v: N.AVal) => N.AExp
   });
 }
 
+// For expressions that ANF directly to a value (with no generated names
+// and no wrapper expression), produce that value. Mirrors the
+// corresponding cases of anf() exactly; used to keep anfNameRec's stack
+// depth bounded on long lists (e.g. a module's defined values, which are
+// one identifier per top-level definition).
+function quickAnfValue(e: A.Expr): N.AVal$ | undefined {
+  switch (e.$name) {
+    case 's-num':
+      return new N.AVal(e.l, new N.ANum(e.l, e.n));
+    case 's-frac':
+      return new N.AVal(e.l, new N.ANum(e.l, jsnums.divide(e.num, e.den, throwingErrbacks)));
+    case 's-rfrac':
+      return new N.AVal(e.l, new N.ANum(e.l,
+        jsnums.toRoughnum(jsnums.divide(e.num, e.den, throwingErrbacks), throwingErrbacks)));
+    case 's-str':
+      return new N.AVal(e.l, new N.AStr(e.l, e.s));
+    case 's-undefined':
+      return new N.AVal(e.l, new N.AUndefined(e.l));
+    case 's-bool':
+      return new N.AVal(e.l, new N.ABool(e.l, e.b));
+    case 's-prim-val':
+      return new N.AVal(e.l, new N.APrimVal(e.l, e.name));
+    case 's-id':
+      return new N.AVal(e.l, new N.AId(e.l, e.id));
+    case 's-id-modref':
+      return new N.AVal(e.l, new N.AIdModref(e.l, e.id, e.uri, e.name));
+    case 's-srcloc':
+      return new N.AVal(e.l, new N.ASrcloc(e.l, e.loc));
+    default:
+      return undefined;
+  }
+}
+
 export function anfNameRec(
   exprs: A.Expr[],
   nameHint: string,
   k: (vs: N.AVal[]) => N.AExpr
 ): N.AExpr {
-  if (exprs.length === 0) {
-    return k([]);
-  } else {
-    const f = exprs[0];
-    const r = exprs.slice(1);
-    return anfName(f, nameHint, (v) =>
-      anfNameRec(r, nameHint, (vs) => k([v, ...vs])));
+  // Consume the maximal prefix of value-expressions iteratively (these
+  // contribute no wrappers and no generated names, so this is exactly
+  // what the recursive formulation produces); recur only for the rest.
+  const quickVs: any[] = [];
+  let i = 0;
+  while (i < exprs.length) {
+    const quick = quickAnfValue(exprs[i]);
+    if (quick === undefined) { break; }
+    quickVs.push(quick.v);
+    i++;
   }
+  if (i === exprs.length) {
+    return k(quickVs);
+  }
+  const f = exprs[i];
+  const r = exprs.slice(i + 1);
+  return anfName(f, nameHint, (v) =>
+    anfNameRec(r, nameHint, (vs) => k([...quickVs, v, ...vs])));
 }
 
 export function anfNameArr(expr: A.Expr, name: A.Name, idx: number, k: () => N.AExpr): N.AExpr {
@@ -119,14 +162,37 @@ export function anfNameArrRec(
   ind: number,
   k: () => N.AExpr
 ): N.AExpr {
+  // Iterative version of the natural recursion (which nests one anf()
+  // activation per element and overflows fixed-size stacks on long array
+  // literals): each element's AArrLet is built with a placeholder body,
+  // patched once the next element is translated. Continuations are
+  // single-shot and translation happens in the original order.
   if (exprs.length === 0) {
     return k();
-  } else {
-    const f = exprs[0];
-    const r = exprs.slice(1);
-    return anfNameArr(f, name, ind, () =>
-      anfNameArrRec(r, name, ind + 1, k));
   }
+  let result: N.AExpr | undefined = undefined;
+  let patch: ((rest: N.AExpr) => void) | undefined = undefined;
+  for (let i = 0; i < exprs.length; i++) {
+    const f = exprs[i];
+    let hole: N.AArrLet | undefined = undefined;
+    const translated = anf(f, (lettable) => {
+      hole = new N.AArrLet(f.l, new N.ABind(f.l, name, A.aBlank), ind + i, lettable,
+        undefined as unknown as N.AExpr);
+      return hole;
+    });
+    if (hole === undefined) {
+      throw new InternalCompilerError('anfNameArrRec: element continuation was not invoked');
+    }
+    const h: N.AArrLet = hole;
+    if (result === undefined) {
+      result = translated;
+    } else {
+      patch!(translated);
+    }
+    patch = (rest: N.AExpr) => { h.body = rest; };
+  }
+  patch!(k());
+  return result!;
 }
 
 export function anfProgram(e: A.Program): N.AProg {
@@ -142,22 +208,169 @@ export function anfProgram(e: A.Program): N.AProg {
 }
 
 export function anfBlock(esInit: A.Expr[], k: ANFCont): N.AExpr {
-  function anfBlockHelp(es: A.Expr[]): N.AExpr {
-    if (es.length === 0) {
-      return raise('Empty block');
+  if (esInit.length === 0) {
+    return raise('Empty block');
+  }
+  return anfLinear(new A.SBlock(esInit[0].l, esInit), k);
+}
+
+/*
+  Iterative translation of the program's "linear spine".
+
+  After scope resolution a program is a deeply right-nested alternation of
+  s-block / s-let-expr / s-type-let-expr / s-letrec: each binding's body
+  contains the entire rest of the program. The natural CPS formulation
+  nests one whole anf() activation per statement/binding, which overflows
+  fixed-size stacks (e.g. browsers, where the CLI's --stack-size escape
+  hatch does not exist) on long programs.
+
+  The continuations involved are single-shot, so the spine can be walked
+  with a loop instead: each step translates one statement or binding,
+  building its ALet/AVar/ASeq/ATypeLet wrapper with a placeholder
+  body/tail that is patched once the next step is translated. anf()'s
+  only side effect is gensym, and every translation below happens in the
+  same order as in the recursive formulation, so generated names are
+  identical.
+*/
+function anfLinear(eInit: A.Expr, k: ANFCont): N.AExpr {
+  let result: N.AExpr | undefined = undefined;
+  let patch: ((rest: N.AExpr) => void) | undefined = undefined;
+
+  function emit(translated: N.AExpr, nextPatch: (rest: N.AExpr) => void): void {
+    if (result === undefined) {
+      result = translated;
     } else {
-      const f = es[0];
-      const r = es.slice(1);
-      // Note: assuming blocks don't end in let/var here
-      if (r.length === 0) {
-        return anf(f, k);
-      } else {
-        return anf(f, (lettable) =>
-          new N.ASeq(f.l, lettable, anfBlockHelp(r)));
+      patch!(translated);
+    }
+    patch = nextPatch;
+  }
+
+  function finish(translated: N.AExpr): N.AExpr {
+    if (result === undefined) {
+      return translated;
+    }
+    patch!(translated);
+    return result;
+  }
+
+  let e: A.Expr = eInit;
+  for (;;) {
+    switch (e.$name) {
+      case 's-block': {
+        const stmts = e.stmts;
+        if (stmts.length === 0) {
+          return raise('Empty block');
+        }
+        // Note: assuming blocks don't end in let/var here
+        for (let i = 0; i < stmts.length - 1; i++) {
+          const f = stmts[i];
+          let hole: N.ASeq | undefined = undefined;
+          const translated = anf(f, (lettable) => {
+            hole = new N.ASeq(f.l, lettable, undefined as unknown as N.AExpr);
+            return hole;
+          });
+          if (hole === undefined) {
+            throw new InternalCompilerError('anfLinear: statement continuation was not invoked');
+          }
+          const h: N.ASeq = hole;
+          emit(translated, (rest) => { h.e2 = rest; });
+        }
+        e = stmts[stmts.length - 1];
+        continue;
       }
+      case 's-type-let-expr': {
+        const { l, binds, body } = e;
+        for (const f of binds) {
+          let newBind: N.ATypeBind;
+          switch (f.$name) {
+            case 's-type-bind':
+              newBind = new N.ATypeBind(f.l, f.name, f.ann); // TODO(MATT): is this going to have to change?
+              break;
+            case 's-newtype-bind':
+              newBind = new N.ANewtypeBind(f.l, f.name, f.namet);
+              break;
+            default:
+              throw new InternalCompilerError('No case matched in anf s-type-let-expr: ' + (f as any).$name);
+          }
+          const node = new N.ATypeLet(l, newBind, undefined as unknown as N.AExpr);
+          emit(node, (rest) => { node.body = rest; });
+        }
+        e = body;
+        continue;
+      }
+      case 's-let-expr': {
+        const { l, binds, body } = e;
+        for (const f of binds) {
+          switch (f.$name) {
+            case 's-var-bind': {
+              const l2 = f.l;
+              const b = f.b as A.SBind;
+              const val = f.value;
+              if (A.isABlank(b.ann) || A.isAAny(b.ann)) {
+                let hole: N.AVar | undefined = undefined;
+                const translated = anfName(val, 'var', (newVal) => {
+                  hole = new N.AVar(l2, new N.ABind(l2, b.id, b.ann), new N.AVal(newVal.l, newVal),
+                    undefined as unknown as N.AExpr);
+                  return hole;
+                });
+                if (hole === undefined) {
+                  throw new InternalCompilerError('anfLinear: var-bind continuation was not invoked');
+                }
+                const h: N.AVar = hole;
+                emit(translated, (rest) => { h.body = rest; });
+              } else {
+                const varName = mkId(l2, 'var');
+                let hole: N.AVar | undefined = undefined;
+                const translated = anf(val, (lettable) => {
+                  hole = new N.AVar(l2, new N.ABind(l2, b.id, b.ann), new N.AVal(l2, varName.idE),
+                    undefined as unknown as N.AExpr);
+                  return new N.ALet(l2, varName.idB, lettable, hole);
+                });
+                if (hole === undefined) {
+                  throw new InternalCompilerError('anfLinear: annotated var-bind continuation was not invoked');
+                }
+                const h: N.AVar = hole;
+                emit(translated, (rest) => { h.body = rest; });
+              }
+              break;
+            }
+            case 's-let-bind': {
+              const l2 = f.l;
+              const b = f.b as A.SBind;
+              const val = f.value;
+              let hole: N.ALet | undefined = undefined;
+              const translated = anf(val, (lettable) => {
+                hole = new N.ALet(l2, new N.ABind(l2, b.id, b.ann), lettable,
+                  undefined as unknown as N.AExpr);
+                return hole;
+              });
+              if (hole === undefined) {
+                throw new InternalCompilerError('anfLinear: let-bind continuation was not invoked');
+              }
+              const h: N.ALet = hole;
+              emit(translated, (rest) => { h.body = rest; });
+              break;
+            }
+            default:
+              throw new InternalCompilerError('No case matched in anf s-let-expr: ' + (f as any).$name);
+          }
+        }
+        e = body;
+        continue;
+      }
+      case 's-letrec': {
+        const { l, binds, body } = e;
+        const letBinds = binds.map((b) =>
+          new A.SVarBind(b.l, b.b, new A.SUndefined(l)));
+        const assigns = binds.map((b): A.Expr =>
+          new A.SAssign(b.l, (b.b as A.SBind).id, b.value));
+        e = new A.SLetExpr(l, letBinds, new A.SBlock(l, [...assigns, body]), true);
+        continue;
+      }
+      default:
+        return finish(anf(e, k));
     }
   }
-  return anfBlockHelp(esInit);
 }
 
 export function anf(e: A.Expr, k: ANFCont): N.AExpr {
@@ -205,73 +418,12 @@ export function anf(e: A.Expr, k: ANFCont): N.AExpr {
       return k(new N.AIdVarModref(e.l, e.id, e.uri, e.name));
     case 's-srcloc':
       return k(new N.AVal(e.l, new N.ASrcloc(e.l, e.loc)));
-    case 's-type-let-expr': {
-      const { l, binds, body, blocky } = e;
-      if (binds.length === 0) {
-        return anf(body, k);
-      } else {
-        const f = binds[0];
-        const r = binds.slice(1);
-        let newBind: N.ATypeBind;
-        switch (f.$name) {
-          case 's-type-bind':
-            newBind = new N.ATypeBind(f.l, f.name, f.ann); // TODO(MATT): is this going to have to change?
-            break;
-          case 's-newtype-bind':
-            newBind = new N.ANewtypeBind(f.l, f.name, f.namet);
-            break;
-          default:
-            throw new InternalCompilerError('No case matched in anf s-type-let-expr: ' + (f as any).$name);
-        }
-        return new N.ATypeLet(l, newBind, anf(new A.STypeLetExpr(l, r, body, blocky), k));
-      }
-    }
-    case 's-let-expr': {
-      const { l, binds, body, blocky } = e;
-      if (binds.length === 0) {
-        return anf(body, k);
-      } else {
-        const f = binds[0];
-        const r = binds.slice(1);
-        switch (f.$name) {
-          case 's-var-bind': {
-            const l2 = f.l;
-            const b = f.b as A.SBind;
-            const val = f.value;
-            if (A.isABlank(b.ann) || A.isAAny(b.ann)) {
-              return anfName(val, 'var', (newVal) =>
-                new N.AVar(l2, new N.ABind(l2, b.id, b.ann), new N.AVal(newVal.l, newVal),
-                  anf(new A.SLetExpr(l, r, body, blocky), k)));
-            } else {
-              const varName = mkId(l2, 'var');
-              return anf(val, (lettable) =>
-                new N.ALet(l2, varName.idB, lettable,
-                  new N.AVar(l2, new N.ABind(l2, b.id, b.ann), new N.AVal(l2, varName.idE),
-                    anf(new A.SLetExpr(l, r, body, blocky), k))));
-            }
-          }
-          case 's-let-bind': {
-            const l2 = f.l;
-            const b = f.b as A.SBind;
-            const val = f.value;
-            return anf(val, (lettable) =>
-              new N.ALet(l2, new N.ABind(l2, b.id, b.ann), lettable,
-                anf(new A.SLetExpr(l, r, body, blocky), k)));
-          }
-          default:
-            throw new InternalCompilerError('No case matched in anf s-let-expr: ' + (f as any).$name);
-        }
-      }
-    }
-
-    case 's-letrec': {
-      const { l, binds, body } = e;
-      const letBinds = binds.map((b) =>
-        new A.SVarBind(b.l, b.b, new A.SUndefined(l)));
-      const assigns = binds.map((b): A.Expr =>
-        new A.SAssign(b.l, (b.b as A.SBind).id, b.value));
-      return anf(new A.SLetExpr(l, letBinds, new A.SBlock(l, [...assigns, body]), true), k);
-    }
+    // The linear-spine shapes (deeply right-nested after scope resolution)
+    // are translated iteratively to keep stack depth bounded; see anfLinear.
+    case 's-type-let-expr':
+    case 's-let-expr':
+    case 's-letrec':
+      return anfLinear(e, k);
 
     case 's-data-expr': {
       const l = e.l;

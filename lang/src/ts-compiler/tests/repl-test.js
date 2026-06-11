@@ -61,7 +61,9 @@ const defs = repl.makeDefinitionsLocator(
 );
 const opts = { ...CS.defaultCompileOptions, checks: 'none', displayProgress: false };
 
-const r0 = repl.restartInteractions(defs, opts);
+async function main() {
+
+const r0 = await repl.restartInteractions(defs, opts);
 check('definitions compile and run', () => {
   assert.strictEqual(r0.$name, 'right');
   assert.strictEqual(runLog.length, 1);
@@ -69,7 +71,7 @@ check('definitions compile and run', () => {
 });
 
 const i1 = repl.makeInteractionLocator(() => 'y = sq(x)\n');
-const r1 = repl.runInteraction(i1);
+const r1 = await repl.runInteraction(i1);
 check('interaction 1 sees definitions (x, sq)', () => {
   assert.strictEqual(r1.$name, 'right');
   assert.ok(runLog[1].source.includes('interactions://1'));
@@ -78,7 +80,7 @@ check('interaction 1 sees definitions (x, sq)', () => {
 });
 
 const i2 = repl.makeInteractionLocator(() => 'z = y + x\nz\n');
-const r2 = repl.runInteraction(i2);
+const r2 = await repl.runInteraction(i2);
 check('interaction 2 sees both definitions and interaction 1', () => {
   assert.strictEqual(r2.$name, 'right');
   assert.ok(runLog[2].source.includes('interactions://2'));
@@ -86,7 +88,7 @@ check('interaction 2 sees both definitions and interaction 1', () => {
 });
 
 const i3 = repl.makeInteractionLocator(() => 'no-such-name-xyz + 1\n');
-const r3 = repl.runInteraction(i3);
+const r3 = await repl.runInteraction(i3);
 check('unbound name in interaction is a compile error', () => {
   assert.strictEqual(r3.$name, 'left');
   const errs = r3.v;
@@ -99,15 +101,15 @@ check('unbound name in interaction is a compile error', () => {
 });
 
 const i4 = repl.makeInteractionLocator(() => 'z * 2\n');
-const r4 = repl.runInteraction(i4);
+const r4 = await repl.runInteraction(i4);
 check('chain continues after a failed interaction', () => {
   assert.strictEqual(r4.$name, 'right');
   assert.strictEqual(runLog[3].realm, 'realm-3');
 });
 
-const r5 = repl.restartInteractions(defs, opts);
+const r5 = await repl.restartInteractions(defs, opts);
 const i5 = repl.makeInteractionLocator(() => 'z\n');
-const r6 = repl.runInteraction(i5);
+const r6 = await repl.runInteraction(i5);
 check('restart clears interaction scope (z unbound again)', () => {
   assert.strictEqual(r5.$name, 'right');
   assert.strictEqual(r6.$name, 'left');
@@ -116,3 +118,7 @@ check('restart clears interaction scope (z unbound again)', () => {
 console.log('');
 console.log(`repl tests: ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
+
+}
+
+main().catch((e) => { console.error(e); process.exit(1); });

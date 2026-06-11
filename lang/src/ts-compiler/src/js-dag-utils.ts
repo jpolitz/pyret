@@ -388,18 +388,39 @@ export function usedVarsJfield(f: J.JFieldT, soFar: NameSet): NameSet {
 
 // ---------- liveness ----------
 
-export function computeLiveVars(n: GraphNode, dag: Map<string, GraphNode>): NameSet {
-  if (n.liveVars !== undefined) {
-    return n.liveVars;
-  } else {
-    const liveAfter = copyNameset(n.freeVars);
+export function computeLiveVars(nInit: GraphNode, dag: Map<string, GraphNode>): NameSet {
+  // Memoized post-order over the case graph, done with an explicit stack:
+  // the longest path grows with the number of split points (roughly,
+  // statements), so plain recursion overflows fixed-size stacks (e.g.
+  // browsers) on long functions. Successor results are merged in the
+  // same n._to iteration order as the recursive formulation.
+  const stack: GraphNode[] = [nInit];
+  while (stack.length > 0) {
+    const n = stack[stack.length - 1];
+    if (n.liveVars !== undefined) {
+      stack.pop();
+      continue;
+    }
+    let allSuccessorsDone = true;
     for (const followKey of n._to.keys()) {
       // Note: this is false only for the exit block of the function
       // which isn't currently present in the DAG (todo: why not?)
       if (dag.has(followKey)) {
         const next = dag.get(followKey)!;
-        const nextVars = computeLiveVars(next, dag);
-        mapMergeNow(liveAfter, nextVars);
+        if (next.liveVars === undefined) {
+          stack.push(next);
+          allSuccessorsDone = false;
+        }
+      }
+    }
+    if (!allSuccessorsDone) {
+      continue;
+    }
+    const liveAfter = copyNameset(n.freeVars);
+    for (const followKey of n._to.keys()) {
+      if (dag.has(followKey)) {
+        const next = dag.get(followKey)!;
+        mapMergeNow(liveAfter, next.liveVars!);
       }
     }
     const decls = n.declVars;
@@ -411,8 +432,9 @@ export function computeLiveVars(n: GraphNode, dag: Map<string, GraphNode>): Name
     n.liveVars = live;
     n.deadAfterVars = deadAfter;
     n.deadVars = dead;
-    return live;
+    stack.pop();
   }
+  return nInit.liveVars!;
 }
 
 export function stmtsOf(blk: J.JBlockT): ConcatList<J.JStmt> {

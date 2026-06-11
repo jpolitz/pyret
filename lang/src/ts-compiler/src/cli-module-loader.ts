@@ -20,7 +20,7 @@
   and by the Pyret-hosted pipeline are interchangeable.
 */
 
-import * as crypto from 'crypto';
+import { sha256 } from './sha256';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as P from 'path';
@@ -42,10 +42,6 @@ import * as RED from './render-error-display';
 import { Either, isLeft, mapGetValue, raise, TODOError } from './shared';
 
 export type Loadable = CS.Loadable;
-
-function sha256(s: string): string {
-  return crypto.createHash('sha256').update(s).digest('hex');
-}
 
 // Pyret torepr for the few values that end up in error messages here.
 function toRepr(x: any): string {

@@ -58,10 +58,32 @@ function defaultPathFor(name: string): string {
 
 const cache = new Map<string, any>();
 
+// Browser hook: bundlers can pre-register a module's source text (or a
+// ready-made value) so amdRequire never touches fs/vm. Registered entries
+// take precedence over disk paths.
+const registeredSources = new Map<string, string>();
+
+export function registerModuleSource(name: string, src: string): void {
+  registeredSources.set(name, src);
+  cache.delete(name);
+}
+
+export function registerModuleValue(name: string, value: any): void {
+  cache.set(name, value);
+}
+
 export function amdRequire(name: string): any {
   if (cache.has(name)) return cache.get(name);
-  const filePath = pathOverrides.get(name) ?? defaultPathFor(name);
-  const src = fs.readFileSync(filePath, 'utf8');
+  const registeredSrc = registeredSources.get(name);
+  let src: string;
+  let filePath: string;
+  if (registeredSrc !== undefined) {
+    src = registeredSrc;
+    filePath = name;
+  } else {
+    filePath = pathOverrides.get(name) ?? defaultPathFor(name);
+    src = fs.readFileSync(filePath, 'utf8');
+  }
 
   let result: any = undefined;
   let sawDefine = false;
@@ -85,11 +107,22 @@ export function amdRequire(name: string): any {
   // Run in the host realm (like requirejs under node does): the modules
   // pass values to each other (e.g. pyret-parser's serialized rule
   // actions are checked with `instanceof Array` inside rnglr.js), so
-  // separate vm realms would break those checks.
-  const wrapped = vm.runInThisContext(
-    '(function(define, require, module, exports) {' + src + '\n})',
-    { filename: filePath }
-  );
+  // separate vm realms would break those checks. Registered sources run
+  // through the Function constructor (also host-realm) so the browser
+  // bundle never needs a vm shim.
+  let wrapped: any;
+  if (registeredSrc !== undefined) {
+    // eslint-disable-next-line no-new-func
+    wrapped = new Function(
+      'define', 'require', 'module', 'exports',
+      src + '\n//# sourceURL=' + filePath
+    );
+  } else {
+    wrapped = vm.runInThisContext(
+      '(function(define, require, module, exports) {' + src + '\n})',
+      { filename: filePath }
+    );
+  }
   wrapped(define, undefined, undefined, undefined);
   if (!sawDefine) {
     throw new Error(`amd loader: ${filePath} did not call define()`);

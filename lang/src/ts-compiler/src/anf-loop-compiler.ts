@@ -32,7 +32,7 @@
          `var` bindings in the module preamble).
 */
 
-import * as crypto from 'crypto';
+import { sha256 } from './sha256';
 import * as A from './ast';
 import * as N from './ast-anf';
 import * as J from './js-ast';
@@ -76,10 +76,6 @@ export function clMapSd<T, U>(f: (key: string) => U, sd: Map<string, T>): CList<
     acc = clCons(f(key), acc);
   }
   return acc;
-}
-
-function sha256(s: string): string {
-  return crypto.createHash('sha256').update(s, 'utf8').digest('hex');
 }
 
 export function makeFunName(compiler: any, loc: Loc): string {
@@ -706,20 +702,39 @@ export function compileFunBody(
   let argUsedInLambda = false;
   const argNames = args.map((a) => a.id);
   const dummyAnfLettable = new N.AObj(A.dummyLoc, []);
+  // The detector is a pure usage query, so traversal order is irrelevant;
+  // long AExpr chains (one node per statement) are queued and drained by
+  // the loop below instead of recursed, to keep stack depth bounded.
+  const pendingBodies: Array<{ body: N.AExpr; lam: boolean }> = [];
+  function enqueueChainBody(b: N.AExpr, lam: boolean): any {
+    pendingBodies.push({ body: b, lam });
+    return dummyAnfLettable;
+  }
   const detector = ext(N.defaultMapVisitor as any, {
     aLam(node: N.ALam): any {
-      const savedInLam = inLam;
-      inLam = true;
-      node.body.visit(this);
-      inLam = savedInLam;
-      return dummyAnfLettable;
+      return enqueueChainBody(node.body, true);
     },
     aMethod(node: N.AMethod): any {
-      const savedInLam = inLam;
-      inLam = true;
-      node.body.visit(this);
-      inLam = savedInLam;
-      return dummyAnfLettable;
+      return enqueueChainBody(node.body, true);
+    },
+    aTypeLet(node: N.ATypeLet): any {
+      return enqueueChainBody(node.body, inLam);
+    },
+    aLet(node: N.ALet): any {
+      node.e.visit(this);
+      return enqueueChainBody(node.body, inLam);
+    },
+    aArrLet(node: N.AArrLet): any {
+      node.e.visit(this);
+      return enqueueChainBody(node.body, inLam);
+    },
+    aVar(node: N.AVar): any {
+      node.e.visit(this);
+      return enqueueChainBody(node.body, inLam);
+    },
+    aSeq(node: N.ASeq): any {
+      node.e1.visit(this);
+      return enqueueChainBody(node.e2, inLam);
     },
     aId(node: N.AId): any {
       if (inLam && !argUsedInLambda && argNames.some((an) => an.key() === node.id.key())) {
@@ -728,7 +743,12 @@ export function compileFunBody(
       return new N.AId(node.l, node.id);
     },
   });
-  body.visit(detector);
+  pendingBodies.push({ body, lam: false });
+  while (pendingBodies.length > 0 && !argUsedInLambda) {
+    const item = pendingBodies.pop()!;
+    inLam = item.lam;
+    item.body.visit(detector);
+  }
   if (argUsedInLambda) {
     compiler = ext(compiler, { allowTco: false });
   }
@@ -1034,13 +1054,30 @@ export function compileAnnotatedLet(
   }
 }
 
-export function getRemainingCode(
+/*
+  Iterative compilation of the ANF "linear spine".
+
+  A long program is one right-nested chain of a-let/a-var/a-seq/...
+  bodies, so the natural recursion (each node visiting its body) nests
+  one full activation per statement and overflows fixed-size stacks
+  (e.g. browsers) on long programs. All functions on the body-recursion
+  path are written as generators that `yield` where the recursive code
+  visited an AExpr body; runChain drives them with an explicit stack.
+  Generators execute the same statements in the same order as the
+  recursive formulation, so all side effects (label/name generation,
+  dispatch tables) happen in the original order and the generated code
+  is identical.
+*/
+export type ChainYield = { body: N.AExpr; compiler: CompilerVisitor };
+export type ChainGen<T> = Generator<ChainYield, T, DAG.CBlock>;
+
+export function* getRemainingCode(
   compiler: CompilerVisitor,
   optDest: BindType | undefined,
   body: N.AExpr,
   ans: A.Name
-): [J.JBlockT, CList<J.JCaseT>] {
-  let compiledBody: DAG.CBlock = body.visit(compiler);
+): ChainGen<[J.JBlockT, CList<J.JCaseT>]> {
+  let compiledBody: DAG.CBlock = yield { body, compiler };
   if (optDest !== undefined) {
     compiledBody = compileAnnotatedLet(compiler, optDest, cExp(jId(ans), clEmpty), compiledBody);
   }
@@ -1049,15 +1086,15 @@ export function getRemainingCode(
 
 // Return code for opt-body and the label the caller should jump to after
 // their block of code is done
-export function getNewCases(
+export function* getNewCases(
   compiler: CompilerVisitor,
   optDest: BindType | undefined,
   optBody: N.AExpr | undefined,
   ans: A.Name
-): [CList<J.JCaseT>, J.JExprT] {
+): ChainGen<[CList<J.JCaseT>, J.JExprT]> {
   if (optBody !== undefined) {
     const preBodyLabel = compiler.makeLabel();
-    const [nextBlock, nextCases] = getRemainingCode(compiler, optDest, optBody, ans);
+    const [nextBlock, nextCases] = yield* getRemainingCode(compiler, optDest, optBody, ans);
     const remainingCases = clCons(jCase(preBodyLabel, nextBlock) as J.JCaseT, nextCases);
     return [remainingCases, preBodyLabel];
   } else {
@@ -1065,7 +1102,7 @@ export function getNewCases(
   }
 }
 
-export function compileSplitMethodApp(
+export function* compileSplitMethodApp(
   l: Loc,
   compiler: CompilerVisitor,
   optDest: BindType | undefined,
@@ -1073,7 +1110,7 @@ export function compileSplitMethodApp(
   methname: string,
   args: N.AVal[],
   optBody: N.AExpr | undefined
-): DAG.CBlock {
+): ChainGen<DAG.CBlock> {
   const ans = compiler.curAns;
   const step = compiler.curStep;
   const compiledObj = (obj.visit(compiler) as DAG.CExp).exp;
@@ -1090,7 +1127,7 @@ export function compileSplitMethodApp(
           jStr(methname),
           compiler.getLoc(l)),
         compiledArgs)));
-    const [newCases, afterAppLabel] = getNewCases(compiler, optDest, optBody, ans);
+    const [newCases, afterAppLabel] = yield* getNewCases(compiler, optDest, optBody, ans);
     return cBlock(jBlock(clist<J.JStmt>(
       jExpr(jAssign(step, afterAppLabel)),
       jExpr(jAssign(ans, call)),
@@ -1101,7 +1138,7 @@ export function compileSplitMethodApp(
     const colonField = rtMethod('getColonFieldLoc', clist(objId, jStr(methname), compiler.getLoc(l)));
     const colonFieldId = jId(freshId(compilerName('field')));
     const checkMethod = rtMethod('isMethod', clist<J.JExprT>(colonFieldId));
-    const [newCases, afterAppLabel] = getNewCases(compiler, optDest, optBody, ans);
+    const [newCases, afterAppLabel] = yield* getNewCases(compiler, optDest, optBody, ans);
     return cBlock(
       jBlock(clist<J.JStmt>(
         // Update step before the call, so that if it runs out of gas, the resumer goes to the right step
@@ -1185,7 +1222,7 @@ export function getAssignments(lst: J.JExprT[], limit: number): [J.JStmt[], J.JS
   }
 }
 
-export function compileSplitApp(
+export function* compileSplitApp(
   l: Loc,
   compiler: CompilerVisitor,
   optDest: BindType | undefined,
@@ -1194,12 +1231,12 @@ export function compileSplitApp(
   optBody: N.AExpr | undefined,
   appInfo: A.AppInfo,
   isDefinitelyFn: boolean
-): DAG.CBlock {
+): ChainGen<DAG.CBlock> {
   const ans = compiler.curAns;
   const step = compiler.curStep;
   const compiledF = (f.visit(compiler) as DAG.CExp).exp;
   const compiledArgs = CL.map_list((a: N.AVal) => (a.visit(compiler) as DAG.CExp).exp, args);
-  const [newCases, afterAppLabel] = getNewCases(compiler, optDest, optBody, ans);
+  const [newCases, afterAppLabel] = yield* getNewCases(compiler, optDest, optBody, ans);
   if (appInfo.isRecursive &&
     appInfo.isTail &&
     compiler.allowTco &&
@@ -1249,7 +1286,7 @@ export function jBlockToStmtList(b: J.JBlockT): CList<J.JStmt> {
   }
 }
 
-export function compileFlatApp(
+export function* compileFlatApp(
   l: Loc,
   compiler: CompilerVisitor,
   optDest: BindType | undefined,
@@ -1258,7 +1295,7 @@ export function compileFlatApp(
   optBody: N.AExpr | undefined,
   _appInfo: A.AppInfo,
   _isDefinitelyFn: boolean
-): DAG.CBlock {
+): ChainGen<DAG.CBlock> {
   const ans = compiler.curAns;
   const compiledF = (f.visit(compiler) as DAG.CExp).exp;
   const compiledArgs = CL.map_list((a: N.AVal) => (a.visit(compiler) as DAG.CExp).exp, args);
@@ -1275,7 +1312,7 @@ export function compileFlatApp(
   let remainingCode: J.JBlockT;
   let newCases: CList<J.JCaseT>;
   if (optBody !== undefined) {
-    [remainingCode, newCases] = getRemainingCode(compiler, optDest, optBody, ans);
+    [remainingCode, newCases] = yield* getRemainingCode(compiler, optDest, optBody, ans);
   } else {
     // Special case: there is no more code after this so just jump to the
     // special last block in the function
@@ -1294,21 +1331,21 @@ export function compileFlatApp(
     newCases);
 }
 
-export function compileSplitIf(
+export function* compileSplitIf(
   compiler: CompilerVisitor,
   optDest: BindType | undefined,
   cond: N.AVal,
   consq: N.AExpr,
   alt: N.AExpr,
   optBody: N.AExpr | undefined
-): DAG.CBlock {
+): ChainGen<DAG.CBlock> {
   const consqLabel = compiler.makeLabel();
   const altLabel = compiler.makeLabel();
   const ans = compiler.curAns;
-  const [afterIfCases, afterIfLabel] = getNewCases(compiler, optDest, optBody, ans);
+  const [afterIfCases, afterIfLabel] = yield* getNewCases(compiler, optDest, optBody, ans);
   const compilerAfterIf = ext(compiler, { curTarget: afterIfLabel });
-  const compiledConsq: DAG.CBlock = consq.visit(compilerAfterIf);
-  const compiledAlt: DAG.CBlock = alt.visit(compilerAfterIf);
+  const compiledConsq: DAG.CBlock = yield { body: consq, compiler: compilerAfterIf };
+  const compiledAlt: DAG.CBlock = yield { body: alt, compiler: compilerAfterIf };
 
   const newCases =
     clAppend(
@@ -1326,13 +1363,13 @@ export function compileSplitIf(
     newCases);
 }
 
-export function compileCasesBranch(
+export function* compileCasesBranch(
   compiler: CompilerVisitor,
   compiledVal: J.JExprT,
   branch: N.ACasesBranch,
   casesLoc: Loc
-): DAG.CBlock {
-  const compiledBody: DAG.CBlock = branch.body.visit(compiler);
+): ChainGen<DAG.CBlock> {
+  const compiledBody: DAG.CBlock = yield { body: branch.body, compiler };
   if (compiledBody.newCases.length() < compiler.options.inlineCaseBodyLimit) {
     return compileInlineCasesBranch(compiler, compiledVal, branch, compiledBody, casesLoc);
   } else {
@@ -1450,7 +1487,7 @@ export function compileInlineCasesBranch(
   }
 }
 
-export function compileSplitCases(
+export function* compileSplitCases(
   compiler: CompilerVisitor,
   casesLoc: Loc,
   optDest: BindType | undefined,
@@ -1459,12 +1496,15 @@ export function compileSplitCases(
   branches: N.ACasesBranch[],
   _else: N.AExpr,
   optBody: N.AExpr | undefined
-): DAG.CBlock {
+): ChainGen<DAG.CBlock> {
   const compiledVal = (val.visit(compiler) as DAG.CExp).exp;
-  const [afterCasesCases, afterCasesLabel] = getNewCases(compiler, optDest, optBody, compiler.curAns);
+  const [afterCasesCases, afterCasesLabel] = yield* getNewCases(compiler, optDest, optBody, compiler.curAns);
   const compilerAfterCases = ext(compiler, { curTarget: afterCasesLabel });
-  const compiledBranches = branches.map((branch) => compileCasesBranch(compilerAfterCases, compiledVal, branch, casesLoc));
-  const compiledElse: DAG.CBlock = _else.visit(compilerAfterCases);
+  const compiledBranches: DAG.CBlock[] = [];
+  for (const branch of branches) {
+    compiledBranches.push(yield* compileCasesBranch(compilerAfterCases, compiledVal, branch, casesLoc));
+  }
+  const compiledElse: DAG.CBlock = yield { body: _else, compiler: compilerAfterCases };
   const branchLabels = branches.map(() => compiler.makeLabel());
   const elseLabel = compiler.makeLabel();
   let branchCases: CList<J.JCaseT> = clEmpty;
@@ -1491,21 +1531,21 @@ export function compileSplitCases(
     newCases);
 }
 
-export function compileSplitUpdate(
+export function* compileSplitUpdate(
   compiler: CompilerVisitor,
   loc: Loc,
   optDest: BindType | undefined,
   obj: N.AVal,
   fields: N.AField[],
   optBody: N.AExpr | undefined
-): DAG.CBlock {
+): ChainGen<DAG.CBlock> {
   const ans = compiler.curAns;
   const step = compiler.curStep;
   const compiledObj = (obj.visit(compiler) as DAG.CExp).exp;
   const compiledFieldVals = CL.map_list((a: N.AField) => (a.value.visit(compiler) as DAG.CExp).exp, fields);
   const fieldNames = CL.map_list((f: N.AField) => jStr(f.name) as J.JExprT, fields);
   const fieldLocs = CL.map_list((f: N.AField) => compiler.getLoc(f.l), fields);
-  const [newCases, afterUpdateLabel] = getNewCases(compiler, optDest, optBody, ans);
+  const [newCases, afterUpdateLabel] = yield* getNewCases(compiler, optDest, optBody, ans);
   return cBlock(
     jBlock(clist<J.JStmt>(
       // Update step before the call, so that if it runs out of gas, the resumer goes to the right step
@@ -1526,7 +1566,7 @@ export function isIdFnName(flatnessEnv: FL.FEnv, name: string): boolean {
   return flatnessEnv.has(name);
 }
 
-export function compileAApp(
+export function* compileAApp(
   l: Loc,
   f: N.AVal,
   args: N.AVal[],
@@ -1534,14 +1574,14 @@ export function compileAApp(
   b: BindType | undefined,
   optBody: N.AExpr | undefined,
   appInfo: A.AppInfo
-): DAG.CBlock {
+): ChainGen<DAG.CBlock> {
   const isSafeId = N.isAId(f) || N.isAIdSafeLetrec(f);
   const appCompiler = (isSafeId && isFunctionFlat(compiler.flatnessEnv, (f as any).id.key()))
     ? compileFlatApp
     : compileSplitApp;
 
   const isFn = isSafeId && isIdFnName(compiler.flatnessEnv, (f as any).id.key());
-  return appCompiler(l, compiler, b, f, args, optBody, appInfo, isFn);
+  return yield* appCompiler(l, compiler, b, f, args, optBody, appInfo, isFn);
 }
 
 export function compileALam(
@@ -1575,18 +1615,18 @@ export function compileALam(
           compileFunBody(l, newStep, temp, ext(compiler, { allowTco: true }), effectiveArgs, len, body, true, isFlat, false)))));
 }
 
-export function compileSplitPrimApp(
+export function* compileSplitPrimApp(
   l: Loc,
   compiler: CompilerVisitor,
   optDest: BindType | undefined,
   f: string,
   args: N.AVal[],
   optBody: N.AExpr | undefined
-): DAG.CBlock {
+): ChainGen<DAG.CBlock> {
   const ans = compiler.curAns;
   const step = compiler.curStep;
   const compiledArgs = CL.map_list((a: N.AVal) => (a.visit(compiler) as DAG.CExp).exp, args);
-  const [newCases, afterAppLabel] = getNewCases(compiler, optDest, optBody, ans);
+  const [newCases, afterAppLabel] = yield* getNewCases(compiler, optDest, optBody, ans);
   return cBlock(
     jBlock(
       // Update step before the call, so that if it runs out of gas,
@@ -1600,14 +1640,14 @@ export function compileSplitPrimApp(
     newCases);
 }
 
-export function compileFlatPrimApp(
+export function* compileFlatPrimApp(
   l: Loc,
   compiler: CompilerVisitor,
   optDest: BindType | undefined,
   f: string,
   args: N.AVal[],
   optBody: N.AExpr | undefined
-): DAG.CBlock {
+): ChainGen<DAG.CBlock> {
   const ans = compiler.curAns;
   const compiledArgs = CL.map_list((a: N.AVal) => (a.visit(compiler) as DAG.CExp).exp, args);
 
@@ -1620,7 +1660,7 @@ export function compileFlatPrimApp(
   let remainingCode: J.JBlockT;
   let newCases: CList<J.JCaseT>;
   if (optBody !== undefined) {
-    [remainingCode, newCases] = getRemainingCode(compiler, optDest, optBody, ans);
+    [remainingCode, newCases] = yield* getRemainingCode(compiler, optDest, optBody, ans);
   } else {
     // Special case: there is no more code after this so just jump to the
     // special last block in the function
@@ -1639,7 +1679,7 @@ export function compileFlatPrimApp(
     newCases);
 }
 
-export function compileAPrimApp(
+export function* compileAPrimApp(
   l: Loc,
   f: string,
   args: N.AVal[],
@@ -1647,40 +1687,160 @@ export function compileAPrimApp(
   b: BindType | undefined,
   optBody: N.AExpr | undefined,
   appInfo: A.PrimAppInfo
-): DAG.CBlock {
+): ChainGen<DAG.CBlock> {
   const appCompiler = appInfo.needsStep ? compileSplitPrimApp : compileFlatPrimApp;
-  return appCompiler(l, compiler, b, f, args, optBody);
+  return yield* appCompiler(l, compiler, b, f, args, optBody);
 }
 
-export function compileLettable(
+export function* compileLettable(
   compiler: CompilerVisitor,
   b: BindType | undefined,
   e: N.ALettable,
   optBody: N.AExpr | undefined,
-  elseCase: (compiledE: DAG.CExp) => DAG.CBlock
-): DAG.CBlock {
+  elseCase: (compiledE: DAG.CExp) => ChainGen<DAG.CBlock>
+): ChainGen<DAG.CBlock> {
   switch (e.$name) {
     case 'a-prim-app':
-      return compileAPrimApp(e.l, e.f, e.args, compiler, b, optBody, e.appInfo);
+      return yield* compileAPrimApp(e.l, e.f, e.args, compiler, b, optBody, e.appInfo);
     case 'a-app':
-      return compileAApp(e.l, e._fun, e.args, compiler, b, optBody, e.appInfo);
+      return yield* compileAApp(e.l, e._fun, e.args, compiler, b, optBody, e.appInfo);
     case 'a-method-app':
-      return compileSplitMethodApp(e.l, compiler, b, e.obj, e.meth, e.args, optBody);
+      return yield* compileSplitMethodApp(e.l, compiler, b, e.obj, e.meth, e.args, optBody);
     case 'a-if':
-      return compileSplitIf(compiler, b, e.c, e.t, e.e, optBody);
+      return yield* compileSplitIf(compiler, b, e.c, e.t, e.e, optBody);
     case 'a-cases':
-      return compileSplitCases(compiler, e.l, b, e.typ, e.val, e.branches, e._else, optBody);
+      return yield* compileSplitCases(compiler, e.l, b, e.typ, e.val, e.branches, e._else, optBody);
     case 'a-update':
-      return compileSplitUpdate(compiler, e.l, b, e.supe, e.fields, optBody);
+      return yield* compileSplitUpdate(compiler, e.l, b, e.supe, e.fields, optBody);
     case 'a-lam': {
       const compiledE = compileALam(compiler, e.l, e.name, e.args, e.ret, e.body, b);
-      return elseCase(compiledE);
+      return yield* elseCase(compiledE);
     }
     default: {
       const compiledE: DAG.CExp = e.visit(compiler);
-      return elseCase(compiledE);
+      return yield* elseCase(compiledE);
     }
   }
+}
+
+// ---------- the iterative chain driver (see comment above ChainYield) ----------
+
+function chainGenFor(compiler: CompilerVisitor, node: N.AExpr): ChainGen<DAG.CBlock> {
+  switch (node.$name) {
+    case 'a-type-let': return aTypeLetGen(compiler, node as N.ATypeLet);
+    case 'a-let': return aLetGen(compiler, node as N.ALet);
+    case 'a-arr-let': return aArrLetGen(compiler, node as N.AArrLet);
+    case 'a-var': return aVarGen(compiler, node as N.AVar);
+    case 'a-seq': return aSeqGen(compiler, node as N.ASeq);
+    case 'a-lettable': return aLettableGen(compiler, node as N.ALettable$);
+    default:
+      throw new InternalCompilerError('Unknown AExpr in chainGenFor: ' + (node as any).$name);
+  }
+}
+
+export function runChain(compiler: CompilerVisitor, root: N.AExpr): DAG.CBlock {
+  const stack: Array<ChainGen<DAG.CBlock>> = [chainGenFor(compiler, root)];
+  let sendVal: DAG.CBlock | undefined = undefined;
+  for (;;) {
+    const g = stack[stack.length - 1];
+    const r = g.next(sendVal as DAG.CBlock);
+    if (r.done) {
+      stack.pop();
+      if (stack.length === 0) {
+        return r.value;
+      }
+      sendVal = r.value;
+    } else {
+      stack.push(chainGenFor(r.value.compiler, r.value.body));
+      sendVal = undefined;
+    }
+  }
+}
+
+function* aTypeLetGen(compiler: CompilerVisitor, node: N.ATypeLet): ChainGen<DAG.CBlock> {
+  const bind = node.bind;
+  switch (bind.$name) {
+    case 'a-type-bind': {
+      const visitedBody: DAG.CBlock = yield { body: node.body, compiler };
+      const compiledAnn = compileAnn(bind.ann, bind.name.toname(), compiler);
+      return cBlock(
+        jBlock(
+          clAppend(
+            clSnoc(compiledAnn.otherStmts, jVar(jsIdOf(bind.name), compiledAnn.exp) as J.JStmt),
+            DAG.stmtsOf(visitedBody.block))),
+        visitedBody.newCases);
+    }
+    case 'a-newtype-bind': {
+      const branderId = jsIdOf(bind.namet);
+      const visitedBody: DAG.CBlock = yield { body: node.body, compiler };
+      return cBlock(
+        jBlock(
+          clAppend(
+            clist<J.JStmt>(
+              jVar(branderId, rtMethod('namedBrander', clist<J.JExprT>(jStr(bind.name.toname()), compiler.getLoc(bind.l)))),
+              jVar(jsIdOf(bind.name), rtMethod('makeBranderAnn', clist<J.JExprT>(jId(branderId), jStr(bind.name.toname()))))
+            ),
+            DAG.stmtsOf(visitedBody.block))),
+        visitedBody.newCases);
+    }
+    default:
+      throw new InternalCompilerError('Unknown ATypeBind in a-type-let');
+  }
+}
+
+function* aLetGen(compiler: CompilerVisitor, node: N.ALet): ChainGen<DAG.CBlock> {
+  return yield* compileLettable(compiler, new BLet(node.bind), node.e, node.body, function* (compiledE) {
+    const compiledBody: DAG.CBlock = yield { body: node.body, compiler };
+    return compileAnnotatedLet(compiler, new BLet(node.bind), compiledE, compiledBody);
+  });
+}
+
+function* aArrLetGen(compiler: CompilerVisitor, node: N.AArrLet): ChainGen<DAG.CBlock> {
+  return yield* compileLettable(compiler, new BArray(node.bind, node.idx), node.e, node.body, function* (compiledE) {
+    const compiledBody: DAG.CBlock = yield { body: node.body, compiler };
+    return compileAnnotatedLet(compiler, new BArray(node.bind, node.idx), compiledE, compiledBody);
+  });
+}
+
+function* aVarGen(compiler: CompilerVisitor, node: N.AVar): ChainGen<DAG.CBlock> {
+  const compiledBody: DAG.CBlock = yield { body: node.body, compiler };
+  const compiledE: DAG.CExp = node.e.visit(compiler);
+  // TODO: annotations here?
+  return cBlock(
+    jBlock(
+      clCons(
+        jVar(jsIdOf(node.bind.id),
+          jObj(clist<J.JFieldT>(jField('$var', compiledE.exp)
+            // NOTE(joe): This can be useful to turn on for debugging
+            //                     , j-field("$name", j-str(b.id.toname()))
+          ))) as J.JStmt,
+        DAG.stmtsOf(compiledBody.block))),
+    compiledBody.newCases);
+}
+
+function* aSeqGen(compiler: CompilerVisitor, node: N.ASeq): ChainGen<DAG.CBlock> {
+  return yield* compileLettable(compiler, undefined, node.e1, node.e2, function* (e1Visit) {
+    const e2Visit: DAG.CBlock = yield { body: node.e2, compiler };
+    const firstStmt: J.JStmt = (e1Visit.exp as any) instanceof J.JStmtBase ? (e1Visit.exp as any as J.JStmt) : jExpr(e1Visit.exp);
+    return cBlock(
+      jBlock(clAppend(e1Visit.otherStmts, clCons(firstStmt, DAG.stmtsOf(e2Visit.block)))),
+      e2Visit.newCases);
+  });
+}
+
+function* aLettableGen(compiler: CompilerVisitor, node: N.ALettable$): ChainGen<DAG.CBlock> {
+  return yield* compileLettable(compiler, undefined, node.e, undefined, function* (visitE) {
+    return cBlock(
+      jBlock(
+        clAppend(
+          clAppend(
+            clSing<J.JStmt>(jExpr(jAssign(compiler.curStep, compiler.curTarget))),
+            visitE.otherStmts),
+          clist<J.JStmt>(
+            jExpr(jAssign(compiler.curAns, visitE.exp)),
+            jBreak))),
+      clEmpty);
+  });
 }
 
 // ---------- the compiler visitor ----------
@@ -1829,75 +1989,27 @@ export class CompilerVisitor {
         compiledChecks.otherStmts));
   }
 
+  // The AExpr ("chain") shapes are compiled iteratively to keep stack
+  // depth bounded on long programs; see ChainYield/runChain above. The
+  // per-shape logic lives in the *Gen generator functions.
   aTypeLet(node: N.ATypeLet): DAG.CBlock {
-    const bind = node.bind;
-    switch (bind.$name) {
-      case 'a-type-bind': {
-        const visitedBody: DAG.CBlock = node.body.visit(this);
-        const compiledAnn = compileAnn(bind.ann, bind.name.toname(), this);
-        return cBlock(
-          jBlock(
-            clAppend(
-              clSnoc(compiledAnn.otherStmts, jVar(jsIdOf(bind.name), compiledAnn.exp) as J.JStmt),
-              DAG.stmtsOf(visitedBody.block))),
-          visitedBody.newCases);
-      }
-      case 'a-newtype-bind': {
-        const branderId = jsIdOf(bind.namet);
-        const visitedBody: DAG.CBlock = node.body.visit(this);
-        return cBlock(
-          jBlock(
-            clAppend(
-              clist<J.JStmt>(
-                jVar(branderId, rtMethod('namedBrander', clist<J.JExprT>(jStr(bind.name.toname()), this.getLoc(bind.l)))),
-                jVar(jsIdOf(bind.name), rtMethod('makeBranderAnn', clist<J.JExprT>(jId(branderId), jStr(bind.name.toname()))))
-              ),
-              DAG.stmtsOf(visitedBody.block))),
-          visitedBody.newCases);
-      }
-      default:
-        throw new InternalCompilerError('Unknown ATypeBind in a-type-let');
-    }
+    return runChain(this, node);
   }
 
   aLet(node: N.ALet): DAG.CBlock {
-    return compileLettable(this, new BLet(node.bind), node.e, node.body, (compiledE) => {
-      const compiledBody: DAG.CBlock = node.body.visit(this);
-      return compileAnnotatedLet(this, new BLet(node.bind), compiledE, compiledBody);
-    });
+    return runChain(this, node);
   }
 
   aArrLet(node: N.AArrLet): DAG.CBlock {
-    return compileLettable(this, new BArray(node.bind, node.idx), node.e, node.body, (compiledE) => {
-      const compiledBody: DAG.CBlock = node.body.visit(this);
-      return compileAnnotatedLet(this, new BArray(node.bind, node.idx), compiledE, compiledBody);
-    });
+    return runChain(this, node);
   }
 
   aVar(node: N.AVar): DAG.CBlock {
-    const compiledBody: DAG.CBlock = node.body.visit(this);
-    const compiledE: DAG.CExp = node.e.visit(this);
-    // TODO: annotations here?
-    return cBlock(
-      jBlock(
-        clCons(
-          jVar(jsIdOf(node.bind.id),
-            jObj(clist<J.JFieldT>(jField('$var', compiledE.exp)
-              // NOTE(joe): This can be useful to turn on for debugging
-              //                     , j-field("$name", j-str(b.id.toname()))
-            ))) as J.JStmt,
-          DAG.stmtsOf(compiledBody.block))),
-      compiledBody.newCases);
+    return runChain(this, node);
   }
 
   aSeq(node: N.ASeq): DAG.CBlock {
-    return compileLettable(this, undefined, node.e1, node.e2, (e1Visit) => {
-      const e2Visit: DAG.CBlock = node.e2.visit(this);
-      const firstStmt: J.JStmt = (e1Visit.exp as any) instanceof J.JStmtBase ? (e1Visit.exp as any as J.JStmt) : jExpr(e1Visit.exp);
-      return cBlock(
-        jBlock(clAppend(e1Visit.otherStmts, clCons(firstStmt, DAG.stmtsOf(e2Visit.block)))),
-        e2Visit.newCases);
-    });
+    return runChain(this, node);
   }
 
   aIf(_node: N.AIf): never {
@@ -1913,18 +2025,7 @@ export class CompilerVisitor {
   }
 
   aLettable(node: N.ALettable$): DAG.CBlock {
-    return compileLettable(this, undefined, node.e, undefined, (visitE) => {
-      return cBlock(
-        jBlock(
-          clAppend(
-            clAppend(
-              clSing<J.JStmt>(jExpr(jAssign(this.curStep, this.curTarget))),
-              visitE.otherStmts),
-            clist<J.JStmt>(
-              jExpr(jAssign(this.curAns, visitE.exp)),
-              jBreak))),
-        clEmpty);
-    });
+    return runChain(this, node);
   }
 
   aAssign(node: N.AAssign): DAG.CExp {

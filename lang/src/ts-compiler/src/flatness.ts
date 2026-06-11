@@ -145,6 +145,10 @@ export function makeExprDataEnv(
   typeNameToVariants: Map<string, AA.AVariant[]>,
   aliasToTypeName: Map<string, string>
 ): void {
+  // The body recursion is a tail call in every case; loop instead of
+  // recursing so long programs (one chain node per statement) don't
+  // overflow fixed-size stacks (e.g. browsers).
+  for (;;) {
   switch (aexpr.$name) {
     case 'a-type-let': {
       const bind = aexpr.bind;
@@ -160,8 +164,8 @@ export function makeExprDataEnv(
         default:
           throw new InternalCompilerError('makeExprDataEnv: unknown type bind ' + (bind as any).$name);
       }
-      makeExprDataEnv(aexpr.body, sd, ad, mb, env, typeNameToVariants, aliasToTypeName);
-      break;
+      aexpr = aexpr.body;
+      continue;
     }
     case 'a-let': {
       const bind = aexpr.bind;
@@ -207,27 +211,28 @@ export function makeExprDataEnv(
         // nothing
       }
       makeLettableDataEnv(val, sd, ad, mb, env, typeNameToVariants, aliasToTypeName);
-      makeExprDataEnv(aexpr.body, sd, ad, mb, env, typeNameToVariants, aliasToTypeName);
-      break;
+      aexpr = aexpr.body;
+      continue;
     }
     case 'a-arr-let': {
       makeLettableDataEnv(aexpr.e, sd, ad, mb, env, typeNameToVariants, aliasToTypeName);
-      makeExprDataEnv(aexpr.body, sd, ad, mb, env, typeNameToVariants, aliasToTypeName);
-      break;
+      aexpr = aexpr.body;
+      continue;
     }
     case 'a-var':
-      makeExprDataEnv(aexpr.body, sd, ad, mb, env, typeNameToVariants, aliasToTypeName);
-      break;
+      aexpr = aexpr.body;
+      continue;
     case 'a-seq': {
       makeLettableDataEnv(aexpr.e1, sd, ad, mb, env, typeNameToVariants, aliasToTypeName);
-      makeExprDataEnv(aexpr.e2, sd, ad, mb, env, typeNameToVariants, aliasToTypeName);
-      break;
+      aexpr = aexpr.e2;
+      continue;
     }
     case 'a-lettable':
       makeLettableDataEnv(aexpr.e, sd, ad, mb, env, typeNameToVariants, aliasToTypeName);
-      break;
+      return;
     default:
       throw new InternalCompilerError('makeExprDataEnv: unknown expr ' + (aexpr as any).$name);
+  }
   }
 }
 
@@ -307,80 +312,107 @@ export function makeLettableDataEnv(
 // Calculate the flatness of aexpr, and along the way mutably update sd to
 // contain mappings for all defined names of functions
 export function makeExprFlatnessEnv(
-  aexpr: AA.AExpr,
+  aexprIn: AA.AExpr,
   sd: FEnv,
   ad: FEnv,
   mb: Map<string, C.ModuleBind>,
   env: C.CompileEnvironment
 ): Flatness {
-  switch (aexpr.$name) {
-    case 'a-type-let':
-      return makeExprFlatnessEnv(aexpr.body, sd, ad, mb, env);
-    case 'a-let': {
-      const bind = aexpr.bind;
-      const val = aexpr.e;
+  // The body recursion (one chain node per statement) is rewritten as a
+  // forward loop plus a backward fold so long programs don't overflow
+  // fixed-size stacks (e.g. browsers). Per-node pre-work (incl. sd/ad
+  // mutations) happens in the forward pass in the original order; work
+  // the recursive code did after the body call (a-let's annFlatness and
+  // the flatnessMax combinations) happens in the frames, applied in the
+  // original unwind order (deepest first).
+  const frames: Array<(bodyFlatness: Flatness) => Flatness> = [];
+  let aexpr: AA.AExpr = aexprIn;
+  let result: Flatness;
+  forward: for (;;) {
+    switch (aexpr.$name) {
+      case 'a-type-let':
+        aexpr = aexpr.body;
+        continue;
+      case 'a-let': {
+        const bind = aexpr.bind;
+        const val = aexpr.e;
 
-      let valFlatness: Flatness;
-      if (AA.isALam(val)) {
-        const retFlatness = annFlatness(val.ret, sd, ad, mb, env);
-        let argsFlatness = retFlatness;
-        for (const elt of val.args) {
-          argsFlatness = flatnessMax(argsFlatness, annFlatness(elt.ann, sd, ad, mb, env));
+        let valFlatness: Flatness;
+        if (AA.isALam(val)) {
+          const retFlatness = annFlatness(val.ret, sd, ad, mb, env);
+          let argsFlatness = retFlatness;
+          for (const elt of val.args) {
+            argsFlatness = flatnessMax(argsFlatness, annFlatness(elt.ann, sd, ad, mb, env));
+          }
+
+          const bodyFlatness = makeExprFlatnessEnv(val.body, sd, ad, mb, env);
+          const lamFlatness = flatnessMax(bodyFlatness, argsFlatness);
+
+          sd.set(bind.id.key(), lamFlatness);
+          // flatness of defining this lambda is 0, since we're not actually
+          // doing anything with it
+          valFlatness = 0;
+        } else if (AA.isAIdSafeLetrec(val)) {
+          // If we're binding this name to something that's already been defined
+          // just copy over the definition
+          // (NOTE: as in the Pyret original, this test can never succeed for
+          // an ALettable; a-id-safe-letrec is an AVal variant)
+          const valISL = val as unknown as AA.AIdSafeLetrec;
+          if (sd.has(valISL.id.key())) {
+            sd.set(bind.id.key(), sd.get(valISL.id.key()));
+          }
+          // flatness of the binding part of the let is 0 since we don't
+          // call anything
+          valFlatness = 0;
+        } else if (AA.isAVal(val) && AA.isAIdModref(val.v)) {
+          const funFlatness = getFlatnessForModuleFun(val.v.id, val.v.name, mb, env);
+          sd.set(bind.id.key(), funFlatness);
+          valFlatness = 0;
+        } else {
+          valFlatness = makeLettableFlatnessEnv(val, sd, ad, mb, env);
         }
 
-        const bodyFlatness = makeExprFlatnessEnv(val.body, sd, ad, mb, env);
-        const lamFlatness = flatnessMax(bodyFlatness, argsFlatness);
-
-        sd.set(bind.id.key(), lamFlatness);
-        // flatness of defining this lambda is 0, since we're not actually
-        // doing anything with it
-        valFlatness = 0;
-      } else if (AA.isAIdSafeLetrec(val)) {
-        // If we're binding this name to something that's already been defined
-        // just copy over the definition
-        // (NOTE: as in the Pyret original, this test can never succeed for
-        // an ALettable; a-id-safe-letrec is an AVal variant)
-        const valISL = val as unknown as AA.AIdSafeLetrec;
-        if (sd.has(valISL.id.key())) {
-          sd.set(bind.id.key(), sd.get(valISL.id.key()));
-        }
-        // flatness of the binding part of the let is 0 since we don't
-        // call anything
-        valFlatness = 0;
-      } else if (AA.isAVal(val) && AA.isAIdModref(val.v)) {
-        const funFlatness = getFlatnessForModuleFun(val.v.id, val.v.name, mb, env);
-        sd.set(bind.id.key(), funFlatness);
-        valFlatness = 0;
-      } else {
-        valFlatness = makeLettableFlatnessEnv(val, sd, ad, mb, env);
+        frames.push((bodyFlatness) => {
+          const annF = annFlatness(bind.ann, sd, ad, mb, env);
+          return flatnessMax(flatnessMax(valFlatness, bodyFlatness), annF);
+        });
+        aexpr = aexpr.body;
+        continue;
       }
-
-      // Compute the flatness of the body
-      const bodyFlatness = makeExprFlatnessEnv(aexpr.body, sd, ad, mb, env);
-
-      const annF = annFlatness(bind.ann, sd, ad, mb, env);
-
-      return flatnessMax(flatnessMax(valFlatness, bodyFlatness), annF);
+      case 'a-arr-let': {
+        // Could maybe try to add some string like "bind.name + idx" to the
+        // sd to let us keep track of the flatness if e is an a-lam, but for
+        // now we don't since I'm not sure it'd work right.
+        const annF = annFlatness(aexpr.bind.ann, sd, ad, mb, env);
+        const lettF = makeLettableFlatnessEnv(aexpr.e, sd, ad, mb, env);
+        frames.push((bodyFlatness) => flatnessMax(annF, flatnessMax(lettF, bodyFlatness)));
+        aexpr = aexpr.body;
+        continue;
+      }
+      case 'a-var': {
+        // Do same thing with a-var as with a-let for now
+        const annF = annFlatness(aexpr.bind.ann, sd, ad, mb, env);
+        frames.push((bodyFlatness) => flatnessMax(annF, bodyFlatness));
+        aexpr = aexpr.body;
+        continue;
+      }
+      case 'a-seq': {
+        const aFlatness = makeLettableFlatnessEnv(aexpr.e1, sd, ad, mb, env);
+        frames.push((bodyFlatness) => flatnessMax(aFlatness, bodyFlatness));
+        aexpr = aexpr.e2;
+        continue;
+      }
+      case 'a-lettable':
+        result = makeLettableFlatnessEnv(aexpr.e, sd, ad, mb, env);
+        break forward;
+      default:
+        throw new InternalCompilerError('makeExprFlatnessEnv: unknown expr ' + (aexpr as any).$name);
     }
-    case 'a-arr-let':
-      // Could maybe try to add some string like "bind.name + idx" to the
-      // sd to let us keep track of the flatness if e is an a-lam, but for
-      // now we don't since I'm not sure it'd work right.
-      return flatnessMax(annFlatness(aexpr.bind.ann, sd, ad, mb, env),
-        flatnessMax(makeLettableFlatnessEnv(aexpr.e, sd, ad, mb, env), makeExprFlatnessEnv(aexpr.body, sd, ad, mb, env)));
-    case 'a-var':
-      // Do same thing with a-var as with a-let for now
-      return flatnessMax(annFlatness(aexpr.bind.ann, sd, ad, mb, env), makeExprFlatnessEnv(aexpr.body, sd, ad, mb, env));
-    case 'a-seq': {
-      const aFlatness = makeLettableFlatnessEnv(aexpr.e1, sd, ad, mb, env);
-      const bFlatness = makeExprFlatnessEnv(aexpr.e2, sd, ad, mb, env);
-      return flatnessMax(aFlatness, bFlatness);
-    }
-    case 'a-lettable':
-      return makeLettableFlatnessEnv(aexpr.e, sd, ad, mb, env);
-    default:
-      throw new InternalCompilerError('makeExprFlatnessEnv: unknown expr ' + (aexpr as any).$name);
   }
+  for (let i = frames.length - 1; i >= 0; i--) {
+    result = frames[i](result);
+  }
+  return result;
 }
 
 export function incrementFlatness(f: Flatness): Flatness {

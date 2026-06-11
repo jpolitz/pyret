@@ -98,3 +98,28 @@ and parse-error messages.
    compiler recurses on the runtime's segmented stack; the port uses the
    JS stack). Set `PYRET_TS_NO_RESPAWN=1` or pass `--stack-size` yourself
    to disable.
+
+## Browser bundling
+
+`src/browser.ts` is a browser entry point exposing the compile pipeline
+plus `repl.ts` with no live node dependencies: sha256 is pure TS
+(`src/sha256.ts`), and the interop AMD modules (tokenizer, generated
+parser, js-numbers, type-util, jglr) are pre-registered as source text
+via `interop/amd.ts`'s `registerModuleSource` hook (see
+code.pyret.org's `src/scripts/make-ts-compiler-entry.js`, which
+generates the browserify entry; `make web-ts` there builds
+`build/web/js/ts-compiler.js` exposing the `PyretTSCompiler` global).
+
+Because browsers have fixed ~1MB stacks (no `--stack-size` escape
+hatch), every per-statement recursion in the pipeline is implemented
+iteratively: the ANF spine (`anfLinear` in `anf.ts`), the splitting
+code generator (generators + the `runChain` driver in
+`anf-loop-compiler.ts`), scope resolution (`desugarScopeBlock`'s step
+driver), the flatness environment passes, and DAG liveness
+(`computeLiveVars`). All of these preserve the exact statement/effect
+order of the recursive originals, so generated code is byte-identical;
+programs of at least ~5000 statements compile in-browser.
+
+`ReplExecutor.run` may return a Promise (a browser host must thread
+execution through the Pyret runtime's async trampoline), so the repl's
+`restartInteractions`/`runInteraction` return Promises.
