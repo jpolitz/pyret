@@ -605,7 +605,17 @@ function start(config, onServerReady) {
   });
 
   app.get("/editor", function(req, res) {
+    // The compiler flavor can be chosen per request (?compiler=ts|pyret),
+    // falling back to the CPO_COMPILER env default. Resolving it here (in
+    // addition to the client-side check in editor.html) keeps the preload
+    // link and window.PYRET pointing at the jarr that will actually load,
+    // so the stock jarr isn't downloaded pointlessly in ts mode.
+    var compiler = req.query.compiler || defaultOpts.CPO_COMPILER;
+    var compilerOpts = (compiler === "ts" && defaultOpts.PYRET_TS)
+      ? { PYRET: defaultOpts.PYRET_TS, CPO_COMPILER: "ts" }
+      : {};
     res.render("editor.html", { ...defaultOpts,
+      ...compilerOpts,
       CSRF_TOKEN: req.csrfToken(),
     });
   });
