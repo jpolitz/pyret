@@ -587,7 +587,7 @@ fun make-standalone(wl, compiled, options):
       depmap = j-obj(for C.map_list(w from wl):
         deps = w.dependency-map
         j-field(w.locator.uri(),
-          j-obj(for C.map_list(k from deps.keys-now().to-list()):
+          j-obj(for C.map_list(k from deps.keys-now().to-list().sort()):
             j-field(k, j-str(deps.get-value-now(k).uri()))
           end))
       end)
