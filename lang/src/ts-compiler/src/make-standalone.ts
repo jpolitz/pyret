@@ -98,7 +98,9 @@ export function makeStandalone(
   fs.writeSync(outFile, dependencyCode);
 
   const filesToFetch = config["raw-js"];
-  Object.keys(filesToFetch).forEach(function (f) {
+  // Sorted so concatenation order doesn't depend on config-dict iteration
+  // order (kept in lockstep with src/js/trove/make-standalone.js)
+  Object.keys(filesToFetch).sort().forEach(function (f) {
     let filename: string;
     if (filesToFetch[f].indexOf("$PYRET") !== -1) {
       filename = filesToFetch[f].replace("$PYRET", thisPyretDir);

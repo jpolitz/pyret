@@ -625,7 +625,7 @@ export function makeStandalone(
       return new J.JField(w.locator.uri(),
         new J.JObj(CL.map_list<string, J.JFieldT>((k) =>
           new J.JField(k, new J.JStr(deps.get(k)!.uri())),
-          [...deps.keys()])));
+          [...deps.keys()].sort())));
     }, wl));
 
     const toLoad = new J.JList(false, CL.map_list<ToCompile, J.JExprT>((w) =>

@@ -277,7 +277,7 @@ export function weaveContracts(contracts: Contract[], revBinds: any[]): any[] {
       ans = [bind, ...ans];
     }
   }
-  for (const cName of [...contractsSd.keys()]) {
+  for (const cName of [...contractsSd.keys()].sort()) {
     const c = mapGetValue(contractsSd, cName);
     errors = [new CE.ContractUnused(c.l, cName), ...errors];
   }
@@ -1044,7 +1044,7 @@ export function resolveNames(p: A.Program, thismoduleUri: string, initialEnv: C.
       if (A.isSStar(nameSpec)) {
         const l = nameSpec.l;
         const hidings = nameSpec.hidden;
-        const allNames = [...dict.keys()];
+        const allNames = [...dict.keys()].sort();
         const importedNames = starNames(l, allNames, hidings);
         let env = whichEnv;
         for (const n of importedNames) {
@@ -1082,7 +1082,7 @@ export function resolveNames(p: A.Program, thismoduleUri: string, initialEnv: C.
       if (A.isSStar(nameSpec)) {
         // NOTE(joe): s-star on data-spec never has hidings, they are on the include-data-spec
         const l = nameSpec.l;
-        const datatypeNames = [...modInfo.dataDefinitions.keys()];
+        const datatypeNames = [...modInfo.dataDefinitions.keys()].sort();
         let curEnvs = envs;
         for (const dname of datatypeNames) {
           curEnvs = addDataSpec(curEnvs, new A.SModuleRef(l, [new A.SName(l, dname)], undefined), hidings);
@@ -1141,7 +1141,7 @@ export function resolveNames(p: A.Program, thismoduleUri: string, initialEnv: C.
         sharedDataHidings.set(h.toname(), true);
       }
       const [impEDts, impTeDts] = addDataSpec([impE, impTe], spec.nameSpec, hidings);
-      for (const extraneousHiding of [...sharedDataHidings.keys()]) {
+      for (const extraneousHiding of [...sharedDataHidings.keys()].sort()) {
         nameErrors = [new CE.WfErrSplit("The name " + extraneousHiding + " is listed as hidden but was not included.", [l]), ...nameErrors];
       }
       return [impEDts, impTeDts, impMe, impImps];
@@ -1252,7 +1252,7 @@ export function resolveNames(p: A.Program, thismoduleUri: string, initialEnv: C.
         ```
       */
 
-      const nonGlobals = [...this.env.keys()].filter((k) => {
+      const nonGlobals = [...this.env.keys()].sort().filter((k) => {
         const vb = mapGetValue(this.env, k);
         return vb.origin.newDefinition;
       });
@@ -1270,7 +1270,7 @@ export function resolveNames(p: A.Program, thismoduleUri: string, initialEnv: C.
         }
       });
 
-      const nonGlobalTypes = [...this.typeEnv.keys()].filter((k) => {
+      const nonGlobalTypes = [...this.typeEnv.keys()].sort().filter((k) => {
         const tb = mapGetValue(this.typeEnv, k);
         return tb.origin.newDefinition;
       });
@@ -1279,7 +1279,7 @@ export function resolveNames(p: A.Program, thismoduleUri: string, initialEnv: C.
         return new A.SDefinedType(key, new A.AName(l, atom));
       });
 
-      const nonGlobalModules = [...this.moduleEnv.keys()].filter((k) => {
+      const nonGlobalModules = [...this.moduleEnv.keys()].sort().filter((k) => {
         const mb = mapGetValue(this.moduleEnv, k);
         return mb.origin.newDefinition;
       });
@@ -1473,13 +1473,13 @@ export function resolveNames(p: A.Program, thismoduleUri: string, initialEnv: C.
           const l = spec.l;
           const remoteReferenceUri = maybeUriForPath(prePath, initialEnv, finalVisitor!.moduleEnv);
           if (remoteReferenceUri === undefined) {
-            for (const k of [...datatypes.keys()]) {
+            for (const k of [...datatypes.keys()].sort()) {
               const dataExpr = mapGetValue(datatypes, k) as A.SDataExpr;
               expandDataSpec(valEnv, typeEnv, new A.SModuleRef(l, [new A.SName(l, dataExpr.name)], undefined), prePath, hidden, hiddenTodo);
             }
           } else {
             const datatypsFromModule = initialEnv.providesByUriValue(remoteReferenceUri).dataDefinitions;
-            for (const k of [...datatypsFromModule.keys()]) {
+            for (const k of [...datatypsFromModule.keys()].sort()) {
               const de = mapGetValue(datatypsFromModule, k);
               let dataName: string;
               if (C.isDAlias(de)) {
@@ -1578,7 +1578,7 @@ export function resolveNames(p: A.Program, thismoduleUri: string, initialEnv: C.
             hiddenTodo.set(h.toname(), (h as A.SName).l);
           }
           expandDataSpec(finalVisitor!.env, finalVisitor!.typeEnv, provideSpec.nameSpec, path, hidden, hiddenTodo);
-          for (const key of [...hiddenTodo.keys()]) {
+          for (const key of [...hiddenTodo.keys()].sort()) {
             const hl = hiddenTodo.get(key);
             if (hl !== undefined) {
               nameErrors = [new CE.WfErrSplit("The name " + key + " is listed as hidden but was not provided.", [hl]), ...nameErrors];
@@ -1608,13 +1608,13 @@ export function resolveNames(p: A.Program, thismoduleUri: string, initialEnv: C.
         providedDatatypes.set(k, [dt.l, undefined, dt.namet]);
       }
 
-      const finalValProvides = [...providedValues.keys()].map((k) =>
+      const finalValProvides = [...providedValues.keys()].sort().map((k) =>
         makeProvideSpec(mapGetValue(providedValues, k), k, (ns) => new A.SProvideName(l, ns)));
-      const finalTypeProvides = [...providedTypes.keys()].map((k) =>
+      const finalTypeProvides = [...providedTypes.keys()].sort().map((k) =>
         makeProvideSpec(mapGetValue(providedTypes, k), k, (ns) => new A.SProvideType(l, ns)));
-      const finalModuleProvides = [...providedModules.keys()].map((k) =>
+      const finalModuleProvides = [...providedModules.keys()].sort().map((k) =>
         makeProvideSpec(mapGetValue(providedModules, k), k, (ns) => new A.SProvideModule(l, ns)));
-      const finalDatatypeProvides = [...providedDatatypes.keys()].map((k) =>
+      const finalDatatypeProvides = [...providedDatatypes.keys()].sort().map((k) =>
         makeProvideSpec(mapGetValue(providedDatatypes, k), k, (ns) => new A.SProvideData(l, ns, [])));
 
       const oneTrueProvide = [new A.SProvideBlock(l, [],
