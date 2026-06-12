@@ -414,6 +414,35 @@ $(CPOGZ): $(CPOMAIN)
 	npx uglifyjs --compress -o $(CPOMAIN).min -- $(CPOMAIN)
 	gzip -c -f $(CPOMAIN).min > $(CPOGZ)
 
+# --- Promise/async backend variant (additive; the cont path above is untouched) ---
+# Builds cpo-main.arr with the async backend into a SEPARATELY-named jarr in the
+# SAME build/web/js dir, using a backend-keyed compiled cache (compiled-promise/,
+# never crossed with cont's compiled/) and the async require-config
+# (cpo-config-async.json -> runtime-async.js). The "promise server" is just the
+# cont server booted with PYRET pointing at cpo-main-promise.jarr on a different
+# port, so both backends run side by side off the shared build/web static assets.
+CPOMAIN_PROMISE=build/web/js/cpo-main-promise.jarr
+
+.PHONY: web-promise
+web-promise: $(CPOMAIN_PROMISE)
+
+$(CPOMAIN_PROMISE): $(BUNDLED_DEPS) $(TROVE_JS) $(TROVE_ARR) $(WEBJS) src/web/js/*.js src/web/arr/*.arr cpo-standalone.js cpo-config-async.json src/web/arr/cpo-main.arr $(PHASEA)
+	mkdir -p compiled-promise/;
+	node pyret/build/phaseA/pyret.jarr \
+    --builtin-js-dir src/web/js/trove/ \
+    --builtin-js-dir pyret/src/js/trove/ \
+    -allow-builtin-overrides \
+    --builtin-arr-dir src/web/arr/trove/ \
+    --builtin-arr-dir pyret/src/arr/trove/ \
+    --require-config cpo-config-async.json \
+    --build-runnable src/web/arr/cpo-main.arr \
+    --standalone-file cpo-standalone.js \
+    --compiled-dir ./compiled-promise \
+    --deps-file $(BUNDLED_DEPS) \
+    --stack-backend promise \
+    --outfile $(CPOMAIN_PROMISE) -no-check-mode
+
 clean:
 	rm -rf build/
 	rm -rf compiled/
+	rm -rf compiled-promise/

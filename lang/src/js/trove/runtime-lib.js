@@ -3,7 +3,8 @@
   nativeRequires: ["pyret-base/js/runtime"],
   provides: {
     values: {
-      "make-runtime": "tany"
+      "make-runtime": "tany",
+      "compiled-stack-backend": "tany"
     },
     types: {
       "Runtime": "tany"
@@ -29,7 +30,10 @@
       }));
     }
     var values = {
-      "make-runtime": runtime.makeFunction(makeRuntime, "make-runtime")
+      "make-runtime": runtime.makeFunction(makeRuntime, "make-runtime"),
+      // Which control-flow backend the linked runtime implements ("cont" | "promise").
+      // Lets compile-structs default the compiler to its own backend and resolve `auto`.
+      "compiled-stack-backend": runtime.makeString(runtimeLib.STACK_BACKEND || "cont")
     };
     var types = {
       Runtime: annRuntime

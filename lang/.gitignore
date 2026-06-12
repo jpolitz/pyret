@@ -35,6 +35,10 @@ build/docs
 build/phaseA
 build/phaseB
 build/phaseC
+build/phaseB-promise
+build/phaseC-promise
+build/phaseD-promise
+build/phaseE-promise
 build/phase1
 build/phase2
 build/phase3
@@ -68,6 +72,9 @@ tests/pyret/standalone/importer.jarr
 *.arr.js
 
 compiled/
+compiled-promise/
+tests/compiled-promise/
+*.p.jarr
 
 .pyret-parley.*.pid
 .pyret-parley.*.lock

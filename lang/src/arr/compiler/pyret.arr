@@ -91,6 +91,8 @@ fun main(args :: List<String>) -> Number block:
     C.flag(C.once, "Ignore all annotations in the runtime, treating them as if they were blank."),
     "url-file-mode",
     C.next-val-default(C.Str, "all-remote", none, C.once, "How to handle url-file imports (all-remote, all-local, or local-if-present)"),
+    "stack-backend",
+    C.next-val-default(C.Str, "auto", none, C.once, "Control-flow backend to compile with (promise, cont, or auto -> whatever this compiler was built with)"),
   ]
 
   params-parsed = C.parse-args(options, args)
@@ -143,6 +145,13 @@ fun main(args :: List<String>) -> Number block:
         | url-file-mode-str == "local-if-present" then: CS.local-if-present
         | otherwise: raise("Unknown url-file-mode: " + url-file-mode-str)
       end
+      stack-backend-str = r.get-value("stack-backend")
+      stack-backend = ask:
+        | stack-backend-str == "promise" then: CS.promise
+        | stack-backend-str == "cont" then: CS.cont
+        | stack-backend-str == "auto" then: CS.compiled-stack-backend
+        | otherwise: raise("Unknown stack-backend: " + stack-backend-str)
+      end
       if r.has-key("checks") and r.has-key("no-check-mode") and not(r.get-value("checks") == "none") block:
         print-error("Can't use --checks " + r.get-value("checks") + " with -no-check-mode\n")
         failure-code
@@ -159,6 +168,7 @@ fun main(args :: List<String>) -> Number block:
         result = CLI.run(r.get-value("run"), CS.default-compile-options.{
             standalone-file: standalone-file,
             display-progress: display-progress,
+            stack-backend: stack-backend,
             checks: checks
           }, run-args)
         _ = print(result.message + "\n")
@@ -188,6 +198,7 @@ fun main(args :: List<String>) -> Number block:
             collect-times: r.has-key("collect-times") and r.get-value("collect-times"),
             ignore-unbound: false,
             proper-tail-calls: tail-calls,
+            stack-backend: stack-backend,
             compiled-cache: compiled-dir,
             compiled-read-only: r.get("compiled-read-only-dir").or-else(empty),
             display-progress: display-progress,
@@ -216,6 +227,7 @@ fun main(args :: List<String>) -> Number block:
             collect-all: false,
             ignore-unbound: false,
             proper-tail-calls: tail-calls,
+            stack-backend: stack-backend,
             compile-module: false,
             display-progress: display-progress
           })

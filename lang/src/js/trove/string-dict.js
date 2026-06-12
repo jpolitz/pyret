@@ -714,6 +714,23 @@
     }
 
     function eqHelp(self, other, selfKeys, hasKey, getValue, recEq) {
+      // Async/promise backend: recEq.app returns a Promise (it may run a user
+      // _equals), so iterate with await instead of the cont trampoline below.
+      if (runtime.stackBackend === "promise") {
+        return (async function() {
+          var curEq = runtime.ffi.equal;
+          for (var i = 0; i < selfKeys.length; i++) {
+            if (!(await hasKey.full_meth(other, selfKeys[i]))) {
+              return runtime.ffi.notEqual.app("", self, other);
+            }
+            var sv = await getValue.full_meth(self, selfKeys[i]);
+            var ov = await getValue.full_meth(other, selfKeys[i]);
+            curEq = runtime.combineEquality(curEq, await recEq.app(sv, ov));
+            if (runtime.ffi.isNotEqual(curEq)) { return curEq; }
+          }
+          return curEq;
+        })();
+      }
       if (runtime.isActivationRecord(self)) {
         var $ar = sekf;
         $step = $ar.step;

@@ -1,11 +1,13 @@
 node_modules
 .env
+.env.promise
 src/web/teachpacks
 build/
 *.swp
 **/.tern-port
 test/jasmine
 compiled/
+compiled-promise/
 program-deps.js
 program-require.js
 pyret

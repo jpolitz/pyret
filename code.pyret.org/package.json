@@ -80,7 +80,11 @@
     "build": "heroku local:run make web-local",
     "heroku-postbuild": "bash src/scripts/fetch-anchor.sh",
     "mocha": "heroku local:run mocha",
-    "start": "heroku local:run supervisor --poll-interval 700 --watch src/run.js,src/server.js src/run.js"
+    "mocha-cont": "node -r dotenv/config test-util/with-cpo-server.js cont",
+    "mocha-promise": "node -r dotenv/config test-util/with-cpo-server.js promise",
+    "start": "heroku local:run supervisor --poll-interval 700 --watch src/run.js,src/server.js src/run.js",
+    "start-cont": "heroku local:run supervisor --poll-interval 700 --watch src/run.js,src/server.js src/run.js",
+    "start-promise": "[ -f .env.promise ] || cp .env.promise.example .env.promise; make web-promise && heroku local:run -e .env,.env.promise supervisor --poll-interval 700 --watch src/run.js,src/server.js src/run.js"
   },
   "repository": {
     "type": "git",
