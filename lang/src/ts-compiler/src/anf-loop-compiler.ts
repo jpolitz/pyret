@@ -15,21 +15,12 @@
   - `js-ids`/`effective-ids` are module-level mutable caches in the Pyret
     source (they persist across compile-module calls within one process,
     while `js-names` IS reset per module); mirrored exactly here.
-  - Pyret string-dict KEY-ORDER caveats (Pyret immutable string-dicts
-    iterate in hash-trie order, not insertion order; this port iterates
-    Maps in insertion order). Sites where emitted code depends on key
-    iteration order, and therefore may not be byte-identical:
-      1. clMapSd over Provides fields in compileProvides /
-         compileProvidedData / compileProvidedType / compileTypeVariant
-         (field order inside the serialized "provides" object literal).
-      2. copyMutableDict in compileFunBody: Pyret's freeze().unfreeze()
-         re-orders `vars` into hash-trie order; this port keeps insertion
-         order (affects the order of saved vars in makeActivationRecord /
-         restore code).
-      3. compileModule: freevars.unfreeze() + map-keys-now gives free-ids
-         in hash-trie order in Pyret; this port uses the freevars Map's
-         insertion order (affects the order of the global/module-field
-         `var` bindings in the module preamble).
+  - Key-ORDER canonicalization: every site where emitted code depends on
+    dict/set iteration order sorts keys first, matching sorts added to the
+    Pyret compiler (anf-loop-compiler.arr clMapSd / compileFunBody vars /
+    compileModule free-ids; resolve-scope.arr defined-* and final
+    provides). Output is byte-identical between the two compilers; keep
+    the sorts in lockstep.
 */
 
 import { sha256 } from './sha256';
@@ -69,11 +60,10 @@ export function getBind(o: any): any { return o.bind; }
 export function oGetField(o: any): any { return o.field; }
 
 export function clMapSd<T, U>(f: (key: string) => U, sd: Map<string, T>): CList<U> {
-  // NOTE(ordering): Pyret folds over string-dict keys in hash-trie order;
-  // here Map insertion order is used. See file header, site 1.
+  // Sorted key order, in lockstep with cl-map-sd in anf-loop-compiler.arr
   let acc: CList<U> = clEmpty;
-  for (const key of sd.keys()) {
-    acc = clCons(f(key), acc);
+  for (const key of [...sd.keys()].sort()) {
+    acc = clSnoc(acc, f(key));
   }
   return acc;
 }
@@ -800,7 +790,8 @@ export function compileFunBody(
   for (const d of mainBodyCasesAndDeadVars.discardableVars.keys()) {
     allNeededVars.delete(d);
   }
-  const vars: A.Name[] = [...allNeededVars.values()];
+  const vars: A.Name[] = [...allNeededVars.keys()].sort()
+    .map((k) => mapGetValue(allNeededVars, k));
 
   const numVars = vars.length;
 
@@ -2659,7 +2650,8 @@ export function compileModule(
     }
   }
 
-  const freeIds = [...freevars.values()];
+  const freeIds = [...freevars.keys()].sort()
+    .map((k) => mapGetValue(freevars, k));
   const moduleAndGlobalBinds = partition(A.isSAtom, freeIds);
   const globalBinds = CL.map_list((n: A.Name) => {
     let maybeOrigin: CS.BindOrigin | undefined;

@@ -572,7 +572,7 @@ export function desugarExpr(expr: A.Expr): A.Expr {
       void nonInitFields;
       const fieldNames = C.reactorOptionalFields;
       const optionFields: A.Member[] = [];
-      for (const f of fieldNames.keys()) {
+      for (const f of [...fieldNames.keys()].sort()) {
         if (fieldsByName.has(f)) {
           const thisField = fieldsByName.get(f)!;
           const thisFieldL = thisField.l;

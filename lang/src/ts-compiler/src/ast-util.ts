@@ -1568,7 +1568,7 @@ export function canonicalizeValueExport(ve: CS.ValueExport, uri: URI, tn: NameCh
 }
 
 export function findMod(compileEnv: CS.CompileEnvironment, uri: URI): string | undefined {
-  for (const depkey of compileEnv.myModules.keys()) {
+  for (const depkey of [...compileEnv.myModules.keys()].sort()) {
     const otherUri = mapGetValue(compileEnv.myModules, depkey);
     if (otherUri === uri) { return depkey; }
   }
