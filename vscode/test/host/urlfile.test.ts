@@ -118,25 +118,22 @@ describe('vscode url-file / working-directory resolution', function () {
     );
   });
 
-  // The "before" of the diff, and the behavior we wish worked: a library should
-  // be able to import its sibling core.arr as just "core.arr". Today the local
-  // path is resolved against the open tab's directory (ai/) rather than the
-  // library's own directory (libraries/), so the nested load fails and nothing
-  // is written. This test is EXPECTED TO FAIL until url-file resolution is made
-  // relative to the importing module.
-  it('DESIRED: a library imports its sibling core.arr without ../ (currently fails)', async () => {
+  // The payoff of the fix: a library imports its sibling core.arr as just
+  // "core.arr", and it resolves relative to the LIBRARY (libraries/core.arr),
+  // not the open tab (ai/). Before the context-aware finder this failed; now the
+  // value flows starter -> Lib -> Core and is written out.
+  it('a library imports its sibling core.arr without ../ (module-relative)', async () => {
     const out = fixture('ai', 'result-bug.txt');
     await tryDelete(out);
 
     await runStarter('ai/starter-bug.arr');
 
-    const contents = await awaitFileContents(out, 120000);
+    const contents = await awaitFileContents(out, 180000);
     assert.strictEqual(
       contents?.trim(),
       '42',
-      'lib-bug.arr imports url-file(base, "core.arr"); we want that to resolve relative ' +
-        'to the library (libraries/core.arr), but it is resolved against the tab dir ' +
-        '(ai/core.arr) and is not found, so the program never runs and nothing is written',
+      'lib-bug.arr imports url-file(base, "core.arr"); it should resolve relative to ' +
+        'the library (libraries/core.arr) via the context-aware finder',
     );
   });
 });

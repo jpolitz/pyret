@@ -150,17 +150,22 @@ export function makePyretPane(
   document: vscode.TextDocument,
   type: PyretPaneType
 ): PyretPane {
+    // Single source of truth for path resolution: every fs path that arrives
+    // over the RPC is resolved against the open document's directory with
+    // vscode-uri, so imports (`import url-file(...)`) and runtime file ops
+    // (read-file, image-file, ...) resolve a given path identically. The pure
+    // lexical helpers (join/dirname/...) use the bundled posix `path`, which
+    // matches vscode-uri's posix semantics on every platform.
+    const docDir = () => Utils.dirname(document.uri);
+    const resolveAgainstDoc = (p: string) => Utils.resolvePath(docDir(), p);
     const knownModules = {
       'fs': {
         'writeFile': async (p: string, buffer : Buffer) => {
-          const pathUri = Utils.resolvePath(Utils.dirname(document.uri), p);
-          await vscode.workspace.fs.writeFile(pathUri, buffer);
+          await vscode.workspace.fs.writeFile(resolveAgainstDoc(p), buffer);
           return;
         },
         'readFile': async (p: string, opts : ReadFileOpts) => {
-          const pathUri = Utils.resolvePath(Utils.dirname(document.uri), p);
-          console.log("ReadFile: ", pathUri, p, document.uri);
-          const contents = await vscode.workspace.fs.readFile(pathUri);
+          const contents = await vscode.workspace.fs.readFile(resolveAgainstDoc(p));
           if(opts && (opts === 'utf8' || opts.encoding === 'utf8')) {
             return Buffer.from(contents).toString('utf8');
           }
@@ -169,8 +174,7 @@ export function makePyretPane(
           }
         },
         'stat': async (p: string) => {
-          const pathUri = vscode.Uri.joinPath(Utils.dirname(document.uri), p);
-          const stat = await vscode.workspace.fs.stat(pathUri);
+          const stat = await vscode.workspace.fs.stat(resolveAgainstDoc(p));
           return {
             mtime: stat.mtime,
             ctime: stat.ctime,
@@ -179,23 +183,22 @@ export function makePyretPane(
           };
         },
         'createDir': async (p: string) => {
-          const pathUri = Utils.resolvePath(Utils.dirname(document.uri), p);
-          await vscode.workspace.fs.createDirectory(pathUri);
+          await vscode.workspace.fs.createDirectory(resolveAgainstDoc(p));
           return;
         }
       },
       'path': {
         'join': path.join,
-        'resolve': (p : string) => {
-          const docUri = Utils.dirname(document.uri);
-          const answer = path.resolve(docUri.fsPath, p);
-          return answer;
-        },
+        // Resolve against the document dir with the SAME mechanism as the fs
+        // methods above (vscode-uri), returning the absolute path string.
+        'resolve': (p : string) => resolveAgainstDoc(p).path,
         'basename': (p: string) => path.basename(p),
         'dirname': (p: string) => path.dirname(p),
         'extname': (p: string) => path.extname(p),
         'relative': (from: string, to: string) => path.relative(knownModules.path.resolve(from), knownModules.path.resolve(to)),
-        'is-absolute': (p: string) => path.isAbsolute(p),
+        // camelCase to match the method name filesystem-internal.js sends over
+        // the RPC (sendRpc('path', 'isAbsolute', ...)).
+        'isAbsolute': (p: string) => path.isAbsolute(p),
       },
       'process': {
         'cwd': () => process.cwd()
