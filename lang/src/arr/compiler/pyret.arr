@@ -73,6 +73,8 @@ fun main(args :: List<String>) -> Number block:
     C.flag(C.once, "Run without checking for shadowed variables"),
     "improper-tail-calls",
     C.flag(C.once, "Run without proper tail calls"),
+    "async-backend",
+    C.flag(C.once, "Use the async/await codegen backend"),
     "collect-times",
     C.flag(C.once, "Collect timing information about compilation"),
     "type-check",
@@ -115,6 +117,7 @@ fun main(args :: List<String>) -> Number block:
       inline-case-body-limit = r.get-value("inline-case-body-limit")
       type-check = r.has-key("type-check")
       tail-calls = not(r.has-key("improper-tail-calls"))
+      async-backend = r.has-key("async-backend")
       compiled-dir = r.get-value("compiled-dir")
       standalone-file = r.get-value("standalone-file")
       add-profiling = r.has-key("profile")
@@ -188,6 +191,7 @@ fun main(args :: List<String>) -> Number block:
             collect-times: r.has-key("collect-times") and r.get-value("collect-times"),
             ignore-unbound: false,
             proper-tail-calls: tail-calls,
+            async-backend: async-backend,
             compiled-cache: compiled-dir,
             compiled-read-only: r.get("compiled-read-only-dir").or-else(empty),
             display-progress: display-progress,
@@ -216,6 +220,7 @@ fun main(args :: List<String>) -> Number block:
             collect-all: false,
             ignore-unbound: false,
             proper-tail-calls: tail-calls,
+            async-backend: async-backend,
             compile-module: false,
             display-progress: display-progress
           })

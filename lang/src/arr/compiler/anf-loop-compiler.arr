@@ -460,6 +460,10 @@ fun local-bound-vars(kase :: J.JCase, vars) block:
       | j-fun(_, _, _, _) =>
         # the body of a function contributes no *locally* bound vars
         nothing
+      | j-async-fun(_, _, _, _) =>
+        # the body of an async function contributes no *locally* bound vars
+        nothing
+      | j-await(exp) => e(exp)
       | j-new(func, args) =>
         e(func)
         args.each(e)
@@ -748,10 +752,14 @@ fun compile-fun-body(l :: Loc, step :: A.Name, fun-name :: A.Name, compiler, arg
       j-true
     end
 
+  is-async-backend = compiler.options.async-backend
+
 
   # If we exit the while loop, we must have used "break" because of a continuation
   after-loop =
-    if is-flat:
+    if is-flat or is-async-backend:
+      # In async-backend mode the GAS path never produces a Cont marker, so we
+      # never enter the activation-record-attach branch. Just return the value.
       [clist: j-return(j-id(local-compiler.cur-ans))]
     else:
       [clist:
@@ -763,7 +771,15 @@ fun compile-fun-body(l :: Loc, step :: A.Name, fun-name :: A.Name, compiler, arg
           j-return(j-id(local-compiler.cur-ans))]
     end
 
-  check-cont = j-unop(rt-method("isContinuation", [clist: j-id(local-compiler.cur-ans)]), j-not)
+  check-cont =
+    if is-async-backend:
+      # In async-backend mode the while-loop is purely a structured-goto
+      # dispatch; cur-ans is never a continuation marker, so loop forever
+      # (every case-body ends with break or return).
+      j-true
+    else:
+      j-unop(rt-method("isContinuation", [clist: j-id(local-compiler.cur-ans)]), j-not)
+    end
   gas-check = j-if1(
         j-binop(j-binop(j-unop(rt-field("GAS"), j-decr), J.j-leq, j-num(0)),
                 J.j-or,
@@ -775,6 +791,8 @@ fun compile-fun-body(l :: Loc, step :: A.Name, fun-name :: A.Name, compiler, arg
 
   gas-check-or-comment = if is-flat:
     cl-sing(j-expr(j-raw-code("// callee optimization")))
+  else if is-async-backend:
+    cl-sing(j-expr(j-raw-code("// async-backend: no gas check needed")))
   else:
     cl-sing(gas-check)
   end
@@ -825,8 +843,9 @@ fun compile-anns(visitor, step, binds :: List<N.ABind>, entry-label):
             [clist:
               j-expr(j-assign(step, new-label)),
               j-expr(j-assign(visitor.cur-apploc, visitor.get-loc(b.ann.l))),
-              j-expr(rt-method("_checkAnn",
-                  [clist: visitor.get-loc(b.ann.l), compiled-ann.exp, j-id(js-id-of(b.id))])),
+              j-expr(maybe-await(visitor.options.async-backend,
+                rt-method("_checkAnn",
+                  [clist: visitor.get-loc(b.ann.l), compiled-ann.exp, j-id(js-id-of(b.id))]))),
               j-break])))
       cur-target := new-label
       cl-snoc(acc, new-case)
@@ -839,8 +858,9 @@ fun compile-anns(visitor, step, binds :: List<N.ABind>, entry-label):
             [clist:
               j-expr(j-assign(step, new-label)),
               j-expr(j-assign(visitor.cur-apploc, visitor.get-loc(b.ann.l))),
-              j-var(ann-result, rt-method("_checkAnn",
-                  [clist: visitor.get-loc(b.ann.l), compiled-ann.exp, j-id(js-id-of(b.id))])),
+              j-var(ann-result, maybe-await(visitor.options.async-backend,
+                rt-method("_checkAnn",
+                  [clist: visitor.get-loc(b.ann.l), compiled-ann.exp, j-id(js-id-of(b.id))]))),
               j-if1(rt-method("isContinuation", [clist: j-id(ann-result)]),
                 j-block([clist:
                     j-expr(j-assign(visitor.cur-ans, j-id(ann-result)))])),
@@ -902,8 +922,9 @@ fun compile-annotated-let(visitor, b :: BindType, compiled-e :: DAG.CaseResults%
         cl-append(_, [clist:
             j-expr(j-assign(step, after-ann)),
             j-expr(j-assign(visitor.cur-apploc, visitor.get-loc(b.ann.l))),
-            j-var(ann-result, rt-method("_checkAnn",
-                [clist: visitor.get-loc(b.ann.l), compiled-ann.exp, j-id(js-id-of(b.id))])),
+            j-var(ann-result, maybe-await(visitor.options.async-backend,
+              rt-method("_checkAnn",
+                [clist: visitor.get-loc(b.ann.l), compiled-ann.exp, j-id(js-id-of(b.id))]))),
             j-if1(rt-method("isContinuation", [clist: j-id(ann-result)]),
               j-block([clist:
                   j-expr(j-assign(visitor.cur-ans, j-id(ann-result)))])),
@@ -943,6 +964,7 @@ end
 fun compile-split-method-app(l, compiler, opt-dest, obj, methname, args, opt-body):
   ans = compiler.cur-ans
   step = compiler.cur-step
+  is-async = compiler.options.async-backend
   compiled-obj = obj.visit(compiler).exp
   compiled-args = CL.map_list(lam(a): a.visit(compiler).exp end, args)
   # num-args = args.length()
@@ -965,7 +987,7 @@ fun compile-split-method-app(l, compiler, opt-dest, obj, methname, args, opt-bod
     {new-cases; after-app-label} = get-new-cases(compiler, opt-dest, opt-body, ans)
     c-block(j-block([clist:
       j-expr(j-assign(step, after-app-label)),
-      j-expr(j-assign(ans, call)),
+      j-expr(j-assign(ans, maybe-await(is-async, call))),
       j-break
     ]), new-cases)
   else:
@@ -986,12 +1008,12 @@ fun compile-split-method-app(l, compiler, opt-dest, obj, methname, args, opt-bod
           #         link(compiler.get-loc(l), link(colon-field-id, link(obj-id, compiled-args))))))
           # else:
             j-if(check-method, j-block([clist:
-                  j-expr(j-assign(ans, j-app(j-dot(colon-field-id, "full_meth"),
-                        cl-cons(obj-id, compiled-args))))
+                  j-expr(j-assign(ans, maybe-await(is-async, j-app(j-dot(colon-field-id, "full_meth"),
+                        cl-cons(obj-id, compiled-args)))))
                 ]),
               j-block([clist:
                   check-fun(l, compiler.get-loc(l), colon-field-id),
-                  j-expr(wrap-with-srcnode(l, j-assign(ans, app(l, colon-field-id, compiled-args))))
+                  j-expr(wrap-with-srcnode(l, j-assign(ans, maybe-await(is-async, app(l, colon-field-id, compiled-args)))))
                 ])),
             # If the answer is a cont, jump to the end of the current function
             # rather than continuing normally
@@ -1058,9 +1080,16 @@ fun get-assignments(lst :: List<J.JExpr>, limit :: Number) -> {List<J.JStmt>; Li
   end
 end
 
+fun maybe-await(is-async, e :: J.JExpr) -> J.JExpr:
+  if is-async: J.j-await(e)
+  else: e
+  end
+end
+
 fun compile-split-app(l, compiler, opt-dest, f, args, opt-body, app-info, is-definitely-fn):
   ans = compiler.cur-ans
   step = compiler.cur-step
+  is-async = compiler.options.async-backend
   compiled-f = f.visit(compiler).exp
   compiled-args = CL.map_list(lam(a): a.visit(compiler).exp end, args)
   {new-cases; after-app-label} = get-new-cases(compiler, opt-dest, opt-body, ans)
@@ -1072,6 +1101,17 @@ fun compile-split-app(l, compiler, opt-dest, f, args, opt-body, app-info, is-def
      # if it's an arity mismatch, use non-TCO to handle the error
     args-list = map2(j-assign, compiler.args, compiled-args.to-list())
     {pre; post} = get-assignments(args-list, args-list.length())
+    rungas-stmt =
+      if is-async:
+        # In async-backend mode no Cont marker is produced; awaits in inner
+        # calls already yield to the event loop as needed.
+        j-expr(j-raw-code("// async-backend: skip TCO RUNGAS check"))
+      else:
+        j-if1(j-binop(j-unop(rt-field("RUNGAS"), j-decr), J.j-leq, j-num(0)),
+          j-block([clist:
+            j-expr(j-dot-assign(RUNTIME, "EXN_STACKHEIGHT", j-num(0))),
+            j-expr(j-assign(ans, rt-method("makeCont", cl-empty)))]))
+      end
     c-block(
       j-block(
         [clist:
@@ -1079,10 +1119,7 @@ fun compile-split-app(l, compiler, opt-dest, f, args, opt-body, app-info, is-def
           # the resumer goes to the right step
           j-expr(j-assign(step, j-num(0))),
           j-expr(j-unop(j-id(compiler.elided-frames), j-incr)),
-          j-if1(j-binop(j-unop(rt-field("RUNGAS"), j-decr), J.j-leq, j-num(0)),
-            j-block([clist:
-              j-expr(j-dot-assign(RUNTIME, "EXN_STACKHEIGHT", j-num(0))),
-              j-expr(j-assign(ans, rt-method("makeCont", cl-empty)))]))] +
+          rungas-stmt] +
         CL.from_list(pre + post) +
         # CL.map_list2(
         #   lam(compiled-arg, arg):
@@ -1106,7 +1143,7 @@ fun compile-split-app(l, compiler, opt-dest, f, args, opt-body, app-info, is-def
           cl-sing(j-expr(j-raw-code("// omitting isFunction check")))
         end +
         [clist:
-          j-expr(wrap-with-srcnode(l, j-assign(ans, app(l, compiled-f, compiled-args)))),
+          j-expr(wrap-with-srcnode(l, j-assign(ans, maybe-await(is-async, app(l, compiled-f, compiled-args))))),
           j-break]),
       new-cases)
   end
@@ -1121,13 +1158,14 @@ end
 
 fun compile-flat-app(l, compiler, opt-dest, f, args, opt-body, app-info, is-definitely-fn) block:
   ans = compiler.cur-ans
+  is-async = compiler.options.async-backend
   compiled-f = f.visit(compiler).exp
   compiled-args = CL.map_list(lam(a): a.visit(compiler).exp end, args)
 
   # Generate the code for calling the function
   call-code = [clist:
     j-expr(j-raw-code("// caller optimization")),
-    j-expr(wrap-with-srcnode(l, j-assign(ans, app(l, compiled-f, compiled-args))))
+    j-expr(wrap-with-srcnode(l, j-assign(ans, maybe-await(is-async, app(l, compiled-f, compiled-args)))))
   ]
 
   # Compile the body of the let. We split it into two portions:
@@ -1199,14 +1237,24 @@ fun compile-cases-branch(compiler, compiled-val, branch :: N.ACasesBranch, cases
     compiled-branch-fun =
       compile-fun-body(branch.body.l, step, temp-branch, compiler.{allow-tco: false, options: compiler.options.{should-profile: false}}, branch-args, none, branch.body, true, false, false)
     preamble = cases-preamble(compiler, compiled-val, branch, cases-loc)
-    deref-fields = j-expr(j-assign(compiler.cur-ans, j-method(compiled-val, "$app_fields", [clist: j-id(temp-branch), ref-binds-mask])))
+    branch-fun-id = J.next-j-fun-id()
+    branch-fun-name = make-fun-name(compiler, cases-loc)
+    branch-fun-args = CL.map_list(lam(arg): formal-shadow-name(arg.id) end, branch-args)
+    branch-the-fun =
+      if compiler.options.async-backend:
+        J.j-async-fun(branch-fun-id, branch-fun-name, branch-fun-args, compiled-branch-fun)
+      else:
+        j-fun(branch-fun-id, branch-fun-name, branch-fun-args, compiled-branch-fun)
+      end
+    deref-fields =
+      j-expr(j-assign(compiler.cur-ans,
+          maybe-await(compiler.options.async-backend,
+            j-method(compiled-val, "$app_fields", [clist: j-id(temp-branch), ref-binds-mask]))))
     actual-app =
       [clist:
         j-expr(j-assign(compiler.cur-step, compiler.cur-target)),
         j-expr(j-assign(compiler.cur-apploc, compiler.get-loc(branch.l))),
-        j-var(temp-branch,
-          j-fun(J.next-j-fun-id(), make-fun-name(compiler, cases-loc),
-            CL.map_list(lam(arg): formal-shadow-name(arg.id) end, branch-args), compiled-branch-fun)),
+        j-var(temp-branch, branch-the-fun),
         deref-fields,
         j-break]
 
@@ -1375,13 +1423,20 @@ fun compile-a-lam(compiler, l :: Loc, name :: String, args :: List<N.ABind>, ret
     if len > 0: args
     else: [list: N.a-bind(l, compiler.resumer, A.a-blank)]
     end
+  fun-id = J.next-j-fun-id()
+  fun-name = make-fun-name(compiler, l)
+  fun-args = CL.map_list(lam(arg): formal-shadow-name(arg.id) end, effective-args)
+  fun-body = compile-fun-body(l, new-step, temp, compiler.{allow-tco: true}, effective-args, some(len), body, true, is-flat, false)
+  the-fun =
+    if compiler.options.async-backend:
+      J.j-async-fun(fun-id, fun-name, fun-args, fun-body)
+    else:
+      j-fun(fun-id, fun-name, fun-args, fun-body)
+    end
   c-exp(
     rt-method("makeFunction", [clist: j-id(temp), j-str(name)]),
     [clist:
-      j-var(temp,
-        j-fun(J.next-j-fun-id(), make-fun-name(compiler, l),
-          CL.map_list(lam(arg): formal-shadow-name(arg.id) end, effective-args),
-          compile-fun-body(l, new-step, temp, compiler.{allow-tco: true}, effective-args, some(len), body, true, is-flat, false)))])
+      j-var(temp, the-fun)])
 end
 
 
@@ -1703,12 +1758,17 @@ compiler-visitor = {
     step = fresh-id(compiler-name("step"))
     temp-full = fresh-id(compiler-name("temp_full"))
     len = args.length()
-    full-var =
-      j-var(temp-full,
-        j-fun(J.next-j-fun-id(), make-fun-name(self, l),
-          CL.map_list(lam(a): formal-shadow-name(a.id) end, args),
-          compile-fun-body(l, step, temp-full, self.{allow-tco: true}, args, some(len), body, true, false, true)
-        ))
+    method-fun-id = J.next-j-fun-id()
+    method-fun-name = make-fun-name(self, l)
+    method-fun-args = CL.map_list(lam(a): formal-shadow-name(a.id) end, args)
+    method-fun-body = compile-fun-body(l, step, temp-full, self.{allow-tco: true}, args, some(len), body, true, false, true)
+    method-the-fun =
+      if self.options.async-backend:
+        J.j-async-fun(method-fun-id, method-fun-name, method-fun-args, method-fun-body)
+      else:
+        j-fun(method-fun-id, method-fun-name, method-fun-args, method-fun-body)
+      end
+    full-var = j-var(temp-full, method-the-fun)
     method-expr = if len < 9:
       rt-method(string-append("makeMethod", tostring(len - 1)), [clist: j-id(temp-full), j-str(name)])
     else:
@@ -2302,6 +2362,13 @@ fun compile-module(self, l, prog-provides, imports-in, prog, freevars, provides,
     mod-input-ids-list = mod-input-ids.to-list()
     mod-val-ids = modules.map(get-id)
     moduleVal = const-id("moduleVal")
+    # In async-backend mode the toplevel function is `async`; route the result
+    # through runtime.runAsyncToplevel, which suspends the existing CPS stack
+    # via pauseStack, awaits the async program, then resumes with module_load.
+    kickoff-name =
+      if self.options.async-backend: "runAsyncToplevel"
+      else: "safeCall"
+      end
     j-block(
       for CL.map_list(m from modules):
         j-var(m.id, j-id(m.input-id))
@@ -2311,7 +2378,7 @@ fun compile-module(self, l, prog-provides, imports-in, prog, freevars, provides,
       [clist:
         j-var(body-name, body-fun),
         j-return(rt-method(
-            "safeCall", [clist:
+            kickoff-name, [clist:
               j-id(body-name),
               j-fun(J.next-j-fun-id(),
                 "module_load",
@@ -2393,7 +2460,12 @@ fun compile-module(self, l, prog-provides, imports-in, prog, freevars, provides,
   visited-body = compile-fun-body(l, step, toplevel-name,
     body-compiler, # resumer gets js-id-of'ed in compile-fun-body
     [list: resumer-bind], none, prog, true, false, false)
-  toplevel-fun = j-fun(J.next-j-fun-id(), make-fun-name(body-compiler, l), [clist: formal-shadow-name(resumer)], visited-body)
+  toplevel-fun =
+    if self.options.async-backend:
+      J.j-async-fun(J.next-j-fun-id(), make-fun-name(body-compiler, l), [clist: formal-shadow-name(resumer)], visited-body)
+    else:
+      j-fun(J.next-j-fun-id(), make-fun-name(body-compiler, l), [clist: formal-shadow-name(resumer)], visited-body)
+    end
   define-locations = j-var(LOCS, j-list(true, locations))
   module-body = j-block(
     #                    [clist: j-expr(j-str("use strict"))] +

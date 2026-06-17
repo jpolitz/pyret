@@ -296,29 +296,88 @@ end
 
 type CompiledProgram = {loadables :: List<Loadable>, modules :: SD.MutableStringDict<Loadable>}
 
-fun compile-program-with(worklist :: List<ToCompile>, modules, options) -> CompiledProgram block:
+# Cross-runtime safety: when the host process is running the async-backend
+# runtime, any compiled module that will run in this process must also be
+# async-backend.  If the caller didn't ask for async-backend explicitly, flip
+# the flag so the inner output matches the runtime it'll execute on.  Also
+# switch the disk-cache directory so we don't read sync-compiled cached
+# files (the cache key only hashes the source, not the compile options).
+fun match-runtime-async-backend(options):
+  if R.is-async-backend() and not(options.async-backend):
+    if options.compiled-cache == "compiled":
+      options.{async-backend: true, compiled-cache: "compiled-async"}
+    else:
+      options.{async-backend: true}
+    end
+  else:
+    options
+  end
+end
+
+# Process-lifetime cache of compiled modules, used when the host is the
+# async-backend runtime to memoize the standard-library modules across
+# repeated run-to-result invocations (e.g. test-compile-helper's many
+# inner compiles).  Cache key is uri + a serialized form of the
+# compile-affecting flags so we never serve a module compiled with
+# different options.  Only populated/consulted in the cross-runtime
+# (async-backend) path; in the default path the in-memory cache is the
+# caller-provided `modules` dict, which test-compile-helper resets each
+# call.
+inner-async-cache = SD.make-mutable-string-dict()
+
+fun options-cache-key(options):
+  string-append("async=", tostring(options.async-backend))
+end
+
+fun compile-program-with(worklist :: List<ToCompile>, modules, shadow options) -> CompiledProgram block:
+  shadow options = match-runtime-async-backend(options)
+  use-inner-cache = R.is-async-backend()
+  opt-key = options-cache-key(options)
   cache = modules
   loadables = for map(w from worklist):
     uri = w.locator.uri()
-    if not(cache.has-key-now(uri)) block:
-      provide-map = dict-map(
-          w.dependency-map,
-          lam(_, v): v.uri() end
-      )
-      options.before-compile(w.locator)
-      {loadable :: Loadable; trace :: List} = compile-module(w.locator, provide-map, cache, options)
-      # I feel like here we want to generate two copies of the loadable:
-      # - One local for calling on-compile with and serializing
-      # - One canonicalized for the local cache
-      cache.set-now(uri, loadable)
-      local-loadable = cases(Loadable) loadable:
-        | module-as-string(provides, env, post-env, result) =>
-          module-as-string(AU.localize-provides(provides, env), env, post-env, result)
-      end
-      # allow on-compile to return a new loadable
-      options.on-compile(w.locator, local-loadable, trace)
-    else:
+    # Only the standard library (builtin:// URIs) is safe to memoize
+    # across calls: the source for any given URI is constant.  For
+    # user-code locators (file://, in-memory virtual schemes) two
+    # different test scenarios can reuse the same URI with different
+    # source content, which would cause a stale cache hit.
+    cacheable = is-builtin-module(uri)
+    full-key = uri + "|" + opt-key
+    if cache.has-key-now(uri):
       cache.get-value-now(uri)
+    else if use-inner-cache and cacheable and inner-async-cache.has-key-now(full-key):
+      block:
+        cached-pair = inner-async-cache.get-value-now(full-key)
+        # cached-pair is {canonical; returned} — store canonical (with
+        # non-local provides) in cache for downstream uses that look up
+        # by uri, and return the same value the original compile path
+        # returned (after localize-provides and on-compile).
+        cache.set-now(uri, cached-pair.{0})
+        cached-pair.{1}
+      end
+    else:
+      block:
+        provide-map = dict-map(
+            w.dependency-map,
+            lam(_, v): v.uri() end
+        )
+        options.before-compile(w.locator)
+        {loadable :: Loadable; trace :: List} = compile-module(w.locator, provide-map, cache, options)
+        # I feel like here we want to generate two copies of the loadable:
+        # - One local for calling on-compile with and serializing
+        # - One canonicalized for the local cache
+        cache.set-now(uri, loadable)
+        local-loadable = cases(Loadable) loadable:
+          | module-as-string(provides, env, post-env, result) =>
+            module-as-string(AU.localize-provides(provides, env), env, post-env, result)
+        end
+        # allow on-compile to return a new loadable
+        returned = options.on-compile(w.locator, local-loadable, trace)
+        when use-inner-cache and cacheable:
+          inner-async-cache.set-now(full-key, {loadable; returned})
+        end
+        returned
+      end
     end
   end
   { loadables: loadables, modules: cache }
@@ -516,7 +575,8 @@ fun run-program(ws :: List<ToCompile>, prog :: CompiledProgram, realm :: L.Realm
   end
 end
 
-fun compile-and-run-locator(locator, finder, context, realm, runtime, starter-modules, options) block:
+fun compile-and-run-locator(locator, finder, context, realm, runtime, starter-modules, shadow options) block:
+  shadow options = match-runtime-async-backend(options)
   #print("Make worklist\n")
   wl = compile-worklist(finder, locator, context)
   #print("Compile program\n")

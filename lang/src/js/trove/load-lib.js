@@ -356,11 +356,23 @@
           return otherRuntime.runStandalone(staticModules, realm, depMap, toLoad, postLoadHooks);
         }, function(result) {
           if(!mainReached) {
-            // NOTE(joe): we should only reach here if there was an error earlier
-            // on in the chain of loading that stopped main from running
-            result.exn.pyretStack = stackLib.convertExceptionToPyretStackTrace(result.exn, realm);
+            if (otherRuntime.isFailureResult(result)) {
+              // NOTE(joe): we should only reach here if there was an error earlier
+              // on in the chain of loading that stopped main from running
+              result.exn.pyretStack = stackLib.convertExceptionToPyretStackTrace(result.exn, realm);
 
-            restarter.resume(makeModuleResult(otherRuntime, result, makeRealm(realm), runtime.nothing, program));
+              restarter.resume(makeModuleResult(otherRuntime, result, makeRealm(realm), runtime.nothing, program));
+            } else {
+              // Async-backend cross-runtime case: the run completed
+              // successfully, but the trampoline finished before the
+              // main postLoadHook fired (e.g. the Cont-resumption chain
+              // delivered the runStandalone success object directly
+              // upward).  Treat the run's success result as if main
+              // had returned it.
+              var finalResult = otherRuntime.makeSuccessResult(result.result);
+              finalResult.stats = result.stats;
+              restarter.resume(makeModuleResult(otherRuntime, finalResult, makeRealm(realm), runtime.nothing, program));
+            }
           }
           else {
             var finalResult = otherRuntime.makeSuccessResult(mainResult);

@@ -426,6 +426,35 @@ data JExpr:
       header = PP.group(PP.str("function") + arglist)
       PP.surround(INDENT, 1, header + PP.str(" {"), self.body.tosource(), PP.str("}"))
     end
+  | j-async-fun(id :: String, name :: String, args :: CList<A.Name>, body :: JBlock) with:
+    method label(self): "j-async-fun" end,
+    method print-ugly-source(self, printer) block:
+      printer("async function ")
+      printer(self.name)
+      printer("(")
+      for CL.each_n(n from 0, arg from self.args) block:
+        when n > 0: printer(",") end
+        printer(arg.tosourcestring())
+      end
+      printer(") {\n")
+      self.body.print-ugly-source(printer)
+      printer("}")
+    end,
+    method tosource(self):
+      arglist = PP.nest(INDENT, PP.surround-separate(INDENT, 0, PP.lparen + PP.rparen, PP.lparen, PP.commabreak, PP.rparen, self.args.map-to-list(_.to-compiled-source())))
+      header = PP.group(PP.str("async function") + arglist)
+      PP.surround(INDENT, 1, header + PP.str(" {"), self.body.tosource(), PP.str("}"))
+    end
+  | j-await(exp :: JExpr) with:
+    method label(self): "j-await" end,
+    method print-ugly-source(self, printer) block:
+      printer("(await ")
+      self.exp.print-ugly-source(printer)
+      printer(")")
+    end,
+    method tosource(self):
+      PP.group(PP.str("(await ") + self.exp.tosource() + PP.str(")"))
+    end
   | j-new(func :: JExpr, args :: CList<JExpr>) with:
     method label(self): "j-new" end,
     method print-ugly-source(self, printer) block:
@@ -726,6 +755,8 @@ default-map-visitor = {
   method j-unop(self, exp, op): j-unop(exp.visit(self), op) end,
   method j-binop(self, left, op, right): j-binop(left.visit(self), op, right.visit(self)) end,
   method j-fun(self, id, name, args, body): j-fun(id, name, args, body.visit(self)) end,
+  method j-async-fun(self, id, name, args, body): j-async-fun(id, name, args, body.visit(self)) end,
+  method j-await(self, exp): j-await(exp.visit(self)) end,
   method j-new(self, func, args): j-new(func.visit(self), args.map(_.visit(self))) end,
   method j-app(self, func, args): j-app(func.visit(self), args.map(_.visit(self))) end,
   method j-method(self, obj, meth, args): j-method(obj.visit(self), meth, args.map(_.visit(self))) end,

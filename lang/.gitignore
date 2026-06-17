@@ -72,3 +72,5 @@ compiled/
 .pyret-parley.*.pid
 .pyret-parley.*.lock
 
+compiled-async/
+tests/compiled-async/
