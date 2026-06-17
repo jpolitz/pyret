@@ -166,6 +166,22 @@ endif
                       -bundle-dependencies \
                       --html-file $*.html
 
+# Async-backend mirror of the %.jarr rule. Builds any .arr with
+# -async-backend, the async require-config, and a separate compiled-async/
+# cache so async-compiled .js never gets mixed up with sync-compiled output.
+$(PHASEA)/js/runtime-async.js: src/$(JSBASE)/runtime-async.js
+	cp $< $@
+
+%.async.jarr: $(PHASEA)/pyret.jarr $(PHASEA)/js/runtime-async.js %.arr
+	$(NODE) $(PHASEA)/pyret.jarr --outfile $*.async.jarr \
+                      --build-runnable $*.arr \
+                      --builtin-js-dir src/js/trove/ \
+                      --builtin-arr-dir src/arr/trove/ \
+                      --compiled-dir compiled-async/ \
+                      $(EXTRA_FLAGS) \
+                      -async-backend \
+                      --require-config src/scripts/standalone-configA-async.json
+
 $(PHASEA_ALL_DEPS): | $(PHASEA)
 
 $(PHASEB_ALL_DEPS): | $(PHASEB) phaseA
@@ -258,6 +274,78 @@ tests/pyret/all.jarr: phaseA $(TEST_FILES) $(TYPE_TEST_FILES) $(REG_TEST_FILES) 
 .PHONY : all-pyret-test
 all-pyret-test: tests/pyret/all.jarr parse-test pyret-io-test
 	$(NODE) tests/pyret/all.jarr
+
+# Async-backend mirror of all-pyret-test. Same source files, same checker,
+# same harness -- only the compile flag and require-config differ. Uses a
+# separate cache dir so the sync- and async-compiled .js bytecode for each
+# builtin module never collide.
+TEST_BUILD_ASYNC=$(NODE) $(PHASEA)/pyret.jarr \
+	  --builtin-js-dir src/js/trove/ \
+		--builtin-arr-dir src/arr/trove/ \
+		--require-config src/scripts/standalone-configA-async.json \
+		--compiled-dir tests/compiled-async/ \
+		-async-backend
+
+tests/pyret/all.async.jarr: phaseA $(PHASEA)/js/runtime-async.js $(TEST_FILES) $(TYPE_TEST_FILES) $(REG_TEST_FILES) $(MAIN_TEST_FILES)
+	$(TEST_BUILD_ASYNC) \
+		--build-runnable tests/all.arr \
+    --outfile tests/pyret/all.async.jarr \
+		-check-all
+
+.PHONY : all-pyret-test-async
+all-pyret-test-async: tests/pyret/all.async.jarr
+	$(NODE) tests/pyret/all.async.jarr
+
+# Async-backend bootstrap chain. Mirrors phaseB/phaseC/new-bootstrap but
+# compiles the *compiler itself* with -async-backend, so that the resulting
+# pyret.jarr loads the runtime-async.js runtime. Useful to verify that the
+# async backend is a fixed point under bootstrapping (compiling the compiler
+# with itself produces byte-identical output).
+PHASEB_ASYNC = build/phaseB-async
+PHASEC_ASYNC = build/phaseC-async
+
+$(PHASEB_ASYNC):
+	@$(call MKDIR,$(PHASEB_ASYNC) $(PHASEB_ASYNC)/js $(PHASEB_ASYNC)/compiled)
+
+$(PHASEC_ASYNC):
+	@$(call MKDIR,$(PHASEC_ASYNC) $(PHASEC_ASYNC)/js $(PHASEC_ASYNC)/compiled)
+
+$(PHASEB_ASYNC)/pyret.jarr: phaseA $(PHASEA)/js/runtime-async.js | $(PHASEB_ASYNC)
+	cp -r $(PHASEA)/js/* $(PHASEB_ASYNC)/js/
+	$(NODE) $(PHASEA)/pyret.jarr --outfile $(PHASEB_ASYNC)/pyret.jarr \
+                      --build-runnable src/arr/compiler/pyret.arr \
+                      --builtin-js-dir src/js/trove/ \
+                      --builtin-arr-dir src/arr/trove/ \
+                      --compiled-dir $(PHASEB_ASYNC)/compiled/ \
+                      --deps-file build/phaseA/bundled-node-compile-deps.js \
+                      -no-check-mode $(EF) \
+                      -async-backend \
+                      --require-config src/scripts/standalone-configA-async.json
+
+$(PHASEC_ASYNC)/pyret.jarr: $(PHASEB_ASYNC)/pyret.jarr | $(PHASEC_ASYNC)
+	cp -r $(PHASEA)/js/* $(PHASEC_ASYNC)/js/
+	$(NODE) $(PHASEB_ASYNC)/pyret.jarr --outfile $(PHASEC_ASYNC)/pyret.jarr \
+                      --build-runnable src/arr/compiler/pyret.arr \
+                      --builtin-js-dir src/js/trove/ \
+                      --builtin-arr-dir src/arr/trove/ \
+                      --compiled-dir $(PHASEC_ASYNC)/compiled/ \
+                      --deps-file build/phaseA/bundled-node-compile-deps.js \
+                      -no-check-mode $(EF) \
+                      -async-backend \
+                      --require-config src/scripts/standalone-configA-async.json
+
+.PHONY : phaseB-async phaseC-async no-diff-standalone-async new-bootstrap-async
+phaseB-async: $(PHASEB_ASYNC)/pyret.jarr
+phaseC-async: $(PHASEC_ASYNC)/pyret.jarr
+
+no-diff-standalone-async: phaseB-async phaseC-async
+	diff $(PHASEB_ASYNC)/pyret.jarr $(PHASEC_ASYNC)/pyret.jarr
+
+# Async-backend analogue of new-bootstrap. Does NOT overwrite phase0: the
+# default-backend bootstrap remains the canonical seed of the build, and the
+# async build is currently a parallel verification track.
+new-bootstrap-async: no-diff-standalone-async
+	@echo "Async-backend bootstrap is a fixed point (phaseB-async == phaseC-async)."
 
 tests/pyret/main2.jarr: phaseA tests/pyret/main2.arr  $(TEST_FILES)
 	$(TEST_BUILD) \

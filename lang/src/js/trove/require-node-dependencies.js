@@ -48,6 +48,12 @@ define("http", [], function () {return http;});
 resolve = nodeRequire("resolve");
 define("resolve", [], function () {return resolve;});
 
-vegaMin = nodeRequire(nodeRequire('node:path').dirname(nodeRequire.resolve('vega')) + '/vega.js');
+// Newer vega ships as ESM-only and would crash this CommonJS require chain.
+// We tolerate that here so that anything not actually using charts still loads.
+try {
+  vegaMin = nodeRequire(nodeRequire('node:path').dirname(nodeRequire.resolve('vega')) + '/vega.js');
+} catch (e) {
+  vegaMin = undefined;
+}
 define("vegaMin", [], function () {return global.vega;});
 

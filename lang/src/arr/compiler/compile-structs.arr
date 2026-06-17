@@ -2959,6 +2959,9 @@ default-compile-options = {
   module-eval: true,
   user-annotations: true,
   runtime-annotations: true,
+  # When true, emit `async function`/`await` codegen against runtime-async.js
+  # instead of the default Cont/trampoline backend. See lang/src/js/base/runtime-async.js.
+  async-backend: false,
   compiled-cache: "compiled",
   compiled-read-only: empty,
   display-progress: true,
