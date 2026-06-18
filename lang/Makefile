@@ -373,6 +373,50 @@ ts-unit-test: ts-compiler
 ts-parity-test: ts-compiler $(PHASEA)/pyret.jarr
 	bash $(TS_COMP_DIR)/tests/parity-test.sh
 
+# ===== Promise/async backend, TS port (--stack-backend promise) =====
+# Byte-parity (PRIMARY oracle): compile each parity program with the in-tree
+# Pyret-promise reference (phaseA --stack-backend promise) and with the
+# TS-promise compiler, and compare the per-module cache + standalone jarr
+# byte-for-byte. Pins exact async codegen.
+.PHONY : ts-parity-promise-test
+ts-parity-promise-test: ts-compiler $(PHASEA)/pyret.jarr
+	bash $(TS_COMP_DIR)/tests/parity-promise-test.sh
+
+# Build one file fast with the TS-promise backend (async analogue of %.ts.jarr):
+#   make examples/foo.ts.p.jarr
+# Uses the async require-config + a SEPARATE compiled-ts-promise/ cache so async
+# and cont compiled modules never mix (the polyglot hazard).
+%.ts.p.jarr: ts-compiler %.arr
+	$(TS_PYRET) --outfile $*.ts.p.jarr \
+                      --build-runnable $*.arr \
+                      --builtin-js-dir src/js/trove/ \
+                      --builtin-arr-dir src/arr/trove/ \
+                      --compiled-dir compiled-ts-promise/ \
+                      --stack-backend promise \
+                      $(EXTRA_FLAGS) \
+                      --require-config src/scripts/standalone-configA-async.json
+
+# Cross-backend run parity (within the TS compiler): TS-cont vs TS-promise on
+# tests/pyret/main2.arr (the independent semantic check for Promise-leak / flatness
+# bugs the byte oracle is blind to). Builds a promise-backend main2 and runs it.
+tests/pyret/main2-ts-promise.jarr: ts-compiler tests/pyret/main2.arr $(TEST_FILES)
+	$(TS_PYRET) \
+		  --builtin-js-dir src/js/trove/ \
+			--builtin-arr-dir src/arr/trove/ \
+			--require-config src/scripts/standalone-configA-async.json \
+			--compiled-dir tests/ts-compiled-promise/ \
+			--stack-backend promise \
+		--outfile tests/pyret/main2-ts-promise.jarr \
+		--build-runnable tests/pyret/main2.arr \
+		-check-all
+
+.PHONY : ts-promise-pyret-test
+ts-promise-pyret-test: tests/pyret/main2-ts-promise.jarr
+	$(NODE) tests/pyret/main2-ts-promise.jarr
+
+.PHONY : ts-promise-test
+ts-promise-test: ts-parity-promise-test ts-promise-pyret-test
+
 # Build and run the main Pyret test suite using the TS compiler
 TS_TEST_BUILD=$(TS_PYRET) \
 	  --builtin-js-dir src/js/trove/ \
@@ -533,3 +577,37 @@ phaseE-promise: $(PHASEEP)/pyret.jarr
 .PHONY : new-bootstrap-promise
 new-bootstrap-promise: phaseD-promise phaseE-promise
 	diff $(PHASEDP)/pyret.jarr $(PHASEEP)/pyret.jarr
+
+
+# ===== Promise/async backend test suite (behavioral oracle) =====
+# Runs the full main2 suite compiled with the promise backend. VERIFIED result:
+# Passed ~13034 / Failed 8 / Errored 0 -- the 8 failures are the documented async
+# stack-trace-shape pins in tests/pyret/tests/test-repl.arr, NOT regressions.
+# (Compare the failing SET, not the total: test-pprint's assertion count drifts.)
+#
+# The suite runs ~247 nested run-task/run-str compiles that default to
+# ./compiled-promise (CWD-relative). On a COLD cache each one recompiles builtins
+# IN-PROCESS with the (slow) async-compiled bundled compiler, so the run appears
+# to hang. pyret-test-promise therefore PRE-WARMS ./compiled-promise first; the
+# run self-warms the remainder and the dir persists for later runs. Build the
+# suite WITHOUT --deps-file and run under node22 (chart tests pull in vega = ESM).
+# (A TS-promise suite needs the same pre-warm of its nested runtime cache dir.)
+NODE22 ?= node22
+PROMISE_TEST_BUILD = $(NODE) $(PHASEA)/pyret.jarr --builtin-js-dir src/js/trove/ --builtin-arr-dir src/arr/trove/ --require-config src/scripts/standalone-configA-async.json --stack-backend promise
+
+tests/pyret/main2.p.jarr: phaseA tests/pyret/main2.arr $(TEST_FILES)
+	$(PROMISE_TEST_BUILD) --compiled-dir tests/compiled-promise/ --outfile tests/pyret/main2.p.jarr --build-runnable tests/pyret/main2.arr -check-all
+
+# Pre-warm ./compiled-promise (the runtime nested-compile cache) with non-check builtins.
+.PHONY : warm-promise-cache
+warm-promise-cache: phaseA
+	@printf 'import lists as L\nimport sets as S\nimport string-dict as SD\nimport arrays as AR\nimport option as O\nimport either as E\nimport error as ERR\nimport srcloc as SL\nprint("warm")\n' > /tmp/pyret-warm-promise.arr
+	$(PROMISE_TEST_BUILD) --compiled-dir compiled-promise/ --outfile /tmp/pyret-warm-promise.p.jarr --build-runnable /tmp/pyret-warm-promise.arr
+
+.PHONY : pyret-test-promise
+pyret-test-promise: phaseA warm-promise-cache tests/pyret/main2.p.jarr
+	@echo "=== promise suite (expect: Errored 0; ~8 test-repl stacktrace-pin failures) ==="
+	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2.p.jarr | tee /tmp/promise-suite-result.txt; grep -q "Ended in Error: 0" /tmp/promise-suite-result.txt && echo "PROMISE SUITE OK (0 errors)" || { echo "PROMISE SUITE: errors present"; exit 1; }
+
+.PHONY : all-pyret-test-promise
+all-pyret-test-promise: pyret-test-promise
