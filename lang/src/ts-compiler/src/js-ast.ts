@@ -860,6 +860,50 @@ export class JFun extends JExprBase {
   }
 }
 
+// Like JFun, but emits `async function` so the body can use `await`.
+// Used by the promise/async backend for compiled Pyret functions.
+export class JAsyncFun extends JExprBase {
+  get $name(): 'j-async-fun' { return 'j-async-fun'; }
+  constructor(public id: string, public name: string, public args: CList<A.Name>, public body: JBlockT) { super(); }
+  visit(visitor: any): any { return visitDispatch(visitor, 'jAsyncFun', this); }
+  label(): string { return 'j-async-fun'; }
+  printUglySource(printer: UglyPrinter): void {
+    printer('async function ');
+    printer(this.name);
+    printer('(');
+    let n = 0;
+    this.args.each((arg: A.Name) => {
+      if (n > 0) { printer(','); }
+      printer(arg.tosourcestring());
+      n = n + 1;
+    });
+    printer(') {\n');
+    this.body.printUglySource(printer);
+    printer('}');
+  }
+  tosource(): PP.PPrintDoc {
+    const arglist = PP.nest(INDENT, PP.surroundSeparate(INDENT, 0, PP.lparen.append(PP.rparen), PP.lparen, PP.commabreak, PP.rparen, this.args.mapToList((a: A.Name) => a.toCompiledSource())));
+    const header = PP.group(PP.str('async function').append(arglist));
+    return PP.surround(INDENT, 1, header.append(PP.str(' {')), this.body.tosource(), PP.str('}'));
+  }
+}
+
+// `(await <expr>)` -- parenthesized so it composes safely in any expr context.
+export class JAwait extends JExprBase {
+  get $name(): 'j-await' { return 'j-await'; }
+  constructor(public expr: JExprT) { super(); }
+  visit(visitor: any): any { return visitDispatch(visitor, 'jAwait', this); }
+  label(): string { return 'j-await'; }
+  printUglySource(printer: UglyPrinter): void {
+    printer('(await ');
+    this.expr.printUglySource(printer);
+    printer(')');
+  }
+  tosource(): PP.PPrintDoc {
+    return PP.group(PP.str('(await ').append(this.expr.tosource()).append(PP.str(')')));
+  }
+}
+
 export class JNew extends JExprBase {
   get $name(): 'j-new' { return 'j-new'; }
   constructor(public func: JExprT, public args: CList<JExprT>) { super(); }
@@ -1166,7 +1210,7 @@ export class JLabel extends JExprBase {
 }
 
 export type JExprT =
-  JSourcenode | JParens | JRawCode | JUnop | JBinop | JFun | JNew | JApp
+  JSourcenode | JParens | JRawCode | JUnop | JBinop | JFun | JAsyncFun | JAwait | JNew | JApp
   | JMethod | JTernary | JAssign | JBracketAssign | JDotAssign | JDot | JBracket
   | JList | JObj | JId | JStr | JNum | JTrue | JFalse | JNull | JUndefined | JLabel;
 
@@ -1176,6 +1220,8 @@ export function isJRawCode(x: any): x is JRawCode { return x instanceof JRawCode
 export function isJUnop(x: any): x is JUnop { return x instanceof JUnop; }
 export function isJBinop(x: any): x is JBinop { return x instanceof JBinop; }
 export function isJFun(x: any): x is JFun { return x instanceof JFun; }
+export function isJAsyncFun(x: any): x is JAsyncFun { return x instanceof JAsyncFun; }
+export function isJAwait(x: any): x is JAwait { return x instanceof JAwait; }
 export function isJNew(x: any): x is JNew { return x instanceof JNew; }
 export function isJApp(x: any): x is JApp { return x instanceof JApp; }
 export function isJMethod(x: any): x is JMethod { return x instanceof JMethod; }
@@ -1280,6 +1326,8 @@ export class DefaultMapVisitor {
   jUnop(node: JUnop): JExprT { return new JUnop(node.exp.visit(this), node.op); }
   jBinop(node: JBinop): JExprT { return new JBinop(node.left.visit(this), node.op, node.right.visit(this)); }
   jFun(node: JFun): JExprT { return new JFun(node.id, node.name, node.args, node.body.visit(this)); }
+  jAsyncFun(node: JAsyncFun): JExprT { return new JAsyncFun(node.id, node.name, node.args, node.body.visit(this)); }
+  jAwait(node: JAwait): JExprT { return new JAwait(node.expr.visit(this)); }
   jNew(node: JNew): JExprT { return new JNew(node.func.visit(this), node.args.map((a: JExprT) => a.visit(this))); }
   jApp(node: JApp): JExprT { return new JApp(node.func.visit(this), node.args.map((a: JExprT) => a.visit(this))); }
   jMethod(node: JMethod): JExprT { return new JMethod(node.obj.visit(this), node.meth, node.args.map((a: JExprT) => a.visit(this))); }

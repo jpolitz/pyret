@@ -96,6 +96,8 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Ignore all annotations in the runtime, treating them as if they were blank.')],
     ['url-file-mode',
       C.nextValDefault(C.Str, 'all-remote', undefined, C.once, 'How to handle url-file imports (all-remote, all-local, or local-if-present)')],
+    ['stack-backend',
+      C.nextValDefault(C.Str, 'auto', undefined, C.once, 'Control-flow backend to compile with (promise, cont, or auto -> whatever this compiler was built with)')],
   ]);
 
   const paramsParsed = C.parseArgs(options, args);
@@ -142,6 +144,12 @@ export function main(args: string[]): number {
       : urlFileModeStr === 'all-local' ? CS.allLocal
       : urlFileModeStr === 'local-if-present' ? CS.localIfPresent
       : raise('Unknown url-file-mode: ' + urlFileModeStr);
+    const stackBackendStr = r.get('stack-backend');
+    const stackBackend =
+      stackBackendStr === 'promise' ? CS.promise
+      : stackBackendStr === 'cont' ? CS.cont
+      : stackBackendStr === 'auto' ? CS.compiledStackBackend
+      : raise('Unknown stack-backend: ' + stackBackendStr);
     if (r.has('checks') && r.has('no-check-mode') && !(r.get('checks') === 'none')) {
       printError("Can't use --checks " + r.get('checks') + ' with -no-check-mode\n');
       return failureCode;
@@ -154,6 +162,7 @@ export function main(args: string[]): number {
         ...CS.defaultCompileOptions,
         standaloneFile: standaloneFile,
         displayProgress: displayProgress,
+        stackBackend: stackBackend,
         checks: checks
       }, runArgs);
       print(result.message + '\n');
@@ -184,6 +193,7 @@ export function main(args: string[]): number {
           collectTimes: r.has('collect-times') && r.get('collect-times'),
           ignoreUnbound: false,
           properTailCalls: tailCalls,
+          stackBackend: stackBackend,
           compiledCache: compiledDir,
           compiledReadOnly: r.has('compiled-read-only-dir') ? r.get('compiled-read-only-dir') : [],
           displayProgress: displayProgress,
@@ -217,6 +227,7 @@ export function main(args: string[]): number {
         collectAll: false,
         ignoreUnbound: false,
         properTailCalls: tailCalls,
+        stackBackend: stackBackend,
         compileModule: false,
         displayProgress: displayProgress
       });

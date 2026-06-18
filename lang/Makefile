@@ -410,9 +410,17 @@ tests/pyret/main2-ts-promise.jarr: ts-compiler tests/pyret/main2.arr $(TEST_FILE
 		--build-runnable tests/pyret/main2.arr \
 		-check-all
 
+# Like pyret-test-promise (the Pyret-promise reference oracle) but for the TS-promise
+# compiler. The suite runs ~247 nested run-task compiles that resolve a CWD-relative
+# ./compiled-promise; COLD, each recompiles builtins in-process with the slow async
+# compiler and the run appears to hang. So PRE-WARM ./compiled-promise first (same as
+# pyret-test-promise). Run from $(CURDIR) under node22 with NODE_PATH (chart tests pull
+# in vega = ESM). Gate on "Ended in Error: 0" + the expected ~8 test-repl failures
+# (documented async stack-trace-shape pins), NOT a zero-failure total.
 .PHONY : ts-promise-pyret-test
-ts-promise-pyret-test: tests/pyret/main2-ts-promise.jarr
-	$(NODE) tests/pyret/main2-ts-promise.jarr
+ts-promise-pyret-test: warm-promise-cache tests/pyret/main2-ts-promise.jarr
+	@echo "=== TS-promise suite (expect: Errored 0; ~8 test-repl stacktrace-pin failures) ==="
+	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-ts-promise.jarr | tee /tmp/ts-promise-suite-result.txt; grep -q "Ended in Error: 0" /tmp/ts-promise-suite-result.txt && echo "TS-PROMISE SUITE OK (0 errors)" || { echo "TS-PROMISE SUITE: errors present"; exit 1; }
 
 .PHONY : ts-promise-test
 ts-promise-test: ts-parity-promise-test ts-promise-pyret-test

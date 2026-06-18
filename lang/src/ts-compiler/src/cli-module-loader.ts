@@ -384,16 +384,20 @@ export function moduleFinder(ctxt: CLIContext, dep: CS.AnyDependency): CL.Locate
   }
 }
 
+// Builtins for nested compile-and-run must come from a cache compiled with the
+// SAME backend as the running compiler — cont- and promise-compiled modules share
+// a source-only hash but emit incompatible JS, so they live in separate dirs. The
+// promise backend uses `compiled-promise/` uniformly (see compile-structs).
 export const defaultStartContext: CLIContext = {
   currentLoadPath: P.resolve("./"),
-  cacheBaseDir: P.resolve("./compiled"),
+  cacheBaseDir: CS.isPromise(CS.compiledStackBackend) ? P.resolve("./compiled-promise") : P.resolve("./compiled"),
   compiledReadOnlyDirs: [],
   urlFileMode: CS.allRemote
 };
 
 export const defaultTestContext: CLIContext = {
   currentLoadPath: P.resolve("./"),
-  cacheBaseDir: P.resolve("./tests/compiled"),
+  cacheBaseDir: CS.isPromise(CS.compiledStackBackend) ? P.resolve("./compiled-promise") : P.resolve("./tests/compiled"),
   compiledReadOnlyDirs: [],
   urlFileMode: CS.allRemote
 };

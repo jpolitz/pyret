@@ -82,3 +82,6 @@ compiled/
 build/ts-compiler
 tests/ts-compiled/
 compiled-ts/
+tests/ts-compiled-promise/
+compiled-ts-promise/
+*.ts.p.jarr

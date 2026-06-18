@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as A from './ast';
 import * as N from './anf';
 import * as AL from './anf-loop-compiler';
+import * as AAL from './anf-loop-compiler-async';
 import * as C from './compile-structs';
 import * as CL from './concat-lists';
 import * as FL from './flatness';
@@ -119,7 +120,12 @@ export function traceMakeCompiledPyret(
   const anfed = addPhase('ANFed', N.anfProgram(programAst));
   const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env));
   const flatProvides = addPhase('Get flat-provides', FL.getFlatProvides(provides, env, postEnv, flatnessEnv, anfed));
-  const compiled = anfed.visit(AL.splittingCompiler(env, addPhase, flatnessEnv, flatProvides, postEnv, options));
+  // Dispatch to the requested control-flow backend. `auto` is resolved to a
+  // concrete promise|cont before reaching here (see compile-structs / the CLI),
+  // but is defended to cont in case a caller passes it through.
+  const compiled = C.isPromise(options.stackBackend)
+    ? anfed.visit(AAL.splittingCompiler(env, addPhase, flatnessEnv, flatProvides, postEnv, options))
+    : anfed.visit(AL.splittingCompiler(env, addPhase, flatnessEnv, flatProvides, postEnv, options));
   return [flatProvides, addPhase('Generated JS', C.ok(new CCPDict(compiled)))];
 }
 

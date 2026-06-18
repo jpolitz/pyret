@@ -982,6 +982,45 @@ export function isAllLocal(x: any): x is AllLocal { return x instanceof AllLocal
 export function isAllRemote(x: any): x is AllRemote { return x instanceof AllRemote; }
 export function isLocalIfPresent(x: any): x is LocalIfPresent { return x instanceof LocalIfPresent; }
 
+// ---------- data StackBackend (compile-structs.arr line 2931 onward) ----------
+// Selects the control-flow backend the compiler emits for Pyret functions.
+//   promise -> the async/await (Promise-based) backend
+//   cont    -> the bespoke trampoline (Cont-based) backend
+//   auto    -> use whatever backend this compiler binary was itself compiled with
+// `auto` must be resolved to a concrete promise|cont before code generation
+// (resolved at the CLI / defaultCompileOptions via compiledStackBackend).
+
+export class Promise_ {
+  get $name(): 'promise' { return 'promise'; }
+}
+export class Cont {
+  get $name(): 'cont' { return 'cont'; }
+}
+export class Auto {
+  get $name(): 'auto' { return 'auto'; }
+}
+export type StackBackend = Promise_ | Cont | Auto;
+export const promise = new Promise_();
+export const cont = new Cont();
+export const auto = new Auto();
+export function isPromise(x: any): x is Promise_ { return x instanceof Promise_; }
+export function isCont(x: any): x is Cont { return x instanceof Cont; }
+export function isAuto(x: any): x is Auto { return x instanceof Auto; }
+
+// The backend this running compiler was itself compiled with. The TypeScript
+// compiler is a plain Node program (it has no linked Pyret runtime), so it is
+// always the `cont` builder; `auto` therefore resolves to cont, keeping the
+// default behavior unchanged. The CLI's `--stack-backend promise` selects the
+// async backend explicitly.
+export const compiledStackBackend: StackBackend = cont;
+
+// The promise and cont backends emit DIFFERENT JS for the same source, but cached
+// modules are keyed by a source-only hash — so cont- and promise-compiled builtins
+// share a filename and must live in separate directories. The promise backend uses
+// `compiled-promise/` uniformly; loading a cont-compiled builtin onto the async
+// runtime (or vice-versa) leaks Promises into annotation checks.
+export const defaultCompiledCache: string = isPromise(compiledStackBackend) ? "compiled-promise" : "compiled";
+
 // ---------- CompileOptions ----------
 // Pyret models options as an anonymous record extended functionally at call
 // sites (`options.{field: v}`). In TS, CompileOptions is a plain interface
@@ -1005,6 +1044,7 @@ export interface CompileOptions {
   collectTimes: boolean;
   ignoreUnbound: boolean;
   properTailCalls: boolean;
+  stackBackend: StackBackend;
   inlineCaseBodyLimit: number;
   moduleEval: boolean;
   userAnnotations: boolean;
@@ -1043,6 +1083,7 @@ export const defaultCompileOptions: CompileOptions = {
   collectTimes: false,
   ignoreUnbound: false,
   properTailCalls: true,
+  stackBackend: compiledStackBackend,
   inlineCaseBodyLimit: 5,
   moduleEval: true,
   userAnnotations: true,
