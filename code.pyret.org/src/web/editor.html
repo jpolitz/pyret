@@ -6,10 +6,14 @@
   <link crossorigin="anonymous" rel="preload" href="{{&PYRET}}" as="script">
   <script>
   window.PYRET = "{{&PYRET}}";
-  // Opt-in TypeScript-compiler flavor: chosen by ?compiler=ts (or the
-  // server-side CPO_COMPILER env default). Swaps in the cpo-main-ts jarr
-  // and loads the TS compiler bundle; default behavior is unchanged.
+  // Opt-in TypeScript-compiler flavors: chosen by ?compiler=ts /
+  // ?compiler=ts-promise (or the server-side CPO_COMPILER env default).
+  // Both swap in a TS-compiler jarr and load the same TS compiler bundle;
+  // ts-promise additionally uses the Promise/async-backend jarr (which
+  // embeds runtime-async.js and async-compiled builtins) and tells the
+  // in-browser compiler to emit async code. Default behavior is unchanged.
   window.PYRET_TS = "{{&PYRET_TS}}";
+  window.PYRET_TS_PROMISE = "{{&PYRET_TS_PROMISE}}";
   window.PYRET_TS_COMPILER = "{{&PYRET_TS_COMPILER}}";
   window.CPO_COMPILER = "{{&CPO_COMPILER}}" || "pyret";
   (function() {
@@ -17,6 +21,10 @@
     if(m) { window.CPO_COMPILER = decodeURIComponent(m[1]); }
     if(window.CPO_COMPILER === "ts" && window.PYRET_TS) {
       window.PYRET = window.PYRET_TS;
+      document.write('<script src="' + window.PYRET_TS_COMPILER + '"><\/script>');
+    }
+    else if(window.CPO_COMPILER === "ts-promise" && window.PYRET_TS_PROMISE) {
+      window.PYRET = window.PYRET_TS_PROMISE;
       document.write('<script src="' + window.PYRET_TS_COMPILER + '"><\/script>');
     }
   })();

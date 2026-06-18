@@ -458,6 +458,44 @@ $(TS_CPOGZ): $(TS_CPOMAIN)
 .PHONY: web-ts
 web-ts: $(TS_COMPILER_JS) $(TS_CPOMAIN) $(TS_CPOGZ)
 
+# ============================================================
+# TypeScript compiler + Promise/async backend flavor (ts-promise).
+# Same browser compiler bundle (ts-compiler.js) as the "ts" flavor; the
+# only differences are runtime-side: the jarr embeds runtime-async.js
+# (via cpo-config-promise.json) and its builtins are compiled with
+# --stack-backend promise, and the in-browser compiler is told to emit
+# async code (stackBackend=promise) at run time. A SEPARATE compiled-promise/
+# cache keeps async and cont compiled modules from ever mixing.
+# Selected via ?compiler=ts-promise or CPO_COMPILER=ts-promise.
+# ============================================================
+
+TS_PROMISE_CPOMAIN=build/web/js/cpo-main-ts-promise.jarr
+TS_PROMISE_CPOGZ=build/web/js/cpo-main-ts-promise.jarr.gz.js
+
+$(TS_PROMISE_CPOMAIN): $(BUNDLED_DEPS) $(TROVE_JS) $(TROVE_ARR) $(WEBJS) src/web/js/*.js src/web/arr/*.arr cpo-standalone.js cpo-config-promise.json src/web/arr/cpo-main-ts.arr $(PHASEA)
+	mkdir -p compiled-promise/;
+	node pyret/build/phaseA/pyret.jarr \
+    --builtin-js-dir src/web/js/trove/ \
+    --builtin-js-dir pyret/src/js/trove/ \
+    -allow-builtin-overrides \
+    --builtin-arr-dir src/web/arr/trove/ \
+    --builtin-arr-dir pyret/src/arr/trove/ \
+    --require-config cpo-config-promise.json \
+    --build-runnable src/web/arr/cpo-main-ts.arr \
+    --standalone-file cpo-standalone.js \
+    --compiled-dir ./compiled-promise \
+    --stack-backend promise \
+    --deps-file $(BUNDLED_DEPS) \
+    --outfile $(TS_PROMISE_CPOMAIN) -no-check-mode
+
+$(TS_PROMISE_CPOGZ): $(TS_PROMISE_CPOMAIN)
+	cp $(TS_PROMISE_CPOMAIN) $(TS_PROMISE_CPOMAIN).js
+	npx uglifyjs --compress -o $(TS_PROMISE_CPOMAIN).min -- $(TS_PROMISE_CPOMAIN)
+	gzip -c -f $(TS_PROMISE_CPOMAIN).min > $(TS_PROMISE_CPOGZ)
+
+.PHONY: web-ts-promise
+web-ts-promise: $(TS_COMPILER_JS) $(TS_PROMISE_CPOMAIN) $(TS_PROMISE_CPOGZ)
+
 clean:
 	rm -rf build/
 	rm -rf compiled/

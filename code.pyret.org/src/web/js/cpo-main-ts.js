@@ -201,6 +201,14 @@
       {},
       tsLib.makeFinderFactory(builtinSupport, sourceCache));
 
+    // The ts-promise flavor runs against the Promise/async-backend jarr
+    // (runtime-async.js + async-compiled builtins), so the in-browser
+    // compiler must emit async code for the user's program too. The "ts"
+    // flavor leaves stackBackend at its default (cont). Selected by the
+    // page (window.CPO_COMPILER, set from ?compiler= / CPO_COMPILER env).
+    var usePromiseBackend =
+      (typeof window !== "undefined" && window.CPO_COMPILER === "ts-promise");
+
     function tsOptions(options) {
       var o = Object.assign({}, T.compileStructs.defaultCompileOptions);
       o.checkMode = true;
@@ -211,6 +219,7 @@
       o.log = function(_s, _toClear) {};
       o.logError = function(s) { console.error(s); };
       o.onCompile = function(_locator, loadable, _trace) { return loadable; };
+      if(usePromiseBackend) { o.stackBackend = T.compileStructs.promise; }
       return o;
     }
 

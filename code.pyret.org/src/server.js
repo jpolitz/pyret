@@ -27,6 +27,9 @@ function start(config, onServerReady) {
       // compiler bundle is served alongside it.
       PYRET_TS: process.env.PYRET_TS ||
         (process.env.PYRET ? process.env.PYRET.replace("cpo-main.jarr", "cpo-main-ts.jarr") : ""),
+      // ts-promise flavor: TS compiler + Promise/async backend jarr.
+      PYRET_TS_PROMISE: process.env.PYRET_TS_PROMISE ||
+        (process.env.PYRET ? process.env.PYRET.replace("cpo-main.jarr", "cpo-main-ts-promise.jarr") : ""),
       PYRET_TS_COMPILER: process.env.PYRET_TS_COMPILER || (config.baseUrl + "/js/ts-compiler.js"),
       CPO_COMPILER: process.env.CPO_COMPILER || "pyret",
       BASE_URL: config.baseUrl,
@@ -611,9 +614,13 @@ function start(config, onServerReady) {
     // link and window.PYRET pointing at the jarr that will actually load,
     // so the stock jarr isn't downloaded pointlessly in ts mode.
     var compiler = req.query.compiler || defaultOpts.CPO_COMPILER;
-    var compilerOpts = (compiler === "ts" && defaultOpts.PYRET_TS)
-      ? { PYRET: defaultOpts.PYRET_TS, CPO_COMPILER: "ts" }
-      : {};
+    var compilerOpts = {};
+    if(compiler === "ts" && defaultOpts.PYRET_TS) {
+      compilerOpts = { PYRET: defaultOpts.PYRET_TS, CPO_COMPILER: "ts" };
+    }
+    else if(compiler === "ts-promise" && defaultOpts.PYRET_TS_PROMISE) {
+      compilerOpts = { PYRET: defaultOpts.PYRET_TS_PROMISE, CPO_COMPILER: "ts-promise" };
+    }
     res.render("editor.html", { ...defaultOpts,
       ...compilerOpts,
       CSRF_TOKEN: req.csrfToken(),

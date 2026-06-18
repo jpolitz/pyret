@@ -515,6 +515,16 @@
               // of desugaring.  It assumes that the source locations in the ast are well-nested:
               // if one node's srcloc is within another node's srcloc, then the former node must be a
               // descendant of the latter.  This allows us to prune the search tree.
+              // NOTE: srcloc comparison below is done SYNCHRONOUSLY on the flat char offsets.
+              // We must NOT use runtime.equal_always / the srcloc `contains` method here:
+              // on the promise backend those return a Promise (object comparison is non-flat),
+              // and a truthy Promise made this search match the first non-ignorable node (the
+              // enclosing block) rather than the exact node, surfacing downstream as a
+              // field-not-found (e.g. `s-check.left`) while rendering a check/error message.
+              // `loc` here is always the full `srcloc` variant (maybeParse's cases branch).
+              var locSource = runtime.getField(loc, "source");
+              var locStartChar = runtime.getField(loc, "start-char");
+              var locEndChar = runtime.getField(loc, "end-char");
               var todo = [ast];
               var ans = undefined;
               while (todo.length > 0) {
@@ -522,12 +532,17 @@
                 if (runtime.hasField(first, "l")) {
                   // not every AST item has an "l" field (eg. s-global, s-type-global, s-base)
                   var l = runtime.getField(first, "l");
-                  if (isSrcloc.app(l)) { // just extra checking; should be unnecessary
-                    if (runtime.equal_always(l, loc)) { // stack-safe because srclocs are flat data
+                  // isSrcloc.app is the flat `is-Srcloc` type predicate (sync on both backends);
+                  // hasField("start-char") narrows to the full `srcloc` variant (not `builtin`).
+                  if (isSrcloc.app(l) && runtime.hasField(l, "start-char")) {
+                    var lSource = runtime.getField(l, "source");
+                    var lStartChar = runtime.getField(l, "start-char");
+                    var lEndChar = runtime.getField(l, "end-char");
+                    if (lSource === locSource && lStartChar === locStartChar && lEndChar === locEndChar) {
                       if (!ignorable(first)) {
                         return runtime.ffi.makeSome(first);
                       }
-                    } else if (!runtime.getField(l, "contains").app(loc)) {
+                    } else if (!(lSource === locSource && lStartChar <= locStartChar && locEndChar <= lEndChar)) {
                       continue;                       // ASSUMES that srclocs are well-nested
                     }
                   }
