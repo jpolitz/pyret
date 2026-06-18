@@ -7,6 +7,7 @@ import srcloc as SL
 import error-display as ED
 import string-dict as SD
 import pathlib as P
+import runtime-lib as RL
 import file("concat-lists.arr") as CL
 import file("type-structs.arr") as T
 import file("js-ast.arr") as J
@@ -2921,6 +2922,37 @@ data UrlFileMode:
   | local-if-present
 end
 
+# Selects the control-flow backend the compiler emits for Pyret functions.
+#   promise -> the async/await (Promise-based) backend
+#   cont    -> the bespoke trampoline (Cont-based) backend
+#   auto    -> use whatever backend this compiler binary was itself compiled with
+# `auto` must be resolved to a concrete promise|cont before code generation; it is
+# resolved here in default-compile-options via RL.compiled-stack-backend.
+data StackBackend:
+  | promise
+  | cont
+  | auto
+end
+
+# The backend this running compiler was itself compiled with, read from the linked
+# runtime module (runtime.js -> "cont", runtime-async.js -> "promise"). This is the
+# linchpin of `auto` mode and of bootstrap cross-compilation correctness.
+compiled-stack-backend :: StackBackend = ask:
+  | RL.compiled-stack-backend == "promise" then: promise
+  | otherwise: cont
+end
+
+# The promise and cont backends emit DIFFERENT JS for the same source, but cached
+# modules are keyed by a source-only hash — so cont- and promise-compiled builtins
+# share a filename and must live in separate directories. The promise backend uses
+# `compiled-promise/` uniformly; loading a cont-compiled builtin onto the async
+# runtime (or vice-versa) leaks Promises into annotation checks. Nested compile-and-
+# run paths (run-task / run-str) pick up this default unless overridden.
+default-compiled-cache :: String = ask:
+  | is-promise(compiled-stack-backend) then: "compiled-promise"
+  | otherwise: "compiled"
+end
+
 type CompileOptions = {
   check-mode :: Boolean,
   check-all :: Boolean,
@@ -2931,6 +2963,7 @@ type CompileOptions = {
   collect-times :: Boolean,
   ignore-unbound :: Boolean,
   proper-tail-calls :: Boolean,
+  stack-backend :: StackBackend,
   compiled-cache :: String,
   display-progress :: Boolean,
   standalone-file :: String,
@@ -2955,11 +2988,12 @@ default-compile-options = {
   collect-times: false,
   ignore-unbound: false,
   proper-tail-calls: true,
+  stack-backend: compiled-stack-backend,
   inline-case-body-limit: 5,
   module-eval: true,
   user-annotations: true,
   runtime-annotations: true,
-  compiled-cache: "compiled",
+  compiled-cache: default-compiled-cache,
   compiled-read-only: empty,
   display-progress: true,
   should-profile: method(_, locator): false end,
