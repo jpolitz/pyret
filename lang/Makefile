@@ -614,8 +614,10 @@ warm-promise-cache: phaseA
 
 .PHONY : pyret-test-promise
 pyret-test-promise: phaseA warm-promise-cache tests/pyret/main2.p.jarr
-	@echo "=== promise suite (expect: Errored 0; ~8 test-repl stacktrace-pin failures) ==="
-	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2.p.jarr | tee /tmp/promise-suite-result.txt; grep -q "Ended in Error: 0" /tmp/promise-suite-result.txt && echo "PROMISE SUITE OK (0 errors)" || { echo "PROMISE SUITE: errors present"; exit 1; }
+	@echo "=== promise suite (expect: all tests pass) ==="
+	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2.p.jarr | tee /tmp/promise-suite-result.txt; \
+	code=$${PIPESTATUS[0]}; \
+	test $$code -eq 0 && echo "PROMISE SUITE OK" || { echo "PROMISE SUITE: failures (exit $$code)"; exit 1; }
 
 .PHONY : all-pyret-test-promise
 all-pyret-test-promise: pyret-test-promise
