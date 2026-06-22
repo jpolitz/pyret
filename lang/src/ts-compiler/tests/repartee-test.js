@@ -8,8 +8,12 @@
 // glob from picking them up.
 //
 // These exercise the engine's dataflow with a STUB executor that models the
-// realm lineage (each run forks a child realm), asserting resume/anchor
-// correctness without a runtime. End-to-end execution is in repartee-eval-test.js.
+// realm lineage (each run forks a child realm), asserting the roster API:
+// resume-from-predecessor-end-state, the prefix-skipped / not-reached result
+// kinds, cheap delete (only the chunk after a deleted one re-runs), roster-driven
+// GC of removed chunks, and the synchronous contract-violation throws (startIndex
+// out of range, or resuming after a chunk with no end-state). End-to-end execution
+// is in repartee-eval-test.js.
 // Needs a warm builtin cache in tests/ts-compiled (built by `make ts-pyret-test`).
 
 const path = require('path');
@@ -65,117 +69,166 @@ describe('repartee engine (stub executor)', () => {
     BL.setBuiltinArrDirs(['src/arr/trove/']);
   });
 
-  test('rerunInteractions returns a synchronous array of promises', () => {
+  test('rerunInteractions returns a synchronous array of promises, one per roster entry', () => {
     const ps = mkRunner(mkStub()).rerunInteractions(
-      [loc('definitions://', 'x = 1\n', 'definitions'), loc('chunk://1', 'x\n')], opts);
+      [loc('definitions://', 'x = 1\n', 'definitions'), loc('chunk://1', 'x\n')], 0, opts);
     assert.ok(Array.isArray(ps));
     assert.equal(ps.length, 2);
     assert.ok(ps[0] instanceof Promise);
   });
 
-  test('full run: same-size list, all right; realm threads forward', async () => {
+  test('full run (startIndex 0): same-size list, all right; realm threads forward', async () => {
     const stub = mkStub();
     const out = await all(mkRunner(stub).rerunInteractions([
       loc('definitions://', 'x = 1\n', 'definitions'),
       loc('chunk://1', 'y = x\n'),
       loc('chunk://2', 'z = y\n'),
-    ], opts));
+    ], 0, opts));
     assert.deepEqual(out.map((r) => r.$name), ['right', 'right', 'right']);
     assert.equal(stub.log[0].realmId, stub.base.id);        // defs <- base
     assert.equal(stub.log[1].realmId, stub.log[0].childId); // c1 <- defs
     assert.equal(stub.log[2].realmId, stub.log[1].childId); // c2 <- c1
   });
 
-  test('edit middle: re-run resumes from the recorded start boundary, not the old result', async () => {
+  test('edit middle (startIndex into full roster): resumes from the predecessor end-state', async () => {
     const stub = mkStub();
     const runner = mkRunner(stub);
     let c1Src = 'y = x\n';
-    const list = [
+    const roster = [
       loc('definitions://', 'x = 1\n', 'definitions'),
       loc('chunk://1', () => c1Src),
       loc('chunk://2', 'z = y\n'),
     ];
-    await all(runner.rerunInteractions(list, opts));
-    const postDefs = stub.log[1].realmId;
+    await all(runner.rerunInteractions(roster, 0, opts));
+    const postDefs = stub.log[1].realmId;                   // c1's input realm first run
     c1Src = 'y = x + 1\n';
-    const out = await all(runner.rerunInteractions([list[1], list[2]], opts));
-    assert.deepEqual(out.map((r) => r.$name), ['right', 'right']);
-    assert.equal(stub.log[3].realmId, postDefs);            // c1 resumed at the right boundary
+    // Edit c1 -> re-run the whole roster from index 1; index 0 (defs) is retained.
+    const out = await all(runner.rerunInteractions(roster, 1, opts));
+    assert.deepEqual(out.map((r) => r.$name), ['prefix-skipped', 'right', 'right']);
+    assert.equal(stub.log[3].realmId, postDefs);            // c1 resumed at the predecessor boundary
     assert.equal(stub.log[4].realmId, stub.log[3].childId); // c2 threaded from re-run c1
   });
 
-  test('compile error -> left, successor -> skip, executor never called', async () => {
+  test('compile error -> left, successor -> not-reached, executor never called', async () => {
     const stub = mkStub();
     const out = await all(mkRunner(stub).rerunInteractions([
       loc('definitions://', 'x = 1\n', 'definitions'),
       loc('chunk://1', 'nosuchname777 + 1\n'),
       loc('chunk://2', 'x\n'),
-    ], opts));
+    ], 0, opts));
     assert.equal(out[0].$name, 'right');
     assert.equal(out[1].$name, 'left');
-    assert.equal(out[2].$name, 'skip');
+    assert.equal(out[2].$name, 'not-reached');
     assert.equal(stub.log.length, 1); // only definitions reached the executor
   });
 
-  test('runtime failure -> right (non-success), successor -> skip', async () => {
+  test('runtime failure -> right (non-success), successor -> not-reached', async () => {
     const stub = mkStub();
     const out = await all(mkRunner(stub).rerunInteractions([
       loc('definitions://', 'x = 1\n', 'definitions'),
       loc('chunk://1', 'w = "FAILRUN"\n'),
       loc('chunk://2', 'x\n'),
-    ], opts));
+    ], 0, opts));
     assert.equal(out[1].$name, 'right');
     assert.equal(stub.executor.isSuccessResult(out[1].v), false);
-    assert.equal(out[2].$name, 'skip');
-    assert.equal(stub.log.length, 2); // defs + the failing chunk ran; skip did not
+    assert.equal(out[2].$name, 'not-reached');
+    assert.equal(stub.log.length, 2); // defs + the failing chunk ran; the third did not
   });
 
-  test('parse error -> thrown (carrying the error), successor -> skip', async () => {
+  test('parse error -> thrown (carrying the error), successor -> not-reached', async () => {
     const stub = mkStub();
     const out = await all(mkRunner(stub).rerunInteractions([
       loc('definitions://', 'x = 1\n', 'definitions'),
       loc('chunk://1', 'y = x +\n'),
       loc('chunk://2', 'x\n'),
-    ], opts));
+    ], 0, opts));
     assert.equal(out[1].$name, 'thrown');
     assert.ok(out[1].error);
-    assert.equal(out[2].$name, 'skip');
+    assert.equal(out[2].$name, 'not-reached');
     assert.equal(stub.log.length, 1); // parse failed before reaching the executor
   });
 
-  test('append via `after`: a new chunk resumes from the anchor end-state without re-running it', async () => {
+  test('append (startIndex at the new tail): only the new chunk runs, from the predecessor end-state', async () => {
     const stub = mkStub();
     const runner = mkRunner(stub);
-    await all(runner.rerunInteractions([
-      loc('definitions://', 'x = 1\n', 'definitions'),
-      loc('chunk://1', 'y = x\n'),
-    ], opts));
+    const defs = loc('definitions://', 'x = 1\n', 'definitions');
+    const c1 = loc('chunk://1', 'y = x\n');
+    await all(runner.rerunInteractions([defs, c1], 0, opts));
     const postC1 = stub.log[1].childId;
     const before = stub.log.length;
-    const out = await all(runner.rerunInteractions(
-      [loc('chunk://2', 'z = y\n')], { after: 'chunk://1' }));
-    assert.equal(out.length, 1);
-    assert.equal(out[0].$name, 'right');
+    const c2 = loc('chunk://2', 'z = y\n');
+    const out = await all(runner.rerunInteractions([defs, c1, c2], 2, opts));
+    assert.deepEqual(out.map((r) => r.$name), ['prefix-skipped', 'prefix-skipped', 'right']);
     assert.equal(stub.log.length, before + 1);     // ONLY the new chunk ran
     assert.equal(stub.log[before].realmId, postC1); // resumed from c1's end-state
   });
 
-  test('insert via `after`: new middle chunk + re-run of its successor, anchored after a prior chunk', async () => {
+  test('insert (startIndex at the inserted chunk): the inserted chunk and all after it re-run', async () => {
     const stub = mkStub();
     const runner = mkRunner(stub);
-    await all(runner.rerunInteractions([
-      loc('definitions://', 'x = 1\n', 'definitions'),
-      loc('chunk://1', 'y = x\n'),
-      loc('chunk://2', 'z = y\n'),
-    ], opts));
+    const defs = loc('definitions://', 'x = 1\n', 'definitions');
+    const c1 = loc('chunk://1', 'y = x\n');
+    const c2 = loc('chunk://2', 'z = y\n');
+    await all(runner.rerunInteractions([defs, c1, c2], 0, opts));
     const postDefs = stub.log[0].childId;
     const before = stub.log.length;
-    const out = await all(runner.rerunInteractions(
-      [loc('chunk://mid', 'm = x\n'), loc('chunk://1', 'y = x\n')], { after: 'definitions://' }));
-    assert.deepEqual(out.map((r) => r.$name), ['right', 'right']);
-    assert.equal(stub.log.length, before + 2);                       // mid + c1 only
-    assert.equal(stub.log[before].realmId, postDefs);               // mid <- post-defs
-    assert.equal(stub.log[before + 1].realmId, stub.log[before].childId); // c1 <- mid
+    const mid = loc('chunk://mid', 'm = x\n');
+    // Insert `mid` between defs and c1: new roster, startIndex 1 re-runs mid, c1, c2.
+    const out = await all(runner.rerunInteractions([defs, mid, c1, c2], 1, opts));
+    assert.deepEqual(out.map((r) => r.$name), ['prefix-skipped', 'right', 'right', 'right']);
+    assert.equal(stub.log.length, before + 3);                       // mid + c1 + c2
+    assert.equal(stub.log[before].realmId, postDefs);                // mid <- post-defs
+    assert.equal(stub.log[before + 1].realmId, stub.log[before].childId);     // c1 <- mid
+    assert.equal(stub.log[before + 2].realmId, stub.log[before + 1].childId); // c2 <- c1
+  });
+
+  test('delete is as cheap as blanking: only the chunk after the deleted one re-runs', async () => {
+    const stub = mkStub();
+    const runner = mkRunner(stub);
+    const defs = loc('definitions://', 'x = 1\n', 'definitions');
+    const c1 = loc('chunk://1', 'y = x\n');
+    const c2 = loc('chunk://2', 'z = x\n');
+    await all(runner.rerunInteractions([defs, c1, c2], 0, opts));
+    const postDefs = stub.log[0].childId;
+    const before = stub.log.length;
+    // Delete c1: new roster is [defs, c2]; c2 is now index 1, resumes from defs.
+    const out = await all(runner.rerunInteractions([defs, c2], 1, opts));
+    assert.deepEqual(out.map((r) => r.$name), ['prefix-skipped', 'right']);
+    assert.equal(stub.log.length, before + 1);          // only c2 re-ran; defs untouched
+    assert.equal(stub.log[before].realmId, postDefs);   // c2 resumed from defs' end-state
+    assert.equal(runner.hasEndState('chunk://1'), false); // deleted chunk's snapshot GC'd
+    assert.equal(runner.hasEndState('definitions://'), true);
+  });
+
+  test('GC reconcile: a removed chunk\'s end-state is dropped even on a no-op (startIndex == length) call', async () => {
+    const stub = mkStub();
+    const runner = mkRunner(stub);
+    const defs = loc('definitions://', 'x = 1\n', 'definitions');
+    const c1 = loc('chunk://1', 'y = x\n');
+    const c2 = loc('chunk://2', 'z = y\n');
+    await all(runner.rerunInteractions([defs, c1, c2], 0, opts));
+    assert.equal(runner.hasEndState('chunk://2'), true);
+    const before = stub.log.length;
+    // Remove the trailing chunk; pass the shorter roster, run nothing (startIndex == length).
+    const out = await all(runner.rerunInteractions([defs, c1], 2, opts));
+    assert.deepEqual(out.map((r) => r.$name), ['prefix-skipped', 'prefix-skipped']);
+    assert.equal(stub.log.length, before);                // nothing ran
+    assert.equal(runner.hasEndState('chunk://2'), false); // but its snapshot was reclaimed
+    assert.equal(runner.hasEndState('chunk://1'), true);
+  });
+
+  test('startIndex out of range throws synchronously', () => {
+    const runner = mkRunner(mkStub());
+    const roster = [loc('definitions://', 'x = 1\n', 'definitions'), loc('chunk://1', 'x\n')];
+    assert.throws(() => runner.rerunInteractions(roster, 3, opts), /out of range/);
+    assert.throws(() => runner.rerunInteractions(roster, -1, opts), /out of range/);
+  });
+
+  test('resuming after a chunk with no recorded end-state throws synchronously', () => {
+    const runner = mkRunner(mkStub());
+    const roster = [loc('definitions://', 'x = 1\n', 'definitions'), loc('chunk://1', 'x\n')];
+    // Nothing has run, so defs has no end-state to resume after.
+    assert.throws(() => runner.rerunInteractions(roster, 1, opts), /no recorded end-state/);
   });
 
   test('hasEndState reflects only successfully-run chunks; clearSnapshots forgets everything', async () => {
@@ -184,7 +237,7 @@ describe('repartee engine (stub executor)', () => {
     await all(runner.rerunInteractions([
       loc('definitions://', 'x = 1\n', 'definitions'),
       loc('chunk://1', 'w = "FAILRUN"\n'),
-    ], opts));
+    ], 0, opts));
     assert.equal(runner.hasEndState('definitions://'), true);
     assert.equal(runner.hasEndState('chunk://1'), false); // failed -> no end-state
     runner.clearSnapshots();
@@ -195,10 +248,19 @@ describe('repartee engine (stub executor)', () => {
     const stub = mkStub();
     const runner = mkRunner(stub);
     const list = [loc('definitions://', 'x = 1\n', 'definitions'), loc('chunk://1', 'x\n')];
-    await all(runner.rerunInteractions(list, opts));
+    await all(runner.rerunInteractions(list, 0, opts));
     runner.clearSnapshots();
     const before = stub.log.length;
-    await all(runner.rerunInteractions(list, opts));
+    await all(runner.rerunInteractions(list, 0, opts));
     assert.equal(stub.log[before].realmId, stub.base.id); // defs <- base again
+  });
+
+  test('an empty roster returns an empty array synchronously and runs nothing', async () => {
+    const stub = mkStub();
+    const ps = mkRunner(stub).rerunInteractions([], 0, opts);
+    assert.ok(Array.isArray(ps));
+    assert.equal(ps.length, 0);
+    assert.deepEqual(await all(ps), []);
+    assert.equal(stub.log.length, 0);
   });
 });

@@ -10,14 +10,23 @@
   because editing a chunk invalidates it and everything after it.
 
   Two layers, kept separate on purpose:
-    - THIS layer is the pure incremental dataflow engine. Given an ordered list
-      of locators it runs them, threading the environment forward and stopping
-      at the first error, while memoizing the environment at each chunk boundary
-      so a later call can resume from any of them.
+    - THIS layer is the pure incremental dataflow engine. Given the COMPLETE,
+      ordered roster of chunk locators and an index to start at, it re-runs the
+      chunks from that index forward, threading the environment and stopping at
+      the first error, while memoizing the environment after each chunk so a later
+      call can resume from any boundary.
     - The UI layer (CodeMirror buffers + edited/invalidated flags) lives
-      elsewhere and is responsible for deciding WHICH contiguous suffix of
-      locators to hand to rerunInteractions. The engine owns no source strings;
+      elsewhere and is responsible for deciding the startIndex — the earliest
+      chunk whose result is no longer valid. The engine owns no source strings;
       locators read live from the editor.
+
+  The roster is the single source of truth: it is the whole notebook, every call.
+  The engine resumes from the recorded end-state of the chunk just before
+  startIndex (so editing or deleting a chunk never re-runs anything before it),
+  and reclaims memoized state for any chunk that has left the roster (a deletion)
+  without the UI signalling liveness separately. Deleting a chunk is therefore
+  exactly as cheap as blanking it to "": both re-run the suffix from the
+  predecessor's end-state.
 
   Reused from repl.ts unchanged: ReplExecutor, Finder, ReplEnv, copyEnv,
   makeCachingFinder, runOne, makeProvideForRepl.
@@ -34,15 +43,26 @@ import {
 } from './repl';
 
 // ---------------------------------------------------------------------------
-// Result type: exactly the repl's Either, plus a Skip marker for chunks that
-// never ran because an earlier chunk errored. The non-skip values ARE the
-// Either<any[], Result> that hosts already render (left = compile problems,
-// right = run answer), so existing rendering needs only a `$name === 'skip'`
-// guard in front of it.
+// Per-chunk result. A rerun returns one entry per roster locator, ALWAYS the
+// same length as the roster, so a UI can index results positionally. Three kinds
+// distinguish WHY a chunk does or does not have a fresh result:
+//   - PrefixSkipped: the chunk is before startIndex. It was deliberately left
+//     alone (not re-run); the UI keeps its existing render.
+//   - NotReached: the chunk is at or after startIndex, but an earlier chunk in
+//     this run errored, so evaluation stopped before reaching it.
+//   - a "ran" outcome: the chunk actually compiled/ran — either Thrown (a
+//     compile that threw, most commonly a parse error) or the repl's
+//     Either<problems, Result> (left = compile problems, right = run answer).
+//     These are exactly what hosts already render.
 // ---------------------------------------------------------------------------
 
-export interface Skip { $name: 'skip'; }
-export const skip: Skip = { $name: 'skip' };
+// A retained chunk before startIndex — not re-run this pass.
+export interface PrefixSkipped { $name: 'prefix-skipped'; }
+export const prefixSkipped: PrefixSkipped = { $name: 'prefix-skipped' };
+
+// A chunk at/after startIndex that an earlier error stopped us from reaching.
+export interface NotReached { $name: 'not-reached'; }
+export const notReached: NotReached = { $name: 'not-reached' };
 
 // A chunk whose compilation THREW rather than returning compile problems —
 // most commonly a parse/syntax error (surfaceParse throws a PyretParseError).
@@ -51,51 +71,53 @@ export const skip: Skip = { $name: 'skip' };
 // rejection so the result list stays uniform and Promise.all never blows up.
 export interface Thrown { $name: 'thrown'; error: any; }
 
-// Exactly the three outcomes the repl can produce for one chunk — resolve to a
-// left (compile problems), resolve to a right (run answer), or throw — plus
-// Skip for chunks that never ran because an earlier chunk stopped evaluation.
-export type ReRunResult<Result = any> = Skip | Thrown | Either<any[], Result>;
+// One roster entry's outcome: retained, never reached, or a real ran result
+// (a thrown compile, or the repl's left/right Either).
+export type RerunEntry<Result = any> =
+  PrefixSkipped | NotReached | Thrown | Either<any[], Result>;
 
-export function isSkip(r: ReRunResult): r is Skip { return r.$name === 'skip'; }
-export function isThrown(r: ReRunResult): r is Thrown { return r.$name === 'thrown'; }
+export function isPrefixSkipped(r: RerunEntry): r is PrefixSkipped { return r.$name === 'prefix-skipped'; }
+export function isNotReached(r: RerunEntry): r is NotReached { return r.$name === 'not-reached'; }
+export function isThrown(r: RerunEntry): r is Thrown { return r.$name === 'thrown'; }
 
 // ---------------------------------------------------------------------------
 // The engine
 // ---------------------------------------------------------------------------
 
-export interface RerunOptions {
-  // Compile options for this run (defaults to the runner's default options).
-  options?: CS.CompileOptions;
-  // Resume AFTER the chunk with this uri — i.e. start from that chunk's recorded
-  // end-state. Use this to run brand-new chunks (append at the end, or insert in
-  // the middle) without re-running anything: pass the uri of the already-run
-  // chunk that precedes the first locator. When omitted, the first locator runs
-  // from its OWN recorded start-state (re-run / edit of an existing chunk), or
-  // from the base environment if it has none (a first run / re-run all).
-  after?: string;
-}
-
 export interface ReparteeRunner<A2, Realm = any, Result = any> {
-  // Run the given locators in order, stopping at the first error. Returns one
-  // promise per input locator, SYNCHRONOUSLY, so a UI can wire up per-chunk
-  // handlers and show results as each chunk settles. The inner promises never
-  // reject: a chunk that ran resolves to its Either, one whose compile threw
-  // resolves to a Thrown, and a chunk after an error resolves to `skip`.
+  // Re-run the notebook from `startIndex` to the end. `roster` is the COMPLETE,
+  // ordered list of every live chunk locator (the whole notebook), passed every
+  // call — it is authoritative. Chunks before startIndex are retained and resolve
+  // to PrefixSkipped; chunks from startIndex on re-run, resuming from the recorded
+  // end-state of roster[startIndex-1] (or the base environment when startIndex is
+  // 0). Stops at the first error; later chunks resolve to NotReached.
   //
-  // Resume point (see RerunOptions.after): an `after` uri resumes from that
-  // chunk's end-state; otherwise the first locator resumes from its own
-  // recorded start-state, or the base environment if it has none.
+  // Returns one promise per roster entry, SYNCHRONOUSLY and the SAME LENGTH as the
+  // roster, so a UI can wire per-chunk handlers and map results positionally. The
+  // inner promises never reject (errors are values).
+  //
+  // Because the roster is authoritative, any memoized boundary whose uri is no
+  // longer in the roster (a chunk the UI deleted) is dropped here — snapshot
+  // memory is reclaimed without a separate liveness signal.
+  //
+  // Throws SYNCHRONOUSLY (a caller contract violation, surfaced loudly rather
+  // than guessing) if startIndex is out of [0, roster.length], or if resuming
+  // after roster[startIndex-1] is requested but that chunk has no recorded
+  // end-state (it never ran successfully).
   rerunInteractions(
-    locators: CL.Locator[],
-    options?: CS.CompileOptions | RerunOptions
-  ): Promise<ReRunResult<Result>>[];
+    roster: CL.Locator[],
+    startIndex: number,
+    options?: CS.CompileOptions
+  ): Promise<RerunEntry<Result>>[];
 
-  // The recorded end-state uri set — chunks that have successfully run and can
-  // therefore be used as an `after` anchor. (Mostly for tests / introspection.)
+  // Whether a chunk has a recorded end-state — i.e. it ran successfully and can be
+  // resumed-after (the predecessor of a valid startIndex). Mostly for tests / UI
+  // introspection.
   hasEndState(uri: string): boolean;
 
-  // Forget all memoized boundaries and restore the base realm/modules/globals,
-  // so the next rerun starts genuinely fresh (a clean-realm "run all").
+  // Forget every memoized boundary, so the next run from startIndex 0 starts
+  // genuinely fresh. Routine deletions are handled by the roster reconcile in
+  // rerunInteractions; this is the heavier "dispose the whole session" reset.
   clearSnapshots(): void;
 }
 
@@ -151,59 +173,73 @@ export function makeReparteeRunner<A2, Realm = any, Result = any>(
     locatorCache: new Map(),
   };
 
-  // Per-chunk boundary snapshots, keyed by locator uri:
-  //   startEnvs[uri] = the env the chunk runs AGAINST (its pre-state). Used to
-  //     re-run an existing chunk (an edit) from the same boundary. Independent
-  //     of the chunk's own source.
-  //   endEnvs[uri]   = the env AFTER the chunk ran successfully (its post-state).
-  //     Used as an `after` anchor: run brand-new chunks that follow this one
-  //     without re-running it (append / insert). Recorded only on success.
-  let startEnvs = new Map<string, ReplEnv<Realm>>();
+  // Per-chunk post-state, keyed by locator uri: the env AFTER a chunk ran
+  // successfully. Resuming a run at startIndex copies endEnvs[roster[startIndex-1]]
+  // — the predecessor's end-state — so nothing before startIndex is re-run.
+  // Recorded only on success; reconciled against the roster (a deleted chunk's
+  // entry is dropped) on every call. There is no pre-state map: a chunk's resume
+  // boundary IS its predecessor's end-state, so one map suffices.
   let endEnvs = new Map<string, ReplEnv<Realm>>();
 
   function hasEndState(uri: string): boolean { return endEnvs.has(uri); }
 
   function clearSnapshots(): void {
-    startEnvs = new Map();
     endEnvs = new Map();
   }
 
   function rerunInteractions(
-    locators: CL.Locator[],
-    options?: CS.CompileOptions | RerunOptions
-  ): Promise<ReRunResult<Result>>[] {
-    // Second arg is either a bare CompileOptions (back-compat) or a RerunOptions
-    // bag. Distinguish by the presence of repartee-specific keys.
-    const bag: RerunOptions =
-      options && ('after' in options || 'options' in options)
-        ? (options as RerunOptions)
-        : { options: options as CS.CompileOptions | undefined };
-    const opts = bag.options ?? baseOptions;
-    const after = bag.after;
-    const deferreds = locators.map(() => makeDeferred<ReRunResult<Result>>());
+    roster: CL.Locator[],
+    startIndex: number,
+    options?: CS.CompileOptions
+  ): Promise<RerunEntry<Result>>[] {
+    const opts = options ?? baseOptions;
 
-    // Detached driver: runs chunks sequentially (each needs the prior env) and
-    // resolves each cell as it settles. Returns synchronously below.
+    if (!Number.isInteger(startIndex) || startIndex < 0 || startIndex > roster.length) {
+      throw new Error(
+        `repartee: rerunInteractions startIndex ${startIndex} out of range [0, ${roster.length}]`);
+    }
+
+    // Resolve the resume environment up front, so a contract violation (resuming
+    // after a chunk that never ran) throws synchronously, before any cell promise
+    // is handed out — rather than silently restarting from the base environment.
+    let resumeFrom: ReplEnv<Realm> | undefined;
+    if (startIndex < roster.length) {
+      if (startIndex === 0) {
+        resumeFrom = baseEnv;
+      } else {
+        const predUri = roster[startIndex - 1].uri();
+        resumeFrom = endEnvs.get(predUri);
+        if (resumeFrom === undefined) {
+          throw new Error(
+            `repartee: cannot resume after "${predUri}" — it has no recorded end-state ` +
+            `(a chunk must run successfully before a later chunk resumes from it)`);
+        }
+      }
+    }
+
+    // The roster is authoritative: forget any memoized boundary for a chunk that
+    // is no longer in it (the UI deleted that chunk). This is the whole of GC —
+    // no separate liveness signal needed.
+    const live = new Set(roster.map((l) => l.uri()));
+    for (const uri of [...endEnvs.keys()]) {
+      if (!live.has(uri)) { endEnvs.delete(uri); }
+    }
+
+    const deferreds = roster.map(() => makeDeferred<RerunEntry<Result>>());
+    // Retained prefix [0, startIndex): not re-run this pass.
+    for (let i = 0; i < startIndex; i++) { deferreds[i].resolve(prefixSkipped); }
+
+    // Detached driver: runs chunks [startIndex, end) sequentially (each needs the
+    // prior env) and resolves each cell as it settles. Returns synchronously below.
     (async () => {
-      // Resume point: an explicit `after` anchor uses that chunk's end-state;
-      // otherwise the head's own recorded start-state (re-run / edit); otherwise
-      // the base environment (first run / re-run all from definitions).
-      const resumeFrom =
-        (after !== undefined ? endEnvs.get(after) : undefined) ??
-        (locators.length > 0 ? startEnvs.get(locators[0].uri()) : undefined) ??
-        baseEnv;
-      const env = copyEnv<Realm>(resumeFrom);
+      if (startIndex >= roster.length) { return; } // nothing to run (e.g. trailing delete)
+      const env = copyEnv<Realm>(resumeFrom!);
       const finder = makeCachingFinder(env, makeFinder());
       let stopped = false;
-      for (let i = 0; i < locators.length; i++) {
-        const loc = locators[i];
-        if (stopped) { deferreds[i].resolve(skip); continue; }
-        // Record the env THIS chunk runs against (its pre-state), before it
-        // mutates it. (Skipped chunks keep their stale snapshot; the UI never
-        // starts a rerun at a skipped chunk — earliest-dirty is at or before the
-        // chunk that errored.)
-        startEnvs.set(loc.uri(), copyEnv(env));
-        let result: ReRunResult<Result>;
+      for (let i = startIndex; i < roster.length; i++) {
+        const loc = roster[i];
+        if (stopped) { deferreds[i].resolve(notReached); continue; }
+        let result: RerunEntry<Result>;
         try {
           result = await runOne<A2, Realm, Result>(
             executor, finder, compileContext, env, withGlobals(loc, env.globals), opts);
@@ -216,19 +252,19 @@ export function makeReparteeRunner<A2, Realm = any, Result = any>(
         deferreds[i].resolve(result);
         const ranOk = result.$name === 'right' && executor.isSuccessResult((result as any).v);
         if (ranOk) {
-          // env is now this chunk's post-state; record it as an `after` anchor.
+          // env is now this chunk's post-state; record it as a resume boundary.
           endEnvs.set(loc.uri(), copyEnv(env));
         } else {
           stopped = true;
         }
       }
     })().catch((err) => {
-      // Defensive: an engine-level (non-chunk) failure. Resolve any still-
-      // pending cells so the UI never hangs; already-resolved cells are
-      // unaffected (resolve is idempotent).
+      // Defensive: an engine-level (non-chunk) failure. Resolve any still-pending
+      // cells (those from startIndex on) so the UI never hangs; already-resolved
+      // cells are unaffected (resolve is idempotent).
       // eslint-disable-next-line no-console
       console.error('repartee: rerunInteractions driver error', err);
-      for (const d of deferreds) { d.resolve(skip); }
+      for (let i = startIndex; i < roster.length; i++) { deferreds[i].resolve(notReached); }
     });
 
     return deferreds.map((d) => d.promise);
