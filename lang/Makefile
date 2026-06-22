@@ -448,7 +448,7 @@ ts-pyret-test: tests/pyret/main2-ts.jarr
 	$(NODE) tests/pyret/main2-ts.jarr
 
 .PHONY : ts-test
-ts-test: ts-unit-test ts-parity-test ts-repl-test ts-pyret-test ts-type-check-test ts-regression-test ts-io-test
+ts-test: ts-unit-test ts-parity-test ts-repl-test ts-repartee-test ts-pyret-test ts-type-check-test ts-regression-test ts-io-test
 
 .PHONY : ts-clean
 ts-clean:
@@ -502,13 +502,18 @@ tests/pyret/all-ts.jarr: ts-compiler $(TEST_FILES) $(TYPE_TEST_FILES) $(REG_TEST
 all-ts-pyret-test: tests/pyret/all-ts.jarr
 	$(NODE) tests/pyret/all-ts.jarr
 
-# The repl suite uses node's built-in test runner (node:test): the in-process
-# load-lib runtime needs requirejs, which can't load inside a jest worker.
-# repl-test.js drives the REAL runtime (no CPO). Needs a warm builtin cache in
-# tests/ts-compiled (built by ts-pyret-test).
+# The repl + repartee suites use node's built-in test runner (node:test): the
+# in-process load-lib runtime needs requirejs, which can't load inside a jest
+# worker. repl-test.js and repartee-eval-test.js drive the REAL runtime (no CPO);
+# repartee-test.js is the stub-executor engine suite. All need a warm builtin
+# cache in tests/ts-compiled (built by ts-pyret-test).
 .PHONY : ts-repl-test
 ts-repl-test: ts-compiler
 	$(NODE) --test src/ts-compiler/tests/repl-test.js
+
+.PHONY : ts-repartee-test
+ts-repartee-test: ts-compiler
+	$(NODE) --test src/ts-compiler/tests/repartee-test.js src/ts-compiler/tests/repartee-eval-test.js
 
 
 # ===== Promise/async backend (brought in for Phase 0 oracle work) =====
