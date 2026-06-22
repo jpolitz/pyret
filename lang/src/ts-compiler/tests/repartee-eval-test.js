@@ -703,4 +703,22 @@ describe('repartee evaluation (in-process load-lib)', () => {
       assert.equal(num(out[3]), '3'); // b now at index 3
     });
   });
+
+  // The single-flight guard against the REAL async executor (run-program returns a
+  // promise that takes real time), where the busy window genuinely spans
+  // compilation + execution rather than a synchronous stub.
+  describe('single-flight against the real runtime', () => {
+    test('isRunning spans a real run; re-entry throws mid-flight, then succeeds once settled', async () => {
+      const r = mkRunner();
+      const roster = [loc('z = 21\n', 'definitions'), loc('z * 2\n')];
+      const ps = r.rerunInteractions(roster, 0, optsNone);
+      assert.equal(r.isRunning(), true);
+      assert.throws(() => r.rerunInteractions(roster, 0, optsNone), /already in progress/);
+      const out = await all(ps);
+      assert.equal(num(out[1]), '42');
+      assert.equal(r.isRunning(), false);
+      // Settled: a fresh run goes through.
+      assert.equal(num((await all(r.rerunInteractions(roster, 1, optsNone)))[1]), '42');
+    });
+  });
 });

@@ -263,4 +263,63 @@ describe('repartee engine (stub executor)', () => {
     assert.deepEqual(await all(ps), []);
     assert.equal(stub.log.length, 0);
   });
+
+  describe('single-flight / isRunning', () => {
+    const roster = () => [
+      loc('definitions://', 'x = 1\n', 'definitions'),
+      loc('chunk://1', 'y = x\n'),
+    ];
+
+    test('isRunning is false at rest, true while a run is in flight, false once it settles', async () => {
+      const runner = mkRunner(mkStub());
+      assert.equal(runner.isRunning(), false);
+      const ps = runner.rerunInteractions(roster(), 0, opts);
+      assert.equal(runner.isRunning(), true); // synchronously busy after launch
+      await all(ps);
+      assert.equal(runner.isRunning(), false); // settled before the awaiting caller resumes
+    });
+
+    test('a re-entrant rerunInteractions throws while a run is in flight; works once settled', async () => {
+      const runner = mkRunner(mkStub());
+      const r = roster();
+      const ps = runner.rerunInteractions(r, 0, opts);
+      assert.throws(() => runner.rerunInteractions(r, 0, opts), /already in progress/);
+      await all(ps);
+      const out = await all(runner.rerunInteractions(r, 0, opts)); // fine now
+      assert.deepEqual(out.map((x) => x.$name), ['right', 'right']);
+    });
+
+    test('clearSnapshots throws while a run is in flight; works once settled', async () => {
+      const runner = mkRunner(mkStub());
+      const ps = runner.rerunInteractions(roster(), 0, opts);
+      assert.throws(() => runner.clearSnapshots(), /in progress/);
+      await all(ps);
+      runner.clearSnapshots(); // fine now
+      assert.equal(runner.hasEndState('definitions://'), false);
+    });
+
+    test('a no-op call (startIndex == length) never goes busy and does not block the next run', async () => {
+      const runner = mkRunner(mkStub());
+      const r = roster();
+      await all(runner.rerunInteractions(r, 0, opts));
+      const ps = runner.rerunInteractions(r, 2, opts); // run nothing
+      assert.equal(runner.isRunning(), false);          // never busy
+      assert.deepEqual((await all(ps)).map((x) => x.$name), ['prefix-skipped', 'prefix-skipped']);
+      // Not blocked: a real run can follow immediately.
+      const out = await all(runner.rerunInteractions(r, 1, opts));
+      assert.equal(out[1].$name, 'right');
+    });
+
+    test('isRunning returns to false after a run that stops on an error', async () => {
+      const runner = mkRunner(mkStub());
+      const r = [
+        loc('definitions://', 'x = 1\n', 'definitions'),
+        loc('chunk://1', 'w = "FAILRUN"\n'),
+        loc('chunk://2', 'x\n'),
+      ];
+      const out = await all(runner.rerunInteractions(r, 0, opts));
+      assert.equal(out[2].$name, 'not-reached');
+      assert.equal(runner.isRunning(), false); // cleared even though evaluation stopped early
+    });
+  });
 });

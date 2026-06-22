@@ -101,14 +101,25 @@ export interface ReparteeRunner<A2, Realm = any, Result = any> {
   // memory is reclaimed without a separate liveness signal.
   //
   // Throws SYNCHRONOUSLY (a caller contract violation, surfaced loudly rather
-  // than guessing) if startIndex is out of [0, roster.length], or if resuming
-  // after roster[startIndex-1] is requested but that chunk has no recorded
-  // end-state (it never ran successfully).
+  // than guessing) if: a run is already in progress (see isRunning — the engine
+  // is single-flight, the caller must not overlap runs); startIndex is out of
+  // [0, roster.length]; or resuming after roster[startIndex-1] is requested but
+  // that chunk has no recorded end-state (it never ran successfully).
   rerunInteractions(
     roster: CL.Locator[],
     startIndex: number,
     options?: CS.CompileOptions
   ): Promise<RerunEntry<Result>>[];
+
+  // True from the moment a rerun with work to do is launched until its driver
+  // settles (all cells resolved or evaluation stopped). The engine is single-
+  // flight: rerunInteractions (and clearSnapshots) throw while this is true. A UI
+  // that wants to re-run mid-flight must first cancel the in-flight run (e.g. a
+  // runtime break, which surfaces as that chunk's error and stops the driver),
+  // await the in-flight promise array to settle, then issue the new run. The
+  // caller can also derive this by awaiting the last rerun's promises; the engine
+  // reports it as the authoritative source.
+  isRunning(): boolean;
 
   // Whether a chunk has a recorded end-state — i.e. it ran successfully and can be
   // resumed-after (the predecessor of a valid startIndex). Mostly for tests / UI
@@ -118,6 +129,8 @@ export interface ReparteeRunner<A2, Realm = any, Result = any> {
   // Forget every memoized boundary, so the next run from startIndex 0 starts
   // genuinely fresh. Routine deletions are handled by the roster reconcile in
   // rerunInteractions; this is the heavier "dispose the whole session" reset.
+  // Throws synchronously if a run is in progress (it would corrupt the driver's
+  // in-flight writes to the boundary map).
   clearSnapshots(): void;
 }
 
@@ -181,9 +194,21 @@ export function makeReparteeRunner<A2, Realm = any, Result = any>(
   // boundary IS its predecessor's end-state, so one map suffices.
   let endEnvs = new Map<string, ReplEnv<Realm>>();
 
+  // Single-flight guard: true while a rerun's driver is in flight. The engine
+  // mutates shared state (endEnvs, the realm lineage) during a run, so a second
+  // overlapping run would race it; we reject re-entry rather than queue (queuing
+  // would also run stale intermediate states — the UI should coalesce to the
+  // latest intent and re-run after the in-flight run settles).
+  let running = false;
+
+  function isRunning(): boolean { return running; }
+
   function hasEndState(uri: string): boolean { return endEnvs.has(uri); }
 
   function clearSnapshots(): void {
+    if (running) {
+      throw new Error('repartee: clearSnapshots called while a run is in progress');
+    }
     endEnvs = new Map();
   }
 
@@ -192,6 +217,9 @@ export function makeReparteeRunner<A2, Realm = any, Result = any>(
     startIndex: number,
     options?: CS.CompileOptions
   ): Promise<RerunEntry<Result>>[] {
+    if (running) {
+      throw new Error('repartee: rerunInteractions called while a run is already in progress');
+    }
     const opts = options ?? baseOptions;
 
     if (!Number.isInteger(startIndex) || startIndex < 0 || startIndex > roster.length) {
@@ -229,48 +257,58 @@ export function makeReparteeRunner<A2, Realm = any, Result = any>(
     // Retained prefix [0, startIndex): not re-run this pass.
     for (let i = 0; i < startIndex; i++) { deferreds[i].resolve(prefixSkipped); }
 
+    // Mark the engine busy for the lifetime of the driver. A no-op call (nothing
+    // to run — e.g. a trailing delete that only triggers GC) never goes busy.
+    const hasWork = startIndex < roster.length;
+    if (hasWork) { running = true; }
+
     // Detached driver: runs chunks [startIndex, end) sequentially (each needs the
     // prior env) and resolves each cell as it settles. Returns synchronously below.
     (async () => {
-      if (startIndex >= roster.length) { return; } // nothing to run (e.g. trailing delete)
-      const env = copyEnv<Realm>(resumeFrom!);
-      const finder = makeCachingFinder(env, makeFinder());
-      let stopped = false;
-      for (let i = startIndex; i < roster.length; i++) {
-        const loc = roster[i];
-        if (stopped) { deferreds[i].resolve(notReached); continue; }
-        let result: RerunEntry<Result>;
-        try {
-          result = await runOne<A2, Realm, Result>(
-            executor, finder, compileContext, env, withGlobals(loc, env.globals), opts);
-        } catch (e) {
-          // A static error that throws rather than returning problems (parse
-          // errors, well-formedness throws). Treat it as this chunk's terminal
-          // result and stop evaluation, exactly like a compile-error left.
-          result = { $name: 'thrown', error: e };
+      try {
+        if (!hasWork) { return; }
+        const env = copyEnv<Realm>(resumeFrom!);
+        const finder = makeCachingFinder(env, makeFinder());
+        let stopped = false;
+        for (let i = startIndex; i < roster.length; i++) {
+          const loc = roster[i];
+          if (stopped) { deferreds[i].resolve(notReached); continue; }
+          let result: RerunEntry<Result>;
+          try {
+            result = await runOne<A2, Realm, Result>(
+              executor, finder, compileContext, env, withGlobals(loc, env.globals), opts);
+          } catch (e) {
+            // A static error that throws rather than returning problems (parse
+            // errors, well-formedness throws). Treat it as this chunk's terminal
+            // result and stop evaluation, exactly like a compile-error left.
+            result = { $name: 'thrown', error: e };
+          }
+          deferreds[i].resolve(result);
+          const ranOk = result.$name === 'right' && executor.isSuccessResult((result as any).v);
+          if (ranOk) {
+            // env is now this chunk's post-state; record it as a resume boundary.
+            endEnvs.set(loc.uri(), copyEnv(env));
+          } else {
+            stopped = true;
+          }
         }
-        deferreds[i].resolve(result);
-        const ranOk = result.$name === 'right' && executor.isSuccessResult((result as any).v);
-        if (ranOk) {
-          // env is now this chunk's post-state; record it as a resume boundary.
-          endEnvs.set(loc.uri(), copyEnv(env));
-        } else {
-          stopped = true;
-        }
+      } catch (err) {
+        // Defensive: an engine-level (non-chunk) failure. Resolve any still-pending
+        // cells (those from startIndex on) so the UI never hangs; already-resolved
+        // cells are unaffected (resolve is idempotent).
+        // eslint-disable-next-line no-console
+        console.error('repartee: rerunInteractions driver error', err);
+        for (let i = startIndex; i < roster.length; i++) { deferreds[i].resolve(notReached); }
+      } finally {
+        // Settled (all cells resolved or evaluation stopped); the engine is free.
+        running = false;
       }
-    })().catch((err) => {
-      // Defensive: an engine-level (non-chunk) failure. Resolve any still-pending
-      // cells (those from startIndex on) so the UI never hangs; already-resolved
-      // cells are unaffected (resolve is idempotent).
-      // eslint-disable-next-line no-console
-      console.error('repartee: rerunInteractions driver error', err);
-      for (let i = startIndex; i < roster.length; i++) { deferreds[i].resolve(notReached); }
-    });
+    })();
 
     return deferreds.map((d) => d.promise);
   }
 
-  return { rerunInteractions, hasEndState, clearSnapshots };
+  return { rerunInteractions, isRunning, hasEndState, clearSnapshots };
 }
 
 // ---------------------------------------------------------------------------
