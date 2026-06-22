@@ -26,6 +26,12 @@ jobs:
     - name: build
       run: make
 
-    - name: run tests
+    - name: run baseline compiler tests
       run: make all-pyret-test
+
+    - name: run TS-compiler port tests
+      run: make ts-test
+
+    - name: run TS-compiler promise-backend tests
+      run: make ts-promise-test
 
