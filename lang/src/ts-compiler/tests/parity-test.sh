@@ -9,7 +9,10 @@
 set -u
 cd "$(dirname "$0")/../../.."   # lang/
 
-NODE="node --max-old-space-size=8192"
+# Compiled standalones need node >= 22 (ESM-only vega@6). Prefer a node22 binary
+# when present (dev machines with an older default node); else node (CI: node 24).
+NODE_BIN="${NODE_BIN:-$(command -v node22 >/dev/null 2>&1 && echo node22 || echo node)}"
+NODE="$NODE_BIN --max-old-space-size=8192"
 PYRET_ARR=build/phaseA/pyret.jarr
 PYRET_TS=build/ts-compiler/pyret.js
 PROGRAMS_DIR=src/ts-compiler/tests/programs

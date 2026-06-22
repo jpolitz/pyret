@@ -1,5 +1,10 @@
 PYRET_COMP0      = build/phase0/pyret.jarr
-NODE             = node -max-old-space-size=8192
+# Tests run compiled standalones, which eager-require ESM-only vega@6 and so need
+# node >= 22. Prefer a `node22` binary when present (dev machines whose default
+# `node` is older); otherwise use `node` (CI provisions node 24). Override with
+# `make NODE_BIN=...` if needed.
+NODE_BIN        ?= $(shell command -v node22 >/dev/null 2>&1 && echo node22 || echo node)
+NODE             = $(NODE_BIN) -max-old-space-size=8192
 NPM_EXEC         = npm --prefix . exec --no --
 JS               = js
 JSBASE           = $(JS)/base
@@ -364,7 +369,7 @@ ts-compiler: $(TS_COMP_OUT)/pyret.js $(TS_COMP_ALL_DEPS)
 # Unit tests for the TS compiler implementation itself
 .PHONY : ts-unit-test
 ts-unit-test: ts-compiler
-	$(NODE) $(TS_COMP_DIR)/tests/run-unit-tests.js
+	$(NODE) --test $(TS_COMP_DIR)/tests/run-unit-tests.js
 
 # Parity: compile and run the same programs with the Pyret-hosted
 # compiler (phaseA) and the TS compiler, with the same options, and
@@ -413,14 +418,14 @@ tests/pyret/main2-ts-promise.jarr: ts-compiler tests/pyret/main2.arr $(TEST_FILE
 # Like pyret-test-promise (the Pyret-promise reference oracle) but for the TS-promise
 # compiler. The suite runs ~247 nested run-task compiles that resolve a CWD-relative
 # ./compiled-promise; COLD, each recompiles builtins in-process with the slow async
-# compiler and the run appears to hang. So PRE-WARM ./compiled-promise first (same as
-# pyret-test-promise). Run from $(CURDIR) under node22 with NODE_PATH (chart tests pull
-# in vega = ESM). Gate on "Ended in Error: 0" + the expected ~8 test-repl failures
-# (documented async stack-trace-shape pins), NOT a zero-failure total.
+# compiler and the run appears to hang. So PRE-WARM ./compiled-promise first (the
+# warm-promise-cache prereq). Run from $(CURDIR) under node>=22 with NODE_PATH (the
+# nested compiles resolve node_modules; chart tests pull in vega = ESM). Pass/fail is
+# the standalone's own exit code (handalone exits non-zero on check failures/errors),
+# exactly like the baseline pyret-test and cont ts-pyret-test rules.
 .PHONY : ts-promise-pyret-test
 ts-promise-pyret-test: warm-promise-cache tests/pyret/main2-ts-promise.jarr
-	@echo "=== TS-promise suite (expect: Errored 0; ~8 test-repl stacktrace-pin failures) ==="
-	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-ts-promise.jarr | tee /tmp/ts-promise-suite-result.txt; grep -q "Ended in Error: 0" /tmp/ts-promise-suite-result.txt && echo "TS-PROMISE SUITE OK (0 errors)" || { echo "TS-PROMISE SUITE: errors present"; exit 1; }
+	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-ts-promise.jarr
 
 .PHONY : ts-promise-test
 ts-promise-test: ts-parity-promise-test ts-promise-pyret-test
@@ -485,7 +490,7 @@ ts-type-check-test: ts-compiler tests/type-check/main-ts.jarr
 
 .PHONY : ts-io-test
 ts-io-test: ts-compiler
-	$(NPM_EXEC) jest --detectOpenHandles --forceExit --verbose "src/ts-compiler/tests/io-ts.test.js"
+	$(NODE) --test src/ts-compiler/tests/io-ts-test.js
 
 tests/pyret/all-ts.jarr: ts-compiler $(TEST_FILES) $(TYPE_TEST_FILES) $(REG_TEST_FILES) $(MAIN_TEST_FILES)
 	$(TS_TEST_BUILD) \
@@ -497,9 +502,13 @@ tests/pyret/all-ts.jarr: ts-compiler $(TEST_FILES) $(TYPE_TEST_FILES) $(REG_TEST
 all-ts-pyret-test: tests/pyret/all-ts.jarr
 	$(NODE) tests/pyret/all-ts.jarr
 
+# The repl suite uses node's built-in test runner (node:test): the in-process
+# load-lib runtime needs requirejs, which can't load inside a jest worker.
+# repl-test.js drives the REAL runtime (no CPO). Needs a warm builtin cache in
+# tests/ts-compiled (built by ts-pyret-test).
 .PHONY : ts-repl-test
 ts-repl-test: ts-compiler
-	$(NODE) src/ts-compiler/tests/repl-test.js
+	$(NODE) --test src/ts-compiler/tests/repl-test.js
 
 
 # ===== Promise/async backend (brought in for Phase 0 oracle work) =====
@@ -598,9 +607,10 @@ new-bootstrap-promise: phaseD-promise phaseE-promise
 # IN-PROCESS with the (slow) async-compiled bundled compiler, so the run appears
 # to hang. pyret-test-promise therefore PRE-WARMS ./compiled-promise first; the
 # run self-warms the remainder and the dir persists for later runs. Build the
-# suite WITHOUT --deps-file and run under node22 (chart tests pull in vega = ESM).
+# suite WITHOUT --deps-file and run under node >= 22 (chart tests pull in vega = ESM).
 # (A TS-promise suite needs the same pre-warm of its nested runtime cache dir.)
-NODE22 ?= node22
+# Same node>=22 selection as NODE_BIN: node22 locally if present, else node (CI: 24).
+NODE22 ?= $(NODE_BIN)
 PROMISE_TEST_BUILD = $(NODE) $(PHASEA)/pyret.jarr --builtin-js-dir src/js/trove/ --builtin-arr-dir src/arr/trove/ --require-config src/scripts/standalone-configA-async.json --stack-backend promise
 
 tests/pyret/main2.p.jarr: phaseA tests/pyret/main2.arr $(TEST_FILES)
@@ -614,10 +624,7 @@ warm-promise-cache: phaseA
 
 .PHONY : pyret-test-promise
 pyret-test-promise: phaseA warm-promise-cache tests/pyret/main2.p.jarr
-	@echo "=== promise suite (expect: all tests pass) ==="
-	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2.p.jarr | tee /tmp/promise-suite-result.txt; \
-	code=$${PIPESTATUS[0]}; \
-	test $$code -eq 0 && echo "PROMISE SUITE OK" || { echo "PROMISE SUITE: failures (exit $$code)"; exit 1; }
+	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2.p.jarr
 
 .PHONY : all-pyret-test-promise
 all-pyret-test-promise: pyret-test-promise
