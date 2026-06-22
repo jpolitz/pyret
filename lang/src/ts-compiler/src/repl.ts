@@ -94,6 +94,77 @@ async function runProgramWith<Realm, Result>(
   }
 }
 
+// The evaluation state threaded across interactions: the compile-time globals
+// and the host's realm, plus the compiled-module and dependency-locator caches.
+// globals/realm are functional (each successful run yields fresh ones), so they
+// are held by reference; modules/locatorCache are mutable and so are copied when
+// snapshotting (see copyEnv). The repl holds a single live ReplEnv; the repartee
+// runner keeps one per chunk boundary so it can resume from any of them.
+export interface ReplEnv<Realm = any> {
+  globals: CS.Globals;
+  realm: Realm;
+  modules: Map<string, CS.Loadable>;
+  locatorCache: Map<string, CL.Locator>;
+}
+
+// Snapshot copy: globals/realm by reference (immutable in the threading),
+// modules/locatorCache shallow-copied (values are immutable compiled artifacts
+// / locators, so a shallow copy is safe and cheap).
+export function copyEnv<Realm>(e: ReplEnv<Realm>): ReplEnv<Realm> {
+  return {
+    globals: e.globals,
+    realm: e.realm,
+    modules: new Map(e.modules),
+    locatorCache: new Map(e.locatorCache),
+  };
+}
+
+// Wraps a finder so that already-known dependency locators resolve from the
+// env's cache before falling back. Mirrors the inline finder repl.arr builds.
+export function makeCachingFinder<A2>(
+  env: { locatorCache: Map<string, CL.Locator> },
+  fallback: Finder<A2>
+): Finder<A2> {
+  return (context, dep) => {
+    if (dep instanceof CS.Dependency) {
+      const cached = env.locatorCache.get(dep.arguments[0]);
+      if (cached !== undefined) {
+        return new CL.Located(cached, context);
+      }
+    }
+    return fallback(context, dep);
+  };
+}
+
+// Runs a single locator against env, mutating env in place. Mirrors repl.arr's
+// run-interaction + update-env: the compiled modules are always merged into the
+// module cache, but globals/realm/locator-cache advance ONLY on a successful run
+// (compile errors -> left, runtime failures -> right with isSuccessResult false
+// both leave the threaded env's globals/realm untouched). Returns the repl's
+// Either result.
+export async function runOne<A2, Realm, Result>(
+  executor: ReplExecutor<Realm, Result>,
+  finder: Finder<A2>,
+  compileContext: A2,
+  env: ReplEnv<Realm>,
+  locator: CL.Locator,
+  options: CS.CompileOptions
+): Promise<Either<any[], Result>> {
+  const worklist = CL.compileWorklistKnownModules(finder, locator, compileContext, env.modules as any);
+  const compiled = CL.compileProgramWith(worklist, env.modules, options);
+  for (const [k, v] of compiled.modules) {
+    env.modules.set(k, v);
+  }
+  const result = await runProgramWith(executor, worklist, compiled, env.realm, options);
+  if (result.$name === 'right' && executor.isSuccessResult(result.v)) {
+    const last = compiled.loadables[compiled.loadables.length - 1];
+    env.globals = addGlobalsFromEnv(last.postCompileEnv as CS.ComputedEnv, env.globals);
+    env.locatorCache.set(locator.uri(), locator);
+    env.realm = executor.getResultRealm(result.v);
+  }
+  return result;
+}
+
 export interface Repl<A2, Realm = any, Result = any> {
   restartInteractions(defsLocator: CL.Locator, options: CS.CompileOptions): Promise<Either<any[], Result>>;
   makeInteractionLocator(getInteractions: () => string): CL.Locator;
@@ -109,54 +180,42 @@ export function makeRepl<A2, Realm = any, Result = any>(
   makeFinder: () => Finder<A2>
 ): Repl<A2, Realm, Result> {
 
-  let globals: CS.Globals = CS.standardGlobals;
   let currentCompileOptions: CS.CompileOptions = { ...CS.defaultCompileOptions, checks: 'main' };
-  let currentModules: Map<string, CS.Loadable> = modules;
-  let currentRealm: Realm = realm;
-  let locatorCache = new Map<string, CL.Locator>();
+  let env: ReplEnv<Realm> = {
+    globals: CS.standardGlobals,
+    realm,
+    modules,
+    locatorCache: new Map(),
+  };
   let currentInteraction = 0;
   let currentFinder: Finder<A2> = makeFinder();
 
+  // Built once; reads the live env's cache and the latest currentFinder (both
+  // reassigned by restartInteractions), so it tracks state across restarts.
   const finder: Finder<A2> = (context, dep) => {
     if (dep instanceof CS.Dependency) {
-      const cached = locatorCache.get(dep.arguments[0]);
+      const cached = env.locatorCache.get(dep.arguments[0]);
       if (cached !== undefined) {
         return new CL.Located(cached, context);
       }
-      return currentFinder(context, dep);
     }
     return currentFinder(context, dep);
   };
 
-  function updateEnv(result: Result, loc: CL.Locator, cr: CS.Loadable): void {
-    globals = addGlobalsFromEnv(cr.postCompileEnv as CS.ComputedEnv, globals);
-    locatorCache.set(loc.uri(), loc);
-    currentRealm = executor.getResultRealm(result);
-  }
-
-  async function runInteraction(locator: CL.Locator): Promise<Either<any[], Result>> {
-    const worklist = CL.compileWorklistKnownModules(finder, locator, compileContext, currentModules as any);
-    const compiled = CL.compileProgramWith(worklist, currentModules, currentCompileOptions);
-    for (const [k, v] of compiled.modules) {
-      currentModules.set(k, v);
-    }
-    const result = await runProgramWith(executor, worklist, compiled, currentRealm, currentCompileOptions);
-    if (result.$name === 'right') {
-      if (executor.isSuccessResult(result.v)) {
-        updateEnv(result.v, locator, compiled.loadables[compiled.loadables.length - 1]);
-      }
-    }
-    return result;
+  function runInteraction(locator: CL.Locator): Promise<Either<any[], Result>> {
+    return runOne(executor, finder, compileContext, env, locator, currentCompileOptions);
   }
 
   function restartInteractions(defsLocator: CL.Locator, options: CS.CompileOptions): Promise<Either<any[], Result>> {
     currentInteraction = 0;
     currentCompileOptions = options;
-    currentRealm = realm;
-    locatorCache = new Map();
-    currentModules = new Map(modules); // Make a copy
+    env = {
+      globals: defsLocator.getGlobals(),
+      realm,
+      modules: new Map(modules), // Make a copy
+      locatorCache: new Map(),
+    };
     currentFinder = makeFinder();
-    globals = defsLocator.getGlobals();
     return runInteraction(defsLocator);
   }
 
@@ -173,7 +232,7 @@ export function makeRepl<A2, Realm = any, Result = any>(
       }
       return ast;
     }
-    const globalsNow = globals;
+    const globalsNow = env.globals;
     const self: CL.Locator = {
       getUncached: () => undefined,
       needsCompile: (_provs) => true,
