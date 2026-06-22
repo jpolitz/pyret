@@ -1,11 +1,13 @@
 // Copy of tests/io-tests/io.test.js pointed at the TypeScript compiler
 // (build/ts-compiler/pyret.js instead of build/phaseA/pyret.jarr), with a
 // separate compiled cache and outfile so both suites can coexist.
-// Run from lang/: npm exec --no -- jest src/ts-compiler/tests/io-ts.test.js
+// Run from lang/: node --test src/ts-compiler/tests/io-ts-test.js
+// (node:test, like the other ts-compiler suites — see repartee-test.js.)
 const glob = require('glob');
 const fs = require('fs');
 const cp = require('child_process');
 const assert = require('assert');
+const { describe, test, before, after, beforeEach, afterEach } = require('node:test');
 
 const COMPILER_TIMEOUT = 60000; // ms, for each compiler run (including startup)
 const RUN_TIMEOUT = 60000; // ms, for each program execution
@@ -67,7 +69,7 @@ const try_delete_compiled_file = () => {
 
 describe("IO Tests (TS compiler)", () => {
   let server;
-  beforeAll(() => {
+  before(() => {
     server = cp.spawn(
       process.execPath,
       [require.resolve("http-server/bin/http-server"),
@@ -75,17 +77,17 @@ describe("IO Tests (TS compiler)", () => {
       { stdio: "ignore" },
     );
   });
-  afterAll(() => {
+  after(() => {
     server.kill('SIGTERM');
   });
   glob.sync(`tests/io-tests/tests/test-*.arr`, {}).forEach(f => {
-    beforeEach(() => try_delete_compiled_file());
-    afterEach(() => try_delete_compiled_file());
-
     describe("Testing " + f, () => {
+      beforeEach(() => try_delete_compiled_file());
+      afterEach(() => try_delete_compiled_file());
+
       const {stdioExpected, stdInToInject, stderrExpected, compilestderrExpected, extraArgs} = parse_file_for_expected_std(f);
 
-      test(`it should return io that is expected: ${stdioExpected}`, () => {  
+      test(`it should return io that is expected: ${stdioExpected}`, () => {
         const args = [
                         "build/ts-compiler/pyret.js",
             "--build-runnable", f, 
@@ -97,7 +99,7 @@ describe("IO Tests (TS compiler)", () => {
           ].concat(extraArgs);
         cp.spawnSync("bash", ["-c", "rm -rf tests/ts-compiled/library-code* tests/ts-compiled/test-*"]);
         const compileProcess = cp.spawnSync(
-          "node",
+          process.execPath, // same node that runs this suite (node>=22; see Makefile NODE_BIN)
           args,
           {stdio: "pipe", stderr: "pipe", timeout: COMPILER_TIMEOUT});
          
@@ -106,27 +108,27 @@ describe("IO Tests (TS compiler)", () => {
         }
          
         if(compilestderrExpected === "") {
-          expect(compileProcess.stderr.toString()).toEqual(EMPTY_MESSAGE);
-          expect(compileProcess.status).toEqual(SUCCESS_EXIT_CODE);
+          assert.equal(compileProcess.stderr.toString(), EMPTY_MESSAGE);
+          assert.equal(compileProcess.status, SUCCESS_EXIT_CODE);
         }
         else {
-          expect(compileProcess.stderr.toString()).toMatch(anywhere(compilestderrExpected));
-          expect(compileProcess.status).not.toEqual(SUCCESS_EXIT_CODE);
+          assert.match(compileProcess.stderr.toString(), anywhere(compilestderrExpected));
+          assert.notEqual(compileProcess.status, SUCCESS_EXIT_CODE);
           return; // Don't try to run the program if an error was expected
         }
 
         const runProcess = cp.spawnSync(
-          'node', 
-          [COMPILED_CODE_PATH], 
+          process.execPath,
+          [COMPILED_CODE_PATH],
           {input: stdInToInject, stdio: 'pipe', stderr: "pipe", timeout: RUN_TIMEOUT});
 
         if (stderrExpected !== EMPTY_MESSAGE) {
-          expect(runProcess.status).not.toEqual(SUCCESS_EXIT_CODE);
-          expect(runProcess.stderr.toString()).toMatch(anywhere(stderrExpected));
-        } 
+          assert.notEqual(runProcess.status, SUCCESS_EXIT_CODE);
+          assert.match(runProcess.stderr.toString(), anywhere(stderrExpected));
+        }
         else {
-          expect(runProcess.status).toEqual(SUCCESS_EXIT_CODE);
-          expect(runProcess.stdout.toString()).toMatch(anywhere(stdioExpected));
+          assert.equal(runProcess.status, SUCCESS_EXIT_CODE);
+          assert.match(runProcess.stdout.toString(), anywhere(stdioExpected));
         }
       });
     });

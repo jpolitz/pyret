@@ -1,27 +1,14 @@
 #!/usr/bin/env node
-// Unit tests for the TypeScript compiler port. Run from lang/:
-//   node src/ts-compiler/tests/run-unit-tests.js
+// Unit tests for the TypeScript compiler port (node:test). Run from lang/:
+//   node --test src/ts-compiler/tests/run-unit-tests.js
 // (or `make ts-unit-test`). Requires `make ts-compiler` first.
 
 const path = require('path');
 const assert = require('assert');
+const { test } = require('node:test');
 
 const OUT = path.join(__dirname, '..', '..', '..', 'build', 'ts-compiler');
 function load(mod) { return require(path.join(OUT, mod)); }
-
-let passed = 0;
-let failed = 0;
-function test(name, fn) {
-  try {
-    fn();
-    passed++;
-    console.log('ok   ' + name);
-  } catch (e) {
-    failed++;
-    console.log('FAIL ' + name + ': ' + e.message);
-    if (process.env.VERBOSE) console.log(e.stack);
-  }
-}
 
 // ---------- pprint ----------
 const PP = load('pprint.js');
@@ -166,7 +153,3 @@ test('error-display: renders text and locs', () => {
   const s = RED.displayToString(e, String, []);
   assert.strictEqual(s, '\nThe function`f`is bad');
 });
-
-console.log('');
-console.log(`unit tests: ${passed} passed, ${failed} failed`);
-process.exit(failed === 0 ? 0 : 1);
