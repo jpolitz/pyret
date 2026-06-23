@@ -16,6 +16,9 @@
   window.PYRET_TS_PROMISE = "{{&PYRET_TS_PROMISE}}";
   window.PYRET_TS_COMPILER = "{{&PYRET_TS_COMPILER}}";
   window.CPO_COMPILER = "{{&CPO_COMPILER}}" || "pyret";
+  // When set (e.g. "repartee" on /editor2), the TS jarr mounts an alternate UI
+  // into the same page instead of the normal editor. Empty = normal editor.
+  window.CPO_UI = "{{&CPO_UI}}";
   (function() {
     var m = /[?&]compiler=([^&]*)/.exec(window.location.search);
     if(m) { window.CPO_COMPILER = decodeURIComponent(m[1]); }
@@ -38,6 +41,7 @@
   <link rel="stylesheet" href="{{ &BASE_URL }}/css/matchesonscrollbar.css" />
   <link rel="stylesheet" href="{{ &BASE_URL }}/css/shared.css" />
   <link rel="stylesheet" href="{{ &BASE_URL }}/css/editor.css" />
+  {{#CPO_UI}}<link rel="stylesheet" href="{{ &BASE_URL }}/css/repartee.css" />{{/CPO_UI}}
   <link rel="stylesheet" href="{{ &BASE_URL }}/css/font-awesome.min.path-fixed.css" />
   <link rel="stylesheet" href="{{ &BASE_URL }}/css/themes/default.css" />
   <link rel="stylesheet" href="{{ &BASE_URL }}/css/themes/base16.css" />
@@ -491,6 +495,7 @@ if (typeof Promise.withResolvers === 'undefined') {
 <script src="{{ &BASE_URL }}/js/jquery.min.js"></script>
 <script src="{{ &BASE_URL }}/js/jquery-ui.min.js"></script>
 <script src="{{ &BASE_URL }}/js/editor-misc.min.js"></script>
+{{#CPO_UI}}<script src="{{ &BASE_URL }}/js/repartee-ui.js"></script>{{/CPO_UI}}
 
 <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
 <script>

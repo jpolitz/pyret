@@ -70,7 +70,9 @@ function setup() {
 function setupMulti(name) {
   return function() {
     setupWithName.call(this, name);
-    this.browser.get(this.base + "/editor");
+    // BASE_PAGE lets the same suite run against an alternate editor page (e.g.
+    // BASE_PAGE=/editor2 to check the Repartee UI for parity); defaults to /editor.
+    this.browser.get(this.base + (process.env.BASE_PAGE || "/editor"));
     this.timeout(20000);
     return waitForPyretLoad(this.browser);
   }

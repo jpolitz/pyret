@@ -1,0 +1,69 @@
+/*
+  repartee.css — ONLY the deltas on top of CPO's look.
+
+  The two-pane layout, fonts, colours, the `>>>` prompt glyph, the value/check
+  output, the toolbar and footer all come from shared.css / editor.css (the same
+  files CPO uses). This file adds just what Repartee needs beyond CPO:
+    - the dashed "edited" border and striped "stale/outdated" result cue,
+    - `name = value` rows (CPO's REPL shows no names),
+    - making past entries' editors editable (CPO's echoes are read-only),
+    - a light separator under the definitions-output block.
+*/
+
+/* ---- interactions: editable `>>>` entries ---- */
+/* line up the `>>>` sign with the (editable) code editor */
+.repl-echo.rpt-entry,
+.prompt-container .repl-prompt {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+}
+.repl-prompt-sign { flex: 0 0 auto; }
+.repl-prompt-sign::before { float: none; padding-right: 0.4em; }
+.rpt-echo-cm, .repl-prompt > .CodeMirror { flex: 1 1 auto; min-width: 0; display: block; }
+
+/* CPO hides the cursor in its read-only echoes; ours are editable, so show it */
+.rpt-entry .CodeMirror-cursors,
+.repl-prompt > .CodeMirror .CodeMirror-cursors { display: block !important; }
+
+.echo-container { padding: 2px 0 6px; }
+.rpt-entry { border: 1px solid transparent; border-radius: 6px; }
+.rpt-entry.is-running { border-color: #4a90d9; }
+.rpt-entry.is-error { border-color: #c0392b; }
+.rpt-interaction-result { padding-left: 1.7em; }
+
+/* ---- the definitions-output block at the top of the repl ---- */
+.rpt-defs-output {
+  border-bottom: 1px solid var(--default-border, #ddd);
+  padding: 2px 0 6px;
+  margin-bottom: 6px;
+}
+.rpt-defs-output:empty { display: none; }
+
+/* ---- name = value rows (CPO omits names) ---- */
+.rpt-output { display: block; padding: 1px 0; }
+.rpt-name { color: #4b54c9; font-weight: 600; }
+.rpt-eq { color: #888; }
+.rpt-value .CodeMirror { display: inline-block; }
+
+.rpt-pending { color: #888; font-style: italic; }
+.rpt-notreached { color: #888; font-style: italic; }
+.rpt-error { color: #c0392b; }
+.rpt-error-fallback { color: #c0392b; white-space: pre-wrap; }
+
+/* ---- the dashed invalidation cue (the one real visual addition) ---- */
+/* an outdated result: dashed + faintly striped, "may no longer match the program" */
+.rpt-stale {
+  border: 1px dashed #b3b3c6 !important;
+  border-radius: 6px;
+  background: repeating-linear-gradient(45deg,
+    rgba(0,0,0,0.00), rgba(0,0,0,0.00) 8px,
+    rgba(80,80,120,0.06) 8px, rgba(80,80,120,0.06) 16px);
+  opacity: 0.78;
+}
+/* an edited entry's own editor gets a dashed border */
+.rpt-entry.is-edited { border-color: #b3b3c6; border-style: dashed; }
+/* editing the definitions: a dashed accent down the left of the editor */
+.replMain.is-edited { box-shadow: inset 3px 0 0 0 #b3b3c6; }
+
+.rpt-busy { cursor: progress; }

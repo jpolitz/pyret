@@ -51,6 +51,19 @@ selenium-test-local:
 selenium-test-sauce:
 	TEST_LOC="sauce" node test/test.js test/browser/pyret
 
+# Parity oracle: run the text-based, definitions-only mocha suites (error and
+# check-block rendering) against /editor2 (the Repartee UI) via BASE_PAGE. Because
+# /editor2 uses the same TS compiler + the same error-ui/check-ui renderers, these
+# passing proves the Repartee UI's output matches CPO's. Requires a running server
+# at BASE_URL (default http://localhost:4999) and Chrome (GOOGLE_CHROME_BINARY).
+.PHONY : mocha-repartee-parity
+mocha-repartee-parity:
+	BASE_URL="$${BASE_URL:-http://localhost:4999}" \
+	BASE_PAGE="$${BASE_PAGE:-/editor2}" \
+	GOOGLE_CHROME_BINARY="$${GOOGLE_CHROME_BINARY:-/opt/chrome-linux64/chrome}" \
+	PATH="$(CURDIR)/node_modules/chromedriver/lib/chromedriver:$$PATH" \
+	npx mocha test/errors.js test/check-blocks.js test/repartee-interaction.js --timeout 40000
+
 build/web/editor.embed.html: src/web/editor.html .env.embed
 	node make-template.js $< .env.embed > $@
 build/web/editor.html: src/web/editor.html

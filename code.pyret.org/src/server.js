@@ -633,6 +633,23 @@ function start(config, onServerReady) {
     });
   });
 
+  // The Repartee notebook UI (PLATEAU 2021). A thin page that boots the TS jarr
+  // with window.CPO_UI = "repartee" so it mounts the standalone notebook instead
+  // of the normal editor. Always uses the TS-compiler flavor (the engine lives in
+  // lang's repartee.ts, exposed through the TS bundle).
+  app.get("/editor2", function(req, res) {
+    // /editor2 IS the real CPO editor page (editor.html + beforePyret.js, so the
+    // definitions editor, resize divider and chrome are all CPO's), with
+    // CPO_UI=repartee telling the TS jarr to mount the Repartee UI instead of the
+    // normal repl. Always the TS-compiler flavor (the engine is in lang/repartee.ts).
+    res.render("editor.html", { ...defaultOpts,
+      PYRET: defaultOpts.PYRET_TS,
+      CPO_COMPILER: "ts",
+      CPO_UI: "repartee",
+      CSRF_TOKEN: req.csrfToken(),
+    });
+  });
+
   app.get(/\/ide(\/.*)?$/, function(req, res) {
     res.render(
       path.resolve(__dirname, "web", "ide.html"),

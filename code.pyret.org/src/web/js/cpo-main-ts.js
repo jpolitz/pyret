@@ -33,6 +33,18 @@
       protocol: "js-file",
       args: ["./text-handlers"]
     },
+    { "import-type": "dependency",
+      protocol: "js-file",
+      args: ["./output-ui"]
+    },
+    { "import-type": "dependency",
+      protocol: "js-file",
+      args: ["./error-ui"]
+    },
+    { "import-type": "dependency",
+      protocol: "js-file",
+      args: ["./check-ui"]
+    },
     { "import-type": "builtin", name: "arrays" },
     { "import-type": "builtin", name: "ast" },
     { "import-type": "builtin", name: "base" },
@@ -126,7 +138,8 @@
     }
   },
   theModule: function(runtime, namespace, uri,
-                      runtimeLib, loadLib, tsLib, replUI, textHandlers
+                      runtimeLib, loadLib, tsLib, replUI, textHandlers,
+                      outputUI, errorUI, checkUI
                       /* , ...parity builtins, cpoModules, modalPrompt */) {
     // The parity builtin requires and the native requires arrive
     // positionally after the named parameters; only the natives are used.
@@ -267,7 +280,190 @@
       }
     };
 
+    // ---- Repartee mode (the /editor2 notebook UI) --------------------------
+    // When the page asks for the Repartee UI, build an incremental-rerun engine
+    // (lang's repartee.ts) over the SAME runtime / realm / executor / loadables /
+    // finder as the repl above, hand the standalone UI (repartee-ui.js) a `boot`
+    // object with the engine plus runtime-shaped render primitives, mount it, and
+    // skip the normal editor wiring (withRepl) entirely.
+    if (typeof window !== "undefined" && window.CPO_UI === "repartee") {
+      mountRepartee();
+      return;
+    }
+
     return withRepl(jsRepl);
+
+    function mountRepartee() {
+      var documents = (typeof CPO !== "undefined" && CPO.documents) || new Map();
+      var reparteeOptions = tsOptions({ checkAll: false, typeCheck: false });
+      var llInternal = gf(loadLib, "internal");
+
+      // Run `thunk` on a fresh Pyret stack; resolve with its runtime result.
+      function onStack(thunk) {
+        return new Promise(function(resolve) {
+          runtime.runThunk(thunk, function(result) { resolve(result); });
+        });
+      }
+
+      // Append the jQuery/DOM produced by a CPO renderer (error-ui returns a Q
+      // promise of a jQuery element) into `node`, tolerant of shapes.
+      function appendRendered(node, html) {
+        if (!html) { return; }
+        if (html[0] instanceof Element) { node.appendChild(html[0]); }
+        else if (html instanceof Element) { node.appendChild(html); }
+        else if (html.jquery && html.length) { node.appendChild(html[0]); }
+      }
+
+      // Render a single Pyret error value via error-ui (off the Pyret stack,
+      // exactly as displayResult/renderAndDisplayError does): tag it
+      // `.compile-error` and wire the click → toggleHighlight so clicking the
+      // error highlights its source span in the editor (via the documents map),
+      // then auto-click once to highlight immediately. Falls back to text.
+      function renderErrorValue(node, pyretErr, stack) {
+        try {
+          var htmlP = errorUI.error_to_html(runtime, documents, pyretErr, stack || [], undefined);
+          return Promise.resolve(htmlP).then(function(html) {
+            if (html && typeof html.on === "function") { // a jQuery element
+              html.on("click", function() {
+                $(".highlights-active").removeClass("highlights-active");
+                html.trigger("toggleHighlight");
+                html.addClass("highlights-active");
+              });
+              html.addClass("compile-error");
+              html.appendTo(node);
+              html.click(); // highlight the source immediately, as the repl does
+            } else {
+              appendRendered(node, html);
+            }
+          }).catch(function(e) { node.appendChild(textNode(String(e))); });
+        } catch (e) {
+          node.appendChild(textNode(String((pyretErr && pyretErr.message) || e)));
+          return Promise.resolve();
+        }
+      }
+
+      function textNode(s) {
+        var d = document.createElement("div");
+        d.className = "rpt-error-fallback";
+        d.textContent = s;
+        return d;
+      }
+
+      // Convert any thrown JS error (e.g. a TS parse error) into the Pyret
+      // failure result the renderer understands, reusing the repl's bridge.
+      function convertThrown(err) {
+        return new Promise(function(resolve) { tsLib.resolveWithError({ resolve: resolve }, err); });
+      }
+
+      function makeRunner() {
+        return T.repartee.makeReparteeRunner(
+          executor,
+          builtinSupport.loadables,
+          pyRealm,
+          {},
+          tsLib.makeFinderFactory(builtinSupport, sourceCache),
+          reparteeOptions);
+      }
+
+      var boot = {
+        runtime: runtime,
+        makeRunner: makeRunner,
+        makeChunkLocator: function(uri2, getSource, kind) {
+          return T.repartee.makeChunkLocator(uri2, getSource, kind);
+        },
+        compileOptions: reparteeOptions,
+        documents: documents,
+        getModuleResultResult: function(v) { return llInternal.getModuleResultResult(v); },
+        isSuccessResult: function(rr) { return runtime.isSuccessResult(rr); },
+        getField: runtime.getField,
+        nothing: runtime.nothing,
+        breakAll: function() { runtime.breakAll(); },
+        render: {
+          // A Pyret value (numbers, strings, lists, images, tables, charts) via
+          // CPO's own renderer — MUST run on the Pyret stack.
+          value: function(node, value) {
+            return onStack(function() { return outputUI.renderPyretValue(node, runtime, value); })
+              .catch(function(e) { node.appendChild(textNode(String(e))); });
+          },
+          // TS compile problems (RerunEntry left.v): bridge to renderable Pyret
+          // errors, then render each.
+          compileProblems: function(node, problemsArr) {
+            var errs = [];
+            try {
+              var pyretList = tsLib.bridgeCompileErrors(problemsArr);
+              runtime.ffi.toArray(pyretList).forEach(function(rec) {
+                runtime.ffi.toArray(runtime.getField(rec, "problems")).forEach(function(p) { errs.push(p); });
+              });
+            } catch (e) {
+              node.appendChild(textNode("compile error: " + String(e)));
+              return Promise.resolve();
+            }
+            return errs.reduce(function(chain, e) {
+              return chain.then(function() { return renderErrorValue(node, e, []); });
+            }, Promise.resolve());
+          },
+          // A thrown compile (RerunEntry thrown.error), most often a parse error.
+          parseError: function(node, tsError) {
+            return convertThrown(tsError).then(function(failResult) {
+              var exn = failResult && failResult.exn ? failResult.exn : failResult;
+              var pyretErr = (exn && exn.exn !== undefined) ? exn.exn : exn;
+              var stack = (exn && exn.pyretStack) || [];
+              return renderErrorValue(node, pyretErr, stack);
+            });
+          },
+          // A runtime failure (right + !isSuccess): the exn is already a Pyret one.
+          runtimeError: function(node, pyretErr, stack) {
+            return renderErrorValue(node, pyretErr, stack);
+          },
+          // Check-block results for a successful run.
+          checks: function(node, moduleResultV) {
+            return onStack(function() {
+              var rr = llInternal.getModuleResultResult(moduleResultV);
+              var checks = runtime.getField(rr.result, "checks");
+              return checkUI.drawCheckResults($(node), documents, runtime, checks, moduleResultV);
+            }).catch(function(e) { console.error("repartee: checks render failed", e); });
+          },
+        },
+      };
+
+      // ---- Brain transplant: reuse CPO's real editor machinery ------------
+      // beforePyret.js has already built CPO.editor (the definitions editor with
+      // the full CM config — pyret mode/matchKeywords, indent, cursor, electric
+      // keys) inside .replMain, plus the resize handle (#handle). Reuse them
+      // rather than re-derive: the definitions chunk IS CPO.editor, interaction
+      // entries are made with CPO.makeEditor (same config), and resizing is CPO's.
+      if (typeof CPO !== "undefined" && CPO.editor && CPO.editor.cm) {
+        CPO.editor.cm.setOption("readOnly", false); // beforePyret starts it nocursor
+        boot.defsCM = CPO.editor.cm;
+        boot.defsEl = $(".replMain")[0];
+        boot.replContainer = document.getElementById("REPL");
+        boot.makeEntryEditor = function(container) {
+          return CPO.makeEditor(container, { simpleEditor: true, run: function() {} }).cm;
+        };
+        boot.setupResize = function(onResize) {
+          var $REPL = $("#REPL");
+          var replHeight = $REPL.height();
+          $REPL.resizable({
+            maxHeight: replHeight, minHeight: replHeight,
+            maxWidth: window.innerWidth - 128, minWidth: 100,
+            handles: { "w": "#handle" }
+          });
+          $REPL.on("resize", function(event, ui) {
+            $(".replMain").css("width", (window.innerWidth - ui.size.width) + "px");
+            if (boot.defsCM) { boot.defsCM.refresh(); }
+            if (onResize) { onResize(); }
+          });
+          $(window).resize(function() { $REPL.resizable("option", "maxWidth", window.innerWidth - 128); });
+        };
+      }
+
+      window.REPARTEE_BOOT = boot;
+      if (typeof window.makeRepartee === "function") {
+        window.repartee = window.makeRepartee(boot);
+      } else {
+        console.error("repartee-ui.js not loaded (window.makeRepartee is missing)");
+      }
+    }
 
     function withRepl(repl) {
       var runButton = $("#runButton");
