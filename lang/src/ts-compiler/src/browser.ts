@@ -17,6 +17,7 @@
 */
 
 import * as repl from './repl';
+import * as repartee from './repartee';
 import * as compileLib from './compile-lib';
 import * as compileStructs from './compile-structs';
 import * as compileErrors from './compile-errors';
@@ -39,6 +40,7 @@ import {
 
 export {
   repl,
+  repartee,
   compileLib,
   compileStructs,
   compileErrors,

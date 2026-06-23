@@ -322,4 +322,84 @@ describe('repartee engine (stub executor)', () => {
       assert.equal(runner.isRunning(), false); // cleared even though evaluation stopped early
     });
   });
+
+  // The pull/stream form. The headline property is the one the old push API
+  // silently violated and that motivated this API: while the consumer holds its
+  // turn (between yields), the engine takes NO execution turn — so a consumer can
+  // safely re-enter the runtime to render. The stub's run-counter lets us assert
+  // it directly: the engine must not advance during the consumer's body.
+  describe('pull/stream API (rerunStream)', () => {
+    const threeRoster = () => [
+      loc('definitions://', 'x = 1\n', 'definitions'),
+      loc('chunk://1', 'x\n'),
+      loc('chunk://2', 'x\n'),
+    ];
+
+    test('suspends at each yield: the engine runs no chunk while the consumer holds its turn', async () => {
+      const stub = mkStub();
+      const runner = mkRunner(stub);
+      const seen = [];
+      for await (const { index, entry } of runner.rerunStream(threeRoster(), 0, opts)) {
+        seen.push(index);
+        const runsAtYield = stub.log.length;
+        // Consumer takes a turn (a macrotask, like an async render would).
+        await new Promise((r) => setTimeout(r, 0));
+        // The engine, parked at the yield, must not have run the next chunk.
+        assert.equal(stub.log.length, runsAtYield,
+          `engine advanced during the consumer's turn at index ${index}`);
+        assert.equal(entry.$name, 'right');
+      }
+      assert.deepEqual(seen, [0, 1, 2]);
+      assert.equal(stub.log.length, 3); // each chunk ran exactly once, in order
+      assert.equal(runner.isRunning(), false);
+    });
+
+    test('yields prefix-skipped for the retained prefix, then runs the suffix', async () => {
+      const stub = mkStub();
+      const runner = mkRunner(stub);
+      const r = threeRoster();
+      await all(runner.rerunInteractions(r, 0, opts)); // establish end-states
+      const kinds = [];
+      for await (const { entry } of runner.rerunStream(r, 2, opts)) { kinds.push(entry.$name); }
+      assert.deepEqual(kinds, ['prefix-skipped', 'prefix-skipped', 'right']);
+    });
+
+    test('stops at the first error; later chunks yield not-reached', async () => {
+      const runner = mkRunner(mkStub());
+      const r = [
+        loc('definitions://', 'x = 1\n', 'definitions'),
+        loc('chunk://1', 'w = "FAILRUN"\n'),
+        loc('chunk://2', 'x\n'),
+      ];
+      const kinds = [];
+      for await (const { entry } of runner.rerunStream(r, 0, opts)) { kinds.push(entry.$name); }
+      assert.deepEqual(kinds, ['right', 'right', 'not-reached']);
+      assert.equal(runner.isRunning(), false);
+    });
+
+    test('throws synchronously on contract violations (range / no end-state / overlap)', async () => {
+      const runner = mkRunner(mkStub());
+      const r = threeRoster();
+      assert.throws(() => runner.rerunStream(r, 9, opts), /out of range/);
+      assert.throws(() => runner.rerunStream(r, 2, opts), /no recorded end-state/); // nothing ran yet
+      const live = runner.rerunStream(r, 0, opts); // claims the channel synchronously
+      assert.equal(runner.isRunning(), true);
+      assert.throws(() => runner.rerunStream(r, 0, opts), /in progress/);
+      assert.throws(() => runner.rerunInteractions(r, 0, opts), /in progress/);
+      for await (const _ of live) { /* drain to release */ }
+      assert.equal(runner.isRunning(), false);
+    });
+
+    test('breaking out closes the stream and releases the single-flight claim', async () => {
+      const runner = mkRunner(mkStub());
+      const r = threeRoster();
+      for await (const { index } of runner.rerunStream(r, 0, opts)) {
+        if (index === 1) { break; } // for-await calls .return() -> finally -> running=false
+      }
+      assert.equal(runner.isRunning(), false);
+      const out = await all(runner.rerunInteractions(r, 0, opts)); // a fresh run still works
+      assert.equal(out.length, 3);
+      assert.equal(out[2].$name, 'right');
+    });
+  });
 });

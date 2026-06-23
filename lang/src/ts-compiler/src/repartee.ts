@@ -80,6 +80,10 @@ export function isPrefixSkipped(r: RerunEntry): r is PrefixSkipped { return r.$n
 export function isNotReached(r: RerunEntry): r is NotReached { return r.$name === 'not-reached'; }
 export function isThrown(r: RerunEntry): r is Thrown { return r.$name === 'thrown'; }
 
+// One step of the pull/stream API (rerunStream): a roster position and its
+// outcome, yielded one at a time, in order.
+export interface RerunYield<Result = any> { index: number; entry: RerunEntry<Result>; }
+
 // ---------------------------------------------------------------------------
 // The engine
 // ---------------------------------------------------------------------------
@@ -110,6 +114,26 @@ export interface ReparteeRunner<A2, Realm = any, Result = any> {
     startIndex: number,
     options?: CS.CompileOptions
   ): Promise<RerunEntry<Result>>[];
+
+  // The pull/stream form, and the PREFERRED API for an incremental UI. An async
+  // generator the CONSUMER drives: it yields one { index, entry } per roster
+  // position, in order, and SUSPENDS at each yield. The engine touches the
+  // single, non-reentrant runtime ONLY while being stepped — never while parked
+  // at a yield — so a consumer may safely do its own runtime work (e.g. render a
+  // value, which re-enters the runtime) between yields. Engine and consumer thus
+  // alternate turns on the one channel: this is the race-free way to render
+  // incrementally. rerunInteractions is a thin wrapper that drains this.
+  //
+  // Throws SYNCHRONOUSLY (before the generator is returned) on the same contract
+  // violations as rerunInteractions. CONSUMER CONTRACT: drive to completion or
+  // close it — a `for await` loop does both (including on break/throw).
+  // Abandoning a started run without consuming or closing it leaks the
+  // single-flight claim.
+  rerunStream(
+    roster: CL.Locator[],
+    startIndex: number,
+    options?: CS.CompileOptions
+  ): AsyncGenerator<RerunYield<Result>, void, void>;
 
   // True from the moment a rerun with work to do is launched until its driver
   // settles (all cells resolved or evaluation stopped). The engine is single-
@@ -212,24 +236,24 @@ export function makeReparteeRunner<A2, Realm = any, Result = any>(
     endEnvs = new Map();
   }
 
-  function rerunInteractions(
+  // Shared synchronous prologue for any run: validate startIndex, resolve the
+  // resume environment (throwing loudly on a contract violation BEFORE any work
+  // begins, rather than silently restarting from base), reconcile GC against the
+  // authoritative roster, and claim the single-flight channel. Returns the resume
+  // env and whether there is work. Pairs with releasing `running` (the driver's
+  // finally) — claimed here only when there IS work, so a no-op never goes busy.
+  function prepareRun(
     roster: CL.Locator[],
     startIndex: number,
-    options?: CS.CompileOptions
-  ): Promise<RerunEntry<Result>>[] {
+    label: string
+  ): { resumeFrom: ReplEnv<Realm> | undefined; hasWork: boolean } {
     if (running) {
-      throw new Error('repartee: rerunInteractions called while a run is already in progress');
+      throw new Error(`repartee: ${label} called while a run is already in progress`);
     }
-    const opts = options ?? baseOptions;
-
     if (!Number.isInteger(startIndex) || startIndex < 0 || startIndex > roster.length) {
       throw new Error(
-        `repartee: rerunInteractions startIndex ${startIndex} out of range [0, ${roster.length}]`);
+        `repartee: ${label} startIndex ${startIndex} out of range [0, ${roster.length}]`);
     }
-
-    // Resolve the resume environment up front, so a contract violation (resuming
-    // after a chunk that never ran) throws synchronously, before any cell promise
-    // is handed out — rather than silently restarting from the base environment.
     let resumeFrom: ReplEnv<Realm> | undefined;
     if (startIndex < roster.length) {
       if (startIndex === 0) {
@@ -244,35 +268,41 @@ export function makeReparteeRunner<A2, Realm = any, Result = any>(
         }
       }
     }
-
-    // The roster is authoritative: forget any memoized boundary for a chunk that
-    // is no longer in it (the UI deleted that chunk). This is the whole of GC —
-    // no separate liveness signal needed.
+    // The roster is authoritative: forget any memoized boundary for a chunk no
+    // longer in it (the UI deleted it). This is the whole of GC.
     const live = new Set(roster.map((l) => l.uri()));
     for (const uri of [...endEnvs.keys()]) {
       if (!live.has(uri)) { endEnvs.delete(uri); }
     }
-
-    const deferreds = roster.map(() => makeDeferred<RerunEntry<Result>>());
-    // Retained prefix [0, startIndex): not re-run this pass.
-    for (let i = 0; i < startIndex; i++) { deferreds[i].resolve(prefixSkipped); }
-
-    // Mark the engine busy for the lifetime of the driver. A no-op call (nothing
-    // to run — e.g. a trailing delete that only triggers GC) never goes busy.
     const hasWork = startIndex < roster.length;
     if (hasWork) { running = true; }
+    return { resumeFrom, hasWork };
+  }
 
-    // Detached driver: runs chunks [startIndex, end) sequentially (each needs the
-    // prior env) and resolves each cell as it settles. Returns synchronously below.
-    (async () => {
+  function rerunStream(
+    roster: CL.Locator[],
+    startIndex: number,
+    options?: CS.CompileOptions
+  ): AsyncGenerator<RerunYield<Result>, void, void> {
+    const opts = options ?? baseOptions;
+    // Synchronous prologue (claims the channel, throws on contract violation)
+    // runs NOW, before the generator object is returned — so overlap/range/no-
+    // end-state errors surface at the call site, not lazily on first step.
+    const { resumeFrom, hasWork } = prepareRun(roster, startIndex, 'rerunStream');
+
+    async function* driver(): AsyncGenerator<RerunYield<Result>, void, void> {
       try {
+        // Retained prefix [0, startIndex): not re-run this pass.
+        for (let i = 0; i < startIndex; i++) {
+          yield { index: i, entry: prefixSkipped };
+        }
         if (!hasWork) { return; }
         const env = copyEnv<Realm>(resumeFrom!);
         const finder = makeCachingFinder(env, makeFinder());
         let stopped = false;
         for (let i = startIndex; i < roster.length; i++) {
           const loc = roster[i];
-          if (stopped) { deferreds[i].resolve(notReached); continue; }
+          if (stopped) { yield { index: i, entry: notReached }; continue; }
           let result: RerunEntry<Result>;
           try {
             result = await runOne<A2, Realm, Result>(
@@ -283,7 +313,6 @@ export function makeReparteeRunner<A2, Realm = any, Result = any>(
             // result and stop evaluation, exactly like a compile-error left.
             result = { $name: 'thrown', error: e };
           }
-          deferreds[i].resolve(result);
           const ranOk = result.$name === 'right' && executor.isSuccessResult((result as any).v);
           if (ranOk) {
             // env is now this chunk's post-state; record it as a resume boundary.
@@ -291,24 +320,55 @@ export function makeReparteeRunner<A2, Realm = any, Result = any>(
           } else {
             stopped = true;
           }
+          // Suspend HERE. The consumer takes its turn (it may re-enter the runtime
+          // to render) while we are parked at this yield and touching nothing.
+          yield { index: i, entry: result };
         }
+      } finally {
+        // Run consumed to completion, or closed early (consumer broke out / threw):
+        // a `for await` calls the generator's .return(), which runs this finally.
+        if (hasWork) { running = false; }
+      }
+    }
+
+    return driver();
+  }
+
+  // The push form, kept for existing callers/tests: drain the stream and resolve
+  // one promise per roster entry. The drain takes NO runtime turn between chunks
+  // (it only buffers), so the engine runs back-to-back exactly as before. We
+  // drain FULLY before resolving any promise, so `running` is already false (the
+  // generator's finally) by the time a resolved promise wakes its awaiter — this
+  // preserves the "await all then immediately re-run" safety sequential callers
+  // rely on. Throws synchronously (via rerunStream) on contract violations.
+  function rerunInteractions(
+    roster: CL.Locator[],
+    startIndex: number,
+    options?: CS.CompileOptions
+  ): Promise<RerunEntry<Result>>[] {
+    const stream = rerunStream(roster, startIndex, options);
+    const deferreds = roster.map(() => makeDeferred<RerunEntry<Result>>());
+    (async () => {
+      const collected: RerunYield<Result>[] = [];
+      try {
+        for await (const y of stream) { collected.push(y); }
       } catch (err) {
-        // Defensive: an engine-level (non-chunk) failure. Resolve any still-pending
-        // cells (those from startIndex on) so the UI never hangs; already-resolved
-        // cells are unaffected (resolve is idempotent).
+        // Defensive: an engine-level (non-chunk) failure mid-drain. Whatever was
+        // collected is resolved below; the rest fall through to NotReached so the
+        // UI never hangs.
         // eslint-disable-next-line no-console
         console.error('repartee: rerunInteractions driver error', err);
-        for (let i = startIndex; i < roster.length; i++) { deferreds[i].resolve(notReached); }
-      } finally {
-        // Settled (all cells resolved or evaluation stopped); the engine is free.
-        running = false;
+      }
+      const seen = new Set<number>();
+      for (const { index, entry } of collected) { deferreds[index].resolve(entry); seen.add(index); }
+      for (let i = 0; i < roster.length; i++) {
+        if (!seen.has(i)) { deferreds[i].resolve(notReached); }
       }
     })();
-
     return deferreds.map((d) => d.promise);
   }
 
-  return { rerunInteractions, isRunning, hasEndState, clearSnapshots };
+  return { rerunInteractions, rerunStream, isRunning, hasEndState, clearSnapshots };
 }
 
 // ---------------------------------------------------------------------------
