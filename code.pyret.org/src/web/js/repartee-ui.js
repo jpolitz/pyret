@@ -46,7 +46,7 @@
     // ---- chunk model --------------------------------------------------------
     function makeChunkRecord(id, kind) {
       return {
-        id: id, kind: kind, cm: null, el: null, resultEl: null,
+        id: id, kind: kind, cm: null, el: null, resultEl: null, railEl: null,
         lastRunSource: null, dirty: true, ran: false, locator: null,
       };
     }
@@ -64,7 +64,17 @@
     }
 
     // ---- visual state -------------------------------------------------------
+    // The left status rail: a coloured bar down the left of each entry showing
+    // where evaluation is up-to-date (green), running (blue), edited/stale
+    // (dotted amber/grey) or errored (dotted red) — the prototype's per-chat
+    // status line. Driven by data-rpt-state on the entry's rail element (the
+    // .echo-container wrap for interactions, the .rpt-defs-output block for the
+    // definitions) and styled in repartee.css.
+    function setRail(chunk, state) {
+      if (chunk.railEl) { chunk.railEl.setAttribute('data-rpt-state', state); }
+    }
     function setChunkState(chunk, state) {
+      setRail(chunk, state);
       if (!chunk.el) { return; }
       chunk.el.classList.remove('is-clean', 'is-edited', 'is-running', 'is-error', 'is-stale');
       chunk.el.classList.add('is-' + state);
@@ -78,7 +88,11 @@
       if (i < 0) { return; }
       setChunkState(chunk, 'edited');
       setResultStale(chunk, true);
-      for (var j = i + 1; j < all.length; j++) { setResultStale(all[j], true); }
+      for (var j = i + 1; j < all.length; j++) {
+        // downstream entries keep their own class but their results are now stale
+        setResultStale(all[j], true);
+        setRail(all[j], 'stale');
+      }
     }
     function onChunkEdit(chunk) {
       if (chunk.cm.getValue() !== chunk.lastRunSource) {
@@ -235,6 +249,8 @@
 
       chunk.el = echo; // is-* state on .repl-echo, keeping the wrap class exact
       chunk.resultEl = resultEl;
+      chunk.railEl = wrap; // the status rail spans the whole entry (echo + result)
+      setRail(chunk, 'edited'); // freshly added, not yet run
       // CPO.makeEditor does container.append(jQueryTextarea), so the container
       // must be a jQuery object (a raw element's native .append would stringify it).
       chunk.cm = boot.makeEntryEditor(window.$(cmMount)); // CPO.makeEditor — full config
@@ -303,6 +319,7 @@
     output.id = 'output';
     var defsOut = el('div', 'rpt-defs-output rpt-interaction-result');
     defsChunk.resultEl = defsOut;
+    defsChunk.railEl = defsOut; // defs status rail = the defs-output block's left edge
     output.appendChild(defsOut);
     var interactionsList = output;
     var liveRow = el('div', 'prompt-container');

@@ -35,7 +35,8 @@
 /* ---- the definitions-output block at the top of the repl ---- */
 .rpt-defs-output {
   border-bottom: 1px solid var(--default-border, #ddd);
-  padding: 2px 0 6px;
+  /* left padding matches .echo-container so the content clears the status rail */
+  padding: 2px 0 6px 14px;
   margin-bottom: 6px;
 }
 .rpt-defs-output:empty { display: none; }
@@ -67,3 +68,42 @@
 .replMain.is-edited { box-shadow: inset 3px 0 0 0 #b3b3c6; }
 
 .rpt-busy { cursor: progress; }
+
+/* ---- left status rail: where evaluation is up-to-date / stale / broken ---- */
+/* A coloured bar down the left of each interaction entry (and the definitions-
+   output block at the top), echoing the prototype's per-chat status line:
+     solid green  = up-to-date (ran clean)
+     solid blue   = running
+     dotted amber = edited (this entry changed, not yet re-run)
+     dotted grey  = stale / not-reached (a change upstream, or an earlier error)
+     dotted red   = errored
+   Driven by the data-rpt-state attribute set in repartee-ui.js (setRail). The
+   bars left-align into one continuous column since each entry is a child of
+   #output. An entry with no state yet shows a faint neutral bar. */
+.echo-container, .rpt-defs-output { position: relative; }
+.echo-container { padding-left: 14px; }
+.echo-container::before,
+.rpt-defs-output::before {
+  content: "";
+  position: absolute;
+  left: 5px; top: 4px; bottom: 4px;
+  width: 3px;
+  border-radius: 2px;
+  background: #d7d7e0;
+}
+.echo-container[data-rpt-state="clean"]::before,
+.rpt-defs-output[data-rpt-state="clean"]::before { background: #2e9e4f; }
+.echo-container[data-rpt-state="running"]::before,
+.rpt-defs-output[data-rpt-state="running"]::before { background: #4a90d9; }
+.echo-container[data-rpt-state="edited"]::before,
+.rpt-defs-output[data-rpt-state="edited"]::before {
+  background: repeating-linear-gradient(to bottom, #e0a800 0 4px, transparent 4px 8px);
+}
+.echo-container[data-rpt-state="stale"]::before,
+.rpt-defs-output[data-rpt-state="stale"]::before {
+  background: repeating-linear-gradient(to bottom, #9a9ab0 0 4px, transparent 4px 8px);
+}
+.echo-container[data-rpt-state="error"]::before,
+.rpt-defs-output[data-rpt-state="error"]::before {
+  background: repeating-linear-gradient(to bottom, #c0392b 0 4px, transparent 4px 8px);
+}
