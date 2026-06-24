@@ -641,10 +641,17 @@ function start(config, onServerReady) {
     // /editor2 IS the real CPO editor page (editor.html + beforePyret.js, so the
     // definitions editor, resize divider and chrome are all CPO's), with
     // CPO_UI=repartee telling the TS jarr to mount the Repartee UI instead of the
-    // normal repl. Always the TS-compiler flavor (the engine is in lang/repartee.ts).
+    // normal repl. Always a TS-compiler flavor (the engine is in lang/repartee.ts).
+    // The runtime is selectable per request (?compiler=ts|ts-promise), defaulting
+    // to the cont TS backend. Resolved server-side (like /editor) so the preload
+    // link and window.PYRET point at the jarr that will actually load.
+    var compiler = req.query.compiler || "ts";
+    var compilerOpts = { PYRET: defaultOpts.PYRET_TS, CPO_COMPILER: "ts" };
+    if(compiler === "ts-promise" && defaultOpts.PYRET_TS_PROMISE) {
+      compilerOpts = { PYRET: defaultOpts.PYRET_TS_PROMISE, CPO_COMPILER: "ts-promise" };
+    }
     res.render("editor.html", { ...defaultOpts,
-      PYRET: defaultOpts.PYRET_TS,
-      CPO_COMPILER: "ts",
+      ...compilerOpts,
       CPO_UI: "repartee",
       CSRF_TOKEN: req.csrfToken(),
     });
