@@ -1001,11 +1001,242 @@
       };
     }
 
+    // Self-contained setup of the runtime "ports" that the interactive-output
+    // libraries read to find where to draw: reactors / big-bang (world.js reads
+    // `current-animation-port`), charts (`chart-port` / `remove-chart-port`) and
+    // the older d3 charts (`d3-port` / `remove-d3-port`). makeRepl wires these
+    // inline for the normal REPL; the Repartee UI (cpo-main-ts.js) skips makeRepl,
+    // so it calls this to get the same support — without it, bigBang falls back to
+    // appending to document.body (world.js:`!hasParam("current-animation-port")`)
+    // and reactors appear to "not start". Each call keeps its own animation-window
+    // bookkeeping; `output` is the jQuery node new dialogs are appended under.
+    // Returns `closeAnimationIfOpen` so callers can tear windows down (e.g. on
+    // Stop). Bodies mirror the inline ones in makeRepl above.
+    function setupOutputPorts(rt, output) {
+      var Jsworld = worldLib;
+      var animationDivs = [];
+      var currentZIndex = 15000;
+      function closeAnimationIfOpen() {
+        animationDivs.forEach(function(animationDiv) {
+          animationDiv.empty();
+          animationDiv.dialog("destroy");
+          animationDiv.remove();
+        });
+        animationDivs = [];
+      }
+      function closeTopAnimationIfOpen() {
+        var animationDiv = animationDivs.pop();
+        animationDiv.empty();
+        animationDiv.dialog("destroy");
+        animationDiv.remove();
+      }
+      rt.setParam("current-animation-port", function(dom, title, closeCallback) {
+          var animationDiv = $("<div class='repl-animation'>").css({"z-index": currentZIndex + 1});
+          animationDivs.push(animationDiv);
+          output.append(animationDiv);
+          function onClose() {
+            Jsworld.shutdownSingle({ cleanShutdown: true });
+            closeTopAnimationIfOpen();
+          }
+          closeCallback(closeTopAnimationIfOpen);
+          animationDiv.dialog({
+            title: title,
+            position: ["left", "top"],
+            bgiframe : true,
+            modal : true,
+            overlay : { opacity: 0.5, background: 'black'},
+            width : "auto",
+            height : "auto",
+            close : onClose,
+            closeOnEscape : true
+          });
+          animationDiv.append(dom);
+          var dialogMain = animationDiv.parent();
+          dialogMain.css({"z-index": currentZIndex + 1});
+          dialogMain.prev().css({"z-index": currentZIndex});
+          currentZIndex += 2;
+        });
+      rt.setParam("d3-port", function(dom, optionMutator, onExit, buttons) {
+          // duplicate the code for now
+          var animationDiv = $("<div>");
+          animationDivs.push(animationDiv);
+          output.append(animationDiv);
+          function onClose() {
+            onExit();
+            closeTopAnimationIfOpen();
+          }
+          var baseOption = {
+            position: [5, 5],
+            bgiframe : true,
+            modal : true,
+            overlay : {opacity: 0.5, background: 'black'},
+            width : 'auto',
+            height : 'auto',
+            close : onClose,
+            closeOnEscape : true,
+            create: function() {
+              // from http://fiddle.jshell.net/JLSrR/116/
+              var titlebar = animationDiv.prev();
+              buttons.forEach(function(buttonData) {
+                var button = $('<button/>'),
+                    left = titlebar.find( "[role='button']:last" ).css('left');
+                button.button({icons: {primary: buttonData.icon}, text: false})
+                       .addClass('ui-dialog-titlebar-close')
+                       .css('left', (parseInt(left) + 27) + 'px')
+                       .click(buttonData.click)
+                       .appendTo(titlebar);
+              });
+            }
+          }
+          animationDiv.dialog(optionMutator(baseOption)).dialog("widget").draggable({
+            containment: "none",
+            scroll: false,
+          });
+          animationDiv.append(dom);
+          var dialogMain = animationDiv.parent();
+          dialogMain.css({"z-index": currentZIndex + 1});
+          dialogMain.prev().css({"z-index": currentZIndex});
+          currentZIndex += 2;
+          return animationDiv;
+      });
+      rt.setParam("remove-d3-port", function() {
+          closeTopAnimationIfOpen();
+          // don't call .dialog('close'); because that would trigger onClose and thus onExit.
+          // We don't want that to happen.
+      });
+      rt.setParam('chart-port', function(args) {
+        const animationDiv = $(args.root);
+        animationDivs.push(animationDiv);
+        output.append(animationDiv);
+
+        let timeoutTrigger = null;
+
+        const windowOptions = {
+          title: '',
+          position: [5, 5],
+          bgiframe: true,
+          width: 'auto',
+          height: 'auto',
+          beforeClose: () => {
+            args.draw(options => $.extend({}, options, {chartArea: null}));
+            args.onExit();
+            closeTopAnimationIfOpen();
+          },
+          create: () => {
+            // from http://fiddle.jshell.net/JLSrR/116/
+            const titlebar = animationDiv.prev();
+            titlebar.find('.ui-dialog-title').css({'white-space': 'pre'});
+            let left = parseInt(titlebar.find("[role='button']:last").css('left'));
+            function addButton(icon, fn) {
+              left += 27;
+              const btn = $('<button/>')
+                .button({icons: {primary: icon}, text: false})
+                .addClass('ui-dialog-titlebar-close')
+                .css('left', left + 'px')
+                .click(fn)
+                .attr("title", "Save this chart")
+                .attr("alt", "Save this chart")
+                .appendTo(titlebar);
+              return btn;
+            }
+
+            addButton('ui-icon-disk', () => {
+              let savedOptions = null;
+              args.draw(options => {
+                savedOptions = options;
+                return $.extend({}, options, {chartArea: null});
+              });
+              const img = document.createElement('img');
+              img.src = args.getImageURI();
+              const temp = document.createElement('canvas');
+              temp.width = img.width;
+              temp.height = img.height;
+              const ctx = temp.getContext('2d');
+              ctx.drawImage(img, 0, 0);
+              const image = rt.getField(imageLib, "internal");
+              const trimmed = image.trimCanvas(temp);
+              const download = document.createElement('a');
+              download.href = trimmed.toDataURL();
+              download.download = 'chart.png';
+              // from https://stackoverflow.com/questions/3906142/how-to-save-a-png-from-javascript-variable
+              function fireEvent(obj, evt){
+                const fireOnThis = obj;
+                if(document.createEvent) {
+                  const evObj = document.createEvent('MouseEvents');
+                  evObj.initEvent(evt, true, false);
+                  fireOnThis.dispatchEvent(evObj);
+                } else if(document.createEventObject) {
+                  const evObj = document.createEventObject();
+                  fireOnThis.fireEvent('on' + evt, evObj);
+                }
+              }
+              fireEvent(download, 'click');
+              args.draw(_ => savedOptions);
+            });
+          },
+          resizeStop: (_, ui) => {
+            if (timeoutTrigger) clearTimeout(timeoutTrigger);
+            timeoutTrigger = setTimeout(args.draw, 100, ui);
+          },
+          resize: () => {
+            if (timeoutTrigger) clearTimeout(timeoutTrigger);
+            timeoutTrigger = setTimeout(args.draw, 100);
+          },
+        };
+
+        if (args.isInteractive) {
+          $.extend(windowOptions, {
+            closeOnEscape: true,
+            modal: true,
+            overlay: {opacity: 0.5, background: 'black'},
+            title: '   Interactive Chart',
+          });
+        } else {
+          // need hide to be true so that the dialog will fade out when
+          // closing (see https://api.jqueryui.com/dialog/#option-hide)
+          // this gives time for the chart to actually render
+          $.extend(windowOptions, {hide: true});
+        }
+
+        animationDiv
+          .dialog($.extend({}, windowOptions, args.windowOptions))
+          .dialog('widget')
+          .draggable({
+            containment: 'none',
+            scroll: false,
+          });
+
+        // explicit call to draw to correct the dimension after the dialog has been opened
+        args.draw();
+
+        const dialogMain = animationDiv.parent();
+        if (args.isInteractive) {
+          dialogMain.css({'z-index': currentZIndex + 1});
+          dialogMain.prev().css({'z-index': currentZIndex});
+          currentZIndex += 2;
+        } else {
+          // a trick to hide the dialog while actually rendering it
+          dialogMain.css({
+            top: window.innerWidth * 2,
+            left: window.innerHeight * 2,
+          });
+          animationDiv.dialog('close');
+        }
+      });
+      rt.setParam('remove-chart-port', function() {
+          closeTopAnimationIfOpen();
+          // don't call .dialog('close'); because that would trigger onClose and thus onExit.
+          // We don't want that to happen.
+      });
+      return { closeAnimationIfOpen: closeAnimationIfOpen };
+    }
+
     // Declared here to use CM, used and closed over many times above
 
     return runtime.makeJSModuleReturn({
       makeRepl: makeRepl,
-      makeEditor: CPO.makeEditor
+      makeEditor: CPO.makeEditor,
+      setupOutputPorts: setupOutputPorts
     });
 
   }

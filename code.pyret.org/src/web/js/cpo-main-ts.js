@@ -457,6 +457,18 @@
         };
       }
 
+      // Reactors/big-bang and charts read runtime "ports" (current-animation-port,
+      // chart-port, d3-port) to find where to draw. makeRepl wires these, but the
+      // Repartee UI skips makeRepl, so wire them here too — otherwise bigBang falls
+      // back to document.body and reactors appear not to start. New dialogs float
+      // (jQuery UI), so the repl container is a fine append point.
+      if (typeof replUI.setupOutputPorts === "function") {
+        var portOutput = (typeof window !== "undefined" && window.$)
+          ? window.$(boot.replContainer || document.body)
+          : $(boot.replContainer || document.body);
+        boot.outputPorts = replUI.setupOutputPorts(runtime, portOutput);
+      }
+
       window.REPARTEE_BOOT = boot;
       if (typeof window.makeRepartee === "function") {
         window.repartee = window.makeRepartee(boot);
