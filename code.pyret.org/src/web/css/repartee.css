@@ -69,6 +69,24 @@
 
 .rpt-busy { cursor: progress; }
 
+/* ---- delete affordance: a faint × at the right of an interaction, on hover ---- */
+.rpt-delete {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  border: none;
+  background: transparent;
+  color: #b3b3c6;
+  cursor: pointer;
+  font-size: 1.1em;
+  line-height: 1;
+  padding: 0 4px;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+.echo-container:hover .rpt-delete { opacity: 1; }
+.rpt-delete:hover { color: #c0392b; }
+.rpt-delete:focus { opacity: 1; outline: 1px solid #4a90d9; }
+
 /* ---- left status rail: where evaluation is up-to-date / stale / broken ---- */
 /* A coloured bar down the left of each interaction entry (and the definitions-
    output block at the top), echoing the prototype's per-chat status line:

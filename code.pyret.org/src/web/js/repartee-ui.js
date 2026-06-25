@@ -103,6 +103,26 @@
         markEditedFrom(chunk);
       }
     }
+    // Remove an interaction entry. The engine treats the roster as authoritative,
+    // so dropping the chunk from `interactions` (and the DOM) is enough — its
+    // snapshot is GC'd by roster omission on the next run, which resumes from the
+    // predecessor's end-state. Deleting changes the program for everything that
+    // followed, so those results are marked stale + dirty to re-run on next Run.
+    function deleteChunk(chunk) {
+      if (runner.isRunning()) { return; }
+      var idx = interactions.indexOf(chunk);
+      if (idx < 0) { return; }
+      if (chunk.railEl && chunk.railEl.parentNode) {
+        chunk.railEl.parentNode.removeChild(chunk.railEl);
+      }
+      boot.documents.delete(chunk.id);
+      interactions.splice(idx, 1);
+      for (var j = idx; j < interactions.length; j++) {
+        interactions[j].dirty = true;
+        setResultStale(interactions[j], true);
+        setRail(interactions[j], 'stale');
+      }
+    }
 
     // ---- run (drive the engine's pull/stream API) ---------------------------
     function computeStartIndex() {
@@ -248,6 +268,17 @@
       var cmMount = el('span', 'rpt-echo-cm');
       echo.appendChild(sign);
       echo.appendChild(cmMount);
+      // Delete affordance (a faint × revealed on hover/focus of the entry).
+      var del = el('button', 'rpt-delete', '×');
+      del.type = 'button';
+      del.title = 'Delete this interaction';
+      del.setAttribute('aria-label', 'Delete this interaction');
+      del.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        deleteChunk(chunk);
+      });
+      echo.appendChild(del);
       var resultEl = el('div', 'rpt-interaction-result');
       wrap.appendChild(echo);
       wrap.appendChild(resultEl);
