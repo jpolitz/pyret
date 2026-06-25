@@ -37,6 +37,9 @@
     var gf = boot.getField;
     var runner = boot.makeRunner();
     var seq = 0;
+    // The toolbar's run-dropdown toggles this; run() compiles with type-checking
+    // when set (the "Type-check and run" mode), like CPO's #select-tc-run.
+    var typeCheckMode = false;
 
     if (!boot.defsCM || !boot.replContainer || !boot.makeEntryEditor) {
       console.error('repartee-ui: boot is missing the editor machinery (defsCM / replContainer / makeEntryEditor)');
@@ -122,6 +125,9 @@
       if (startIndex >= all.length) { return; }
 
       var locs = all.map(buildLocator);
+      var opts = typeCheckMode
+        ? Object.assign({}, boot.compileOptions, { typeCheck: true })
+        : boot.compileOptions;
       for (var k = startIndex; k < all.length; k++) {
         setChunkState(all[k], 'running');
         clear(all[k].resultEl);
@@ -129,7 +135,7 @@
       }
       setBusy(true);
       try {
-        for await (var step of runner.rerunStream(locs, startIndex, boot.compileOptions)) {
+        for await (var step of runner.rerunStream(locs, startIndex, opts)) {
           await renderResult(all[step.index], step.entry);
         }
       } catch (e) {
@@ -370,6 +376,9 @@
       refresh: refreshAll,
       getDefinitions: function () { return defsChunk.cm.getValue(); },
       setDefinitions: function (s) { defsChunk.cm.setValue(s); },
+      // Toolbar run-dropdown: switch between plain run and type-check-and-run.
+      setTypeCheck: function (b) { typeCheckMode = !!b; },
+      getTypeCheck: function () { return typeCheckMode; },
     };
   }
 

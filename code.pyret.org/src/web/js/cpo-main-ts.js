@@ -475,6 +475,143 @@
       } else {
         console.error("repartee-ui.js not loaded (window.makeRepartee is missing)");
       }
+
+      // The CPO editor chrome (View menu font/theme, help, focus cycling, save,
+      // share, docs overlay, and the type-check run-dropdown) is wired inside
+      // withRepl, which the Repartee mount skips. Wire the chrome-only parts here
+      // so /editor2 has the same menus. The run dropdown drives the Repartee
+      // engine instead of the repl widget. (The image/Drive picker is left for a
+      // follow-up — it needs Google auth that guest /editor2 sessions lack.)
+      if (window.repartee && typeof CPO !== "undefined" && CPO.editor) {
+        wireReparteeChrome(CPO.editor);
+      }
+    }
+
+    // Wire the CPO editor chrome that normally lives in withRepl, for the
+    // Repartee UI (/editor2). Chrome-only handlers (font, theme, help, focus
+    // cycling, save, share, docs overlay) are equivalent to withRepl's; the run
+    // controls drive the Repartee engine (window.repartee) instead of the repl
+    // widget. Mirrors the corresponding blocks in withRepl below.
+    function wireReparteeChrome(editor) {
+      var rpt = window.repartee;
+
+      // ---- View menu: font size +/- ----
+      function formatFontSizeMenuText(size) {
+        return "Font size: " + Math.round(parseFloat(size));
+      }
+      function updateFontSizeMenuText() {
+        $('#font-label').text(formatFontSizeMenuText($('#main').css("font-size")));
+      }
+      function changeFont(e) {
+        var fontSize = parseInt($('#main').css("font-size"));
+        if ($(e.target).is("#font-plus")) {
+          if (fontSize < 32) { $('#main').css('font-size', '+=2'); }
+          else if (fontSize < 55) { $('#main').css('font-size', '+=4'); }
+        } else if ($(e.target).is("#font-minus")) {
+          if (fontSize > 32) { $('#main').css('font-size', '-=4'); }
+          else if (fontSize > 10) { $('#main').css('font-size', '-=2'); }
+        }
+        editor.refresh();
+        rpt.refresh();
+        updateFontSizeMenuText();
+      }
+      $('#font-plus').click(changeFont);
+      $('#font-minus').click(changeFont);
+      updateFontSizeMenuText();
+
+      // ---- View menu: theme ----
+      var curTheme = document.getElementById("theme-select").value;
+      var themeSelect = $("#theme-select");
+      function applyTheme(theme) {
+        themeSelect.val(theme);
+        $("body").removeClass(curTheme).addClass(theme);
+        curTheme = theme;
+      }
+      applyTheme(curTheme);
+      $("#theme").change(function(e) {
+        applyTheme(e.target.value);
+        localSettings.setItem('theme', curTheme);
+      });
+      localSettings.change("theme", function(_, newTheme) { applyTheme(newTheme); });
+
+      // ---- autocorrect typing in the definitions editor ----
+      editor.cm.on('beforeChange', function(instance, changeObj) {
+        textHandlers.autoCorrect(instance, changeObj, editor.cm);
+      });
+      $('.notificationArea').click(function() { $('.notificationArea span').fadeOut(1000); });
+
+      // ---- keyboard help overlay ----
+      function reciteHelp() {
+        CPO.sayAndForget(
+          "Press Escape to exit help. " +
+          "Control question mark: recite help. " +
+          "Control s: save. " +
+          "F6 and shift-F6: cycle focus through regions. " +
+          "F7 or Control enter: run the code in the definitions window. " +
+          "F8: stop. F9: share. Escape: close help."
+        );
+      }
+      $('#ctrl-question').click(function() { $('#help-keys').fadeIn(100); reciteHelp(); });
+      Mousetrap.bindGlobal('ctrl+shift+/', function(e) {
+        $("#help-keys").fadeIn(100); reciteHelp();
+        e.stopImmediatePropagation(); e.preventDefault();
+      });
+      $(window).on("keyup", function(e) {
+        if (e.keyCode === 27) { // ESC
+          $("#help-keys").fadeOut(500);
+          e.stopImmediatePropagation(); e.preventDefault();
+        }
+      });
+
+      // ---- documentation overlay (drag/resize) ----
+      function fixIframe() { $("#doc-cover").toggle(); }
+      $("#doc-close").on("click", function(e) {
+        $("#doc-containment").toggle();
+        e.stopImmediatePropagation(); e.preventDefault();
+      });
+      $("#doc-overlay").draggable({ start: fixIframe, stop: fixIframe, handle: "#doc-bar", cancel: "#doc-close" });
+      $("#doc-overlay").resizable({
+        handles: { s: "#doc-bottom", e: "#doc-right", w: "#doc-left", sw: "#doc-sw-corner", se: "#doc-se-corner" },
+        start: fixIframe, stop: fixIframe, containment: "#doc-containment", scroll: false
+      });
+
+      // ---- keyboard shortcuts ----
+      if (!PYRET_IS_EMBEDDED) {
+        Mousetrap.bindGlobal('mod+s', function(e) {
+          CPO.save(); e.stopImmediatePropagation(); e.preventDefault();
+        });
+      }
+      Mousetrap.bindGlobal('f6', function(e) { CPO.cycleFocus(); e.stopImmediatePropagation(); e.preventDefault(); });
+      Mousetrap.bindGlobal('shift+f6', function(e) { CPO.cycleFocus(true); e.stopImmediatePropagation(); e.preventDefault(); });
+      Mousetrap.bindGlobal('shift+tab', function(e) { CPO.cycleFocus(true); e.stopImmediatePropagation(); e.preventDefault(); });
+      Mousetrap.bindGlobal('f7', function(e) { rpt.run(true); CPO.autoSave(); e.stopImmediatePropagation(); e.preventDefault(); });
+      Mousetrap.bindGlobal('f8', function(e) { $('#breakButton').click(); e.stopImmediatePropagation(); e.preventDefault(); });
+      Mousetrap.bindGlobal('f9', function(e) {
+        var sc = $('#shareContainer');
+        if (sc && sc[0] && sc[0].childNodes[0]) { sc[0].childNodes[0].click(); }
+        e.stopImmediatePropagation(); e.preventDefault();
+      });
+
+      // ---- the Run dropdown: plain run vs type-check-and-run ----
+      // #runDropdown is opened by beforePyret's menu nav once enabled (it ships
+      // disabled and is normally enabled by the repl widget, which we skip).
+      $('#runDropdown').attr('disabled', false);
+      function closeRunDropdown() {
+        $('#runDropdown').attr('aria-expanded', 'false');
+        $("#run-dropdown-content").attr('aria-hidden', 'true').hide();
+      }
+      $("#select-run").click(function() {
+        $("#runButton").text("Run");
+        rpt.setTypeCheck(false);
+        closeRunDropdown();
+        rpt.run(true);
+      });
+      $("#select-tc-run").click(function() {
+        $("#runButton").text("Type-check and Run");
+        rpt.setTypeCheck(true);
+        closeRunDropdown();
+        rpt.run(true);
+      });
     }
 
     function withRepl(repl) {
