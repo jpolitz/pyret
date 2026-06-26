@@ -93,6 +93,7 @@ function compile(options: { [key: string]: any }): void {
       collectAll: orElse(options, 'collect-all', false),
       ignoreUnbound: orElse(options, 'ignore-unbound', false),
       properTailCalls: orElse(options, 'improper-tail-calls', true),
+      effectTailCalls: !orElse(options, 'no-effect-tail-calls', false),
       compiledCache: orElse(options, 'compiled-dir', './compiled'),
       compiledReadOnly: orElse(options, 'compiled-read-only', []),
       standaloneFile: orElse(options, 'standalone-file', compileOpts.standaloneFile),

@@ -443,7 +443,15 @@ ts-pyret-test: tests/pyret/main2-ts.jarr
 	$(NODE) tests/pyret/main2-ts.jarr
 
 .PHONY : ts-test
-ts-test: ts-unit-test ts-parity-test ts-repl-test ts-pyret-test ts-type-check-test ts-regression-test ts-io-test
+ts-test: ts-unit-test ts-parity-test ts-repl-test ts-pyret-test ts-type-check-test ts-regression-test ts-io-test ts-effect-tail-test
+
+# Differential corner-case tests for the tail-call-in-effect-position
+# optimization (SetTailVisitor.sIfElse): each tc-*.arr is compiled optimized
+# and with -no-effect-tail-calls (the un-optimized oracle) on both backends;
+# outputs must be identical. Exits non-zero on any mismatch.
+.PHONY : ts-effect-tail-test
+ts-effect-tail-test: ts-compiler
+	NODE22="$(NODE22)" bash tests/async-opt/tc/run-corner-tests.sh
 
 .PHONY : ts-clean
 ts-clean:

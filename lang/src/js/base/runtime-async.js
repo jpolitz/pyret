@@ -4354,10 +4354,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-from-list"], 3, $a, false); }
       thisRuntime.checkArgsInternal3("RawArrays", "raw-array-sort-by", arr, thisRuntime.RawArray, comp, thisRuntime.Function, asc, thisRuntime.Boolean);
       return thisRuntime.safeCall(function() {
-        debugger
         return raw_array_map(comp, arr);
       }, function (arrKeys) {
-        debugger
         const zipped = arr.map((v, i) => [v, arrKeys[i]]);
         const compLT = (x, y) => jsnums.lessThan(x[1], y[1])? -1 : jsnums.roughlyEquals(x[1], y[1], 0) ? 0 : 1;
         const compGT = (x, y) => jsnums.greaterThan(x[1], y[1])? -1 : jsnums.roughlyEquals(x[1], y[1], 0) ? 0 : 1;
@@ -5837,6 +5835,14 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       'runTrampoline': run,
       'needsPause': needsPause,
       'checkPause': checkPause,
+      // Exposed for compiled code's conditional-await: `t = f.app(a); if (R.iT(t)) t = await t;`
+      // skips the await microtask when a non-flat callee returned a flat value synchronously
+      // (the common case for the arithmetic/relational runtime ops). Same cross-realm-safe test
+      // the runtime loop helpers use, kept as a single short call (`iT`) to avoid bloating every
+      // call site. Aliased directly (not via nameMap) because this late export block is built
+      // after the nameMap short-name pass runs.
+      'isThenable': isThenable,
+      'iT': isThenable,
       // Lets shared trove .js files (string-dict, etc.) pick the async code path.
       'stackBackend': 'promise',
       'runThunk': runThunk,

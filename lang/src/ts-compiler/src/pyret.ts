@@ -78,6 +78,8 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Run without checking for shadowed variables')],
     ['improper-tail-calls',
       C.flag(C.once, 'Run without proper tail calls')],
+    ['no-effect-tail-calls',
+      C.flag(C.once, 'Disable the tail-call-in-effect-position optimization (for differential testing)')],
     ['collect-times',
       C.flag(C.once, 'Collect timing information about compilation')],
     ['type-check',
@@ -119,6 +121,7 @@ export function main(args: string[]): number {
     const inlineCaseBodyLimit = r.get('inline-case-body-limit');
     const typeCheck = r.has('type-check');
     const tailCalls = !r.has('improper-tail-calls');
+    const effectTailCalls = !r.has('no-effect-tail-calls');
     const compiledDir = r.get('compiled-dir');
     const standaloneFile = r.get('standalone-file');
     const addProfiling = r.has('profile');
@@ -193,6 +196,7 @@ export function main(args: string[]): number {
           collectTimes: r.has('collect-times') && r.get('collect-times'),
           ignoreUnbound: false,
           properTailCalls: tailCalls,
+          effectTailCalls: effectTailCalls,
           stackBackend: stackBackend,
           compiledCache: compiledDir,
           compiledReadOnly: r.has('compiled-read-only-dir') ? r.get('compiled-read-only-dir') : [],
@@ -227,6 +231,7 @@ export function main(args: string[]): number {
         collectAll: false,
         ignoreUnbound: false,
         properTailCalls: tailCalls,
+        effectTailCalls: effectTailCalls,
         stackBackend: stackBackend,
         compileModule: false,
         displayProgress: displayProgress

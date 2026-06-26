@@ -111,6 +111,7 @@ const jOr = J.jOr;
 const jLt = J.jLt;
 const jEq = J.jEq;
 const jNeq = J.jNeq;
+const jEquals = J.jEquals;
 const jGeq = J.jGeq;
 const jUnop = (exp: J.JExprT, op: J.JUnopT): J.JUnop => new J.JUnop(exp, op);
 const jDecr = J.jDecr;
@@ -247,6 +248,7 @@ export const rtNameMap: Map<string, string> = new Map([
   ['isMethod', 'isM'],
   ['isPyretException', 'isPE'],
   ['isPyretTrue', 'isPT'],
+  ['isThenable', 'iT'],
   ['makeActivationRecord', 'mAR'],
   ['makeBoolean', 'mB'],
   ['makeBranderAnn', 'mBA'],
@@ -686,6 +688,37 @@ export function completeReturn(v: J.JExprT): CList<J.JStmt> {
   return clSing(jReturn(v));
 }
 
+// The cross-realm-safe thenable test the async runtime itself uses
+// (runtime-async.js `isThenable` = `t !== null && typeof t === "object" &&
+// typeof t.then === "function"`). `t instanceof Promise` misses thenables from
+// other realms (web workers / FFI), which would leak a Promise as a Pyret value
+// ("Non Pyret value: Promise"). Emitted as a single short runtime call
+// (`R.iT(t)`) rather than inlining the 3-condition test, so adding a
+// conditional await to every non-flat call site does not bloat generated code.
+function jIsThenable(t: A.Name): J.JExprT {
+  return rtMethod('isThenable', clist<J.JExprT>(jId(t)));
+}
+
+// Conditional await: bind `callBase`'s result to fresh temp `t`, then `await`
+// it ONLY if it actually suspended (returned a thenable). The flatness analysis
+// marks a callee non-flat if it *could* be unbounded/async, but many such
+// callees return a flat value synchronously in the common case — the
+// arithmetic/relational runtime ops (_plus, _minus, equal-always, ...) are
+// plain JS functions that return a number/bool directly and only produce a
+// Promise when dispatching to a user-defined method/refinement. Unconditionally
+// `await`ing them costs a microtask round-trip per call even though nothing
+// suspended. Awaiting only real thenables skips that microtask on the hot
+// synchronous path while preserving deep-stack safety: a genuinely-suspending
+// callee returns a thenable, so we still await it (the await is what unwinds the
+// JS stack into the heap). This is the same idiom the runtime loop helpers
+// (eachLoop/map/fold) already use (`isThenable(res) ? await res : res`), and it
+// is value/error-transparent, so TS-cont ≡ TS-promise run parity is preserved.
+function callAndMaybeAwait(t: A.Name, callBase: J.JExprT): CList<J.JStmt> {
+  return clist<J.JStmt>(
+    jVar(t, callBase),
+    jIf1(jIsThenable(t), jBlock1(jExpr(jAssign(t, jAwait(jId(t)))))));
+}
+
 export function compileAexprAsync(compiler: CompilerVisitor, e: N.AExpr): CList<J.JStmt> {
   // Walk the AExpr "chain" (let / arr-let / var / seq / type-let) ITERATIVELY,
   // accumulating each link's straight-line statements, then advance to the body.
@@ -840,10 +873,16 @@ export function compileAppAsync(compiler: CompilerVisitor, l: Loc, f: N.AVal, ar
       compiler.tokenCell.set('minted', true);
       const token = rtMethod('tailCall', clist<J.JExprT>(fCe.exp, jList(false, compiledArgs)));
       return clAppend(pre, clAppend(fnCheck, clSing(jReturn(token))));
-    } else {
+    } else if (isFlat) {
       const callBase = app(l, fCe.exp, compiledArgs);
-      const value = isFlat ? callBase : jAwait(callBase);
-      return clAppend(pre, clAppend(fnCheck, compiler.complete(value)));
+      return clAppend(pre, clAppend(fnCheck, compiler.complete(callBase)));
+    } else {
+      // Conditional await (see callAndMaybeAwait): skip the microtask when the
+      // callee returned a flat value synchronously; still await real thenables.
+      const callBase = app(l, fCe.exp, compiledArgs);
+      const t = freshId(compilerName('app'));
+      return clAppend(pre, clAppend(fnCheck,
+        clAppend(callAndMaybeAwait(t, callBase), compiler.complete(jId(t)))));
     }
   }
 }
@@ -871,7 +910,10 @@ export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.
     const call = wrapWithSrcnode(l,
       rtMethod(helperName,
         clAppend(clist<J.JExprT>(compiledObj, jStr(methname), compiler.getLoc(l)), compiledArgs)));
-    return clAppend(pre, compiler.complete(jAwait(call)));
+    // Conditional await: a flat (synchronous) method returns a value directly;
+    // only a suspending method returns a thenable. See callAndMaybeAwait.
+    const t = freshId(compilerName('mans'));
+    return clAppend(pre, clAppend(callAndMaybeAwait(t, call), compiler.complete(jId(t))));
   } else {
     const objId = freshId(compilerName('obj'));
     const fieldId = freshId(compilerName('field'));
@@ -958,8 +1000,13 @@ export function compileLettableAsync(compiler: CompilerVisitor, e: N.ALettable):
     case 'a-prim-app': {
       const argCes = e.args.map((a) => a.visit(compiler) as DAG.CExp);
       const call = wrapWithSrcnode(e.l, rtMethod(e.f, CL.map_list(getExp, argCes)));
-      const value = e.appInfo.needsStep ? jAwait(call) : call;
-      return clAppend(argsOtherStmts(argCes), compiler.complete(value));
+      if (e.appInfo.needsStep) {
+        // Conditional await: skip the microtask when the prim returned a flat
+        // value synchronously; still await a real thenable. See callAndMaybeAwait.
+        const t = freshId(compilerName('prim'));
+        return clAppend(argsOtherStmts(argCes), clAppend(callAndMaybeAwait(t, call), compiler.complete(jId(t))));
+      }
+      return clAppend(argsOtherStmts(argCes), compiler.complete(call));
     }
     case 'a-if': {
       const condCe = e.c.visit(compiler) as DAG.CExp;

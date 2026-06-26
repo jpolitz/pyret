@@ -1044,6 +1044,10 @@ export interface CompileOptions {
   collectTimes: boolean;
   ignoreUnbound: boolean;
   properTailCalls: boolean;
+  // tail-call-in-effect-position optimization (SetTailVisitor.sIfElse). On by
+  // default; -no-effect-tail-calls disables it to recover the un-optimized
+  // baseline (used as a differential-testing correctness oracle).
+  effectTailCalls: boolean;
   stackBackend: StackBackend;
   inlineCaseBodyLimit: number;
   moduleEval: boolean;
@@ -1083,6 +1087,7 @@ export const defaultCompileOptions: CompileOptions = {
   collectTimes: false,
   ignoreUnbound: false,
   properTailCalls: true,
+  effectTailCalls: true,
   stackBackend: compiledStackBackend,
   inlineCaseBodyLimit: 5,
   moduleEval: true,

@@ -852,6 +852,10 @@ export function isStatefulAnn(ann: A.Ann): boolean {
 // precondition: no s-app
 class SetTailVisitor extends DefaultMapVisitor {
   isTail: boolean = false;
+  // When false, the tail-call-in-effect-position optimization in sIfElse is
+  // disabled (recovers the un-optimized baseline). Carried across noTail()
+  // because extendVisitor copies own fields. Set via makeSetTailVisitor.
+  effectTailOpt: boolean = true;
 
   private noTail(): this {
     return extendVisitor(this, { isTail: false } as Partial<this>);
@@ -902,6 +906,68 @@ class SetTailVisitor extends DefaultMapVisitor {
       node.branches.map((b: A.CasesBranch) => b.visit(this)), node._else.visit(this), false);
   }
 
+  // A statement that is safe to keep in the discarded trailing suffix after a
+  // tail-call-in-effect-position (see sIfElse): a side-effect-free expression.
+  // Deliberately a tiny, obviously-pure syntactic set -- literals and bare
+  // identifier reads (the `nothing` global is an SId, so it is covered).
+  // Applications, method/operator dispatch (Pyret operators are overridable
+  // method calls that can error), assignments and updates are NOT pure.
+  private isPureSuffix(s: A.Expr): boolean {
+    return s instanceof A.SId
+      || s instanceof A.SIdVar
+      || s instanceof A.SIdLetrec
+      || s instanceof A.SNum
+      || s instanceof A.SFrac
+      || s instanceof A.SBool
+      || s instanceof A.SStr;
+  }
+
+  // Syntactic equality on the pure-suffix whitelist, used to check that a
+  // discarded effect-tail suffix matches the value the recursion exits through.
+  // Conservative: anything it cannot positively prove equal returns false (the
+  // optimization then simply does not fire), so it can never produce a false
+  // positive.
+  private pureEq(a: A.Expr, b: A.Expr): boolean {
+    if (a instanceof A.SId && b instanceof A.SId) { return a.id.key() === b.id.key(); }
+    if (a instanceof A.SIdVar && b instanceof A.SIdVar) { return a.id.key() === b.id.key(); }
+    if (a instanceof A.SIdLetrec && b instanceof A.SIdLetrec) { return a.id.key() === b.id.key(); }
+    if (a instanceof A.SBool && b instanceof A.SBool) { return a.b === b.b; }
+    if (a instanceof A.SStr && b instanceof A.SStr) { return a.s === b.s; }
+    // Numeric literals: a `===` on the opaque PyretNumber (js-numbers) values.
+    // Sound -- `===` is true only for identical primitives/refs, so this catches
+    // the common small-integer literal case (and identical interned values)
+    // while conservatively skipping boxed exact-rationals/roughnums that are
+    // value-equal but not reference-equal. Could be extended to js-numbers'
+    // structural numeric equality if the constructed-value case ever matters.
+    if (a instanceof A.SNum && b instanceof A.SNum) { return a.n === b.n; }
+    if (a instanceof A.SFrac && b instanceof A.SFrac) { return a.num === b.num && a.den === b.den; }
+    return false;
+  }
+
+  // The value-producing tail expression of e (last stmt of a block, else e).
+  private tailOf(e: A.Expr): A.Expr {
+    return (e instanceof A.SBlock && e.stmts.length >= 1) ? e.stmts[e.stmts.length - 1] : e;
+  }
+
+  // If `body` is a block ending in `[..., f(args), ...pureSuffix]` with f a
+  // self-recursive call NOT in last position (its result discarded) and every
+  // statement after it side-effect-free, returns the call index and the block's
+  // tail value (what the branch yields). Otherwise null.
+  private effectTailCall(body: A.Expr): { callIdx: number, suffix: A.Expr } | null {
+    if (!(body instanceof A.SBlock)) { return null; }
+    const stmts = body.stmts;
+    const len = stmts.length;
+    if (len < 2) { return null; }
+    let callIdx = -1;
+    for (let i = len - 1; i >= 0; i--) {
+      const s = stmts[i];
+      if (s instanceof A.SAppEnriched && s.appInfo.isRecursive) { callIdx = i; break; }
+      if (!this.isPureSuffix(s)) { return null; }
+    }
+    if (callIdx < 0 || callIdx === len - 1) { return null; }
+    return { callIdx, suffix: stmts[len - 1] };
+  }
+
   sBlock(node: A.SBlock): A.Expr {
     const len = node.stmts.length; // can be sure that len >= 1
     const prefix = node.stmts.slice(0, len - 1);
@@ -910,6 +976,45 @@ class SetTailVisitor extends DefaultMapVisitor {
       node.l,
       [...prefix.map((s: A.Expr) => s.visit(this.noTail())),
        ...suffix.map((s: A.Expr) => s.visit(this))]);
+  }
+
+  // Tail-call-in-effect-position. A self-recursive call whose result is
+  // discarded and is followed only by side-effect-free statements is effectively
+  // a tail call -- BUT ONLY IF the discarded suffix value equals the value the
+  // recursion exits through. Otherwise optimizing would make the suffix dead and
+  // wrongly return the else value instead (`if k>0: f(k-1); 5 else: 10` must
+  // yield 5, not 10). We verify it by requiring the suffix to equal the `else`
+  // tail value. When that holds, marking the call tail lets the existing TCO
+  // `continue` fire, so idiomatic imperative loops run in O(1) space instead of
+  // recursing -- critical for the promise backend, which otherwise builds one
+  // heap-retained async frame per level (O(n) heap, OOM at depth ~20M); the cont
+  // trampoline already handled this case cheaply.
+  //
+  // `when c block: ...; f(x) end` desugars to a single-consequent if-else
+  // `if c: ...; f(x); nothing else: nothing` (see desugar.ts); the accumulator
+  // form is `if k>0: ...; f(x); acc else: acc`. Only the single-consequent shape
+  // is handled; anything else falls back to the default (non-optimizing) traversal.
+  sIfElse(node: A.SIfElse): A.Expr {
+    if (this.effectTailOpt && this.isTail && node.branches.length === 1) {
+      const br = node.branches[0];
+      const m = this.effectTailCall(br.body);
+      if (m !== null && this.pureEq(m.suffix, this.tailOf(node._else))) {
+        const body = br.body as A.SBlock;
+        // recursive call (+ its pure suffix) in tail context -> `continue`;
+        // everything before the call is non-tail as usual.
+        const newBody = new A.SBlock(body.l,
+          body.stmts.map((s: A.Expr, i: number) =>
+            (i >= m.callIdx) ? s.visit(this) : s.visit(this.noTail())));
+        return new A.SIfElse(node.l,
+          [new A.SIfBranch(br.l, br.test.visit(this.noTail()), newBody)],
+          node._else.visit(this),
+          node.blocky);
+      }
+    }
+    return new A.SIfElse(node.l,
+      node.branches.map((b: A.IfBranch) => b.visit(this)),
+      node._else.visit(this),
+      node.blocky);
   }
 
   sCheckExpr(node: A.SCheckExpr): A.Expr {
@@ -993,6 +1098,14 @@ class SetTailVisitor extends DefaultMapVisitor {
 }
 
 export const setTailVisitor: DefaultMapVisitor = new SetTailVisitor();
+
+// Build a set-tail visitor with the tail-call-in-effect-position optimization
+// enabled or disabled (compile-lib passes options.effectTailCalls).
+export function makeSetTailVisitor(effectTailOpt: boolean): DefaultMapVisitor {
+  const v = new SetTailVisitor();
+  v.effectTailOpt = effectTailOpt;
+  return v;
+}
 
 export function valueDelaysExecOf(name: A.Name, expr: A.Expr): boolean {
   return A.isSLam(expr) || A.isSMethod(expr);

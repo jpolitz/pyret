@@ -29,3 +29,6 @@ jobs:
     - name: run tests
       run: make all-pyret-test
 
+    - name: run TS-compiler tests
+      run: make ts-test
+
