@@ -247,6 +247,8 @@ fun run-frames(n, s, acc):
   end
 end
 
-final-acc = run-frames(4000, s0, 0)
-print(num-to-string(num-floor(final-acc)))
-print("\n")
+t0 = time-now()
+final-acc = run-frames(500, s0, 0)
+loop-ms = time-now() - t0
+print(num-to-string(num-floor(final-acc)) + "\n")
+print("LOOP-MS " + num-to-string(loop-ms) + "\n")

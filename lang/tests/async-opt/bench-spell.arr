@@ -122,7 +122,7 @@ queries = [list:
 fun run(reps :: Number, acc :: Number) -> Number:
   if reps == 0: acc
   else:
-    batch = for fold(t from 0, q from queries):
+    batch = for fold(t from 0, q from queries.take(12)):
       results = bk-search(DICT, q, 2)
       inner = for fold(s from 0, r from results): s + r.edit-distance end
       (t + results.length()) + inner
@@ -131,5 +131,8 @@ fun run(reps :: Number, acc :: Number) -> Number:
   end
 end
 
-print(num-to-string(run(1, 0)))
-print("\n")
+t0 = time-now()
+final-acc = run(1, 0)
+loop-ms = time-now() - t0
+print(num-to-string(final-acc) + "\n")
+print("LOOP-MS " + num-to-string(loop-ms) + "\n")
