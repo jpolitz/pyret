@@ -184,12 +184,18 @@ export const effectiveIds: Map<string, boolean> = new Map();
 export function freshId(id: A.Name): A.Name {
   const baseName = A.isSTypeGlobal(id) ? id.tosourcestring() : id.toname();
   const noHyphens = baseName.split('-').join('$');
-  const n = jsNames.makeAtom(noHyphens);
-  if (effectiveIds.has(n.tosourcestring())) { // awkward name collision!
-    return freshId(id);
-  } else {
-    effectiveIds.set(n.tosourcestring(), true);
-    return n;
+  // Iterative (the .arr is recursive): identical name sequence — each iteration
+  // calls makeAtom, bumping the serial — but it never grows the JS stack.
+  // effectiveIds persists for the whole process (by design; see jsIds/effectiveIds
+  // above), so in a long-lived repl/repartee session a base name can collide
+  // deeply. anf-loop-compiler.arr recurses on Pyret's stack-safe runtime, but the
+  // same recursion in plain JS overflows V8's stack after enough compiles.
+  while (true) {
+    const n = jsNames.makeAtom(noHyphens);
+    if (!effectiveIds.has(n.tosourcestring())) { // awkward name collision!
+      effectiveIds.set(n.tosourcestring(), true);
+      return n;
+    }
   }
 }
 
