@@ -9,31 +9,22 @@
   parity).
 
   Pass 1: a size-budgeted INLINER for non-recursive, directly-called user
-  functions. Inlining is the keystone: it exposes cross-function loop
-  invariants (record-field reads through helpers) that later passes (LICM/CSE)
-  can hoist, and -- on the async backend -- removes an `await` suspension
-  point per call.
+  functions. Inlining is the keystone: it removes an `await` suspension point
+  per call on the async backend, and exposes cross-function redundancies
+  (record-field reads through helpers) that CSE then eliminates.
 
-  Pass 2: loop-invariant code motion (LICM). For a lambda that is bound and
-  then handed to a higher-order function (a `for fold`/`for each`/`map`/...
-  loop body), invariant pure bindings on the body's straight-line spine are
-  hoisted to just before the lambda, so they run once instead of once per
-  iteration. "Invariant" = depends only on the lambda's free variables (none
-  of which is reassigned in the body) -- never on a parameter or a
-  loop-varying local. Hoisting is restricted to pure TOTAL lettables -- ones
-  that cannot fault and have no effects, currently `a-val` copies/literals --
-  so moving them to the preheader (where they run unconditionally, before the
-  loop body, even on a zero-trip loop) cannot change observable behavior. A
-  faulting read such as `a-dot` is NOT hoisted: doing so could raise
-  field-not-found before a raise that precedes it in the body, or before a
-  zero-trip loop. Hoisting field reads soundly needs type-informed proof that
-  the field exists (see isHoistable); that is the next enhancement.
-
-  Pass 3: common-subexpression elimination (CSE) of immutable field reads. A
+  Pass 2: common-subexpression elimination (CSE) of immutable field reads. A
   repeated `obj.field` on a non-`var` (immutable) binding is replaced by a copy
   of the first read; copy-propagation lets chained reads (`b.rest.rest...`)
   collapse. Immutable objects can't change, so no invalidation is needed -- the
   pass is sound across calls and assignments.
+
+  (A loop-invariant code-motion pass was prototyped and removed: hoisting a
+  faulting field read to the loop preheader is unsound w.r.t. exception
+  ordering -- it can raise field-not-found before a raise that precedes it in
+  the body, or before a zero-trip loop -- and hoisting only non-faulting
+  `a-val` copies/constants bought nothing. A sound version needs type-informed
+  proof that a hoisted read cannot fault; left as future work.)
 
   Correctness contract (mirrors the parity goal):
     - Inlining is capture-avoiding: every binder introduced by the callee
@@ -525,245 +516,7 @@ function plugTail(e: N.AExpr, k: (tail: N.ALettable, l: N.Loc) => N.AExpr): N.AE
 }
 
 // ============================================================================
-// Pass 2: loop-invariant code motion (LICM)
-// ============================================================================
-
-// Lettables we are willing to hoist out of a loop body. Hoisting moves a
-// computation to the preheader, where it runs unconditionally and before the
-// loop body. That is sound ONLY for computations that are pure AND TOTAL
-// (cannot fault and have no effects): a total pure value can be evaluated
-// early, replicated, or skipped with no observable difference.
-//
-// `a-val` (a copy of an already-evaluated value, or a literal) is total --
-// safe to hoist in all cases (including a zero-trip loop).
-//
-// `a-dot` (a field read) is NOT total: it raises field-not-found if the field
-// is absent. Hoisting it can move that fault before a raise/effect that
-// lexically precedes it in the body, or before a zero-trip loop never reached
-// it -- changing which error is raised (or introducing one). Example:
-//   for fold(...): raise("fail") ... obj.y ... end
-// should raise "fail", but hoisting obj.y raises field-not-found first.
-// So a-dot is hoisted ONLY when we can prove it cannot fault, which needs
-// type information ("obj statically has field f"). That proof is not yet
-// plumbed into this pass, so a-dot hoisting is currently disabled; recovering
-// it (the orbital field-read win, ~1% at parity) is the next step. See the
-// LICM comment in optimizeProgram and the project notes.
-function isHoistable(l: N.ALettable): boolean {
-  switch (l.$name) {
-    case 'a-val': return true;
-    default: return false;
-  }
-}
-
-// Collect names assigned (`:=`) anywhere inside an expression -- such a free
-// variable is NOT loop-invariant even if it is free in the lambda.
-function collectAssigned(e: N.AExpr, acc: Set<string>): void {
-  function vExpr(x: N.AExpr): void {
-    switch (x.$name) {
-      case 'a-let': case 'a-var': case 'a-arr-let':
-        vLettable((x as any).e); vExpr((x as any).body); return;
-      case 'a-seq': vLettable(x.e1); vExpr(x.e2); return;
-      case 'a-type-let': vExpr(x.body); return;
-      case 'a-lettable': vLettable(x.e); return;
-      default: return;
-    }
-  }
-  function vLettable(l: N.ALettable): void {
-    switch (l.$name) {
-      case 'a-assign': acc.add(l.id.key()); l.value; return;
-      case 'a-lam': case 'a-method': vExpr(l.body); return;
-      case 'a-if': vExpr(l.t); vExpr(l.e); return;
-      case 'a-cases':
-        for (const b of l.branches) { vExpr(b.body); }
-        vExpr(l._else); return;
-      default: return;
-    }
-  }
-  vExpr(e);
-}
-
-// Does `name` get used as an argument to some function application inside `e`?
-// (A proxy for "this lambda is passed to a higher-order/iterating function",
-// i.e. it is a loop body worth hoisting out of.)
-function usedAsCallArg(name: A.Name, e: N.AExpr): boolean {
-  const key = name.key();
-  let found = false;
-  function vExpr(x: N.AExpr): void {
-    if (found) { return; }
-    switch (x.$name) {
-      case 'a-let': case 'a-var': case 'a-arr-let':
-        vLettable((x as any).e); vExpr((x as any).body); return;
-      case 'a-seq': vLettable(x.e1); vExpr(x.e2); return;
-      case 'a-type-let': vExpr(x.body); return;
-      case 'a-lettable': vLettable(x.e); return;
-      default: return;
-    }
-  }
-  function argHit(args: N.AVal[]): boolean {
-    return args.some((a) => a instanceof N.AId && a.id.key() === key);
-  }
-  function vLettable(l: N.ALettable): void {
-    if (found) { return; }
-    switch (l.$name) {
-      case 'a-app': if (argHit(l.args)) { found = true; } return;
-      case 'a-method-app': if (argHit(l.args)) { found = true; } return;
-      case 'a-prim-app': if (argHit(l.args)) { found = true; } return;
-      case 'a-lam': case 'a-method': vExpr(l.body); return;
-      case 'a-if': vExpr(l.t); vExpr(l.e); return;
-      case 'a-cases':
-        for (const b of l.branches) { vExpr(b.body); }
-        vExpr(l._else); return;
-      default: return;
-    }
-  }
-  vExpr(e);
-  return found;
-}
-
-interface Hoist { bind: N.ABind; e: N.ALettable; l: N.Loc; }
-
-// Pull invariant bindings out of `body`, INCLUDING bindings nested inside
-// a-if / a-cases branches (the integrator reads sit under the loop's
-// conditionals). `invariant` starts as the lambda's hoistable free variables
-// and grows monotonically as we discover invariant bindings; collecting in
-// pre-order keeps each hoisted binding after the bindings it depends on.
-//
-// We do NOT descend into nested lambdas/methods (separate scopes with their
-// own parameters). A hoisted invariant a-dot read now executes once at
-// loop-entry even if its original branch was conditionally taken; like
-// standard LICM (and the hand-proof variants) this relocates a pure,
-// value-identical read -- validated against the frozen-cont parity oracle and
-// the full promise suite.
-function hoistAll(body: N.AExpr, invariant: Set<string>, hoisted: Hoist[]): N.AExpr {
-  switch (body.$name) {
-    case 'a-let': {
-      const rhs = body.e;
-      if (isHoistable(rhs) && operandsInvariant(rhs, invariant)) {
-        invariant.add(body.bind.id.key());
-        hoisted.push({ bind: body.bind, e: rhs, l: body.l });
-        return hoistAll(body.body, invariant, hoisted);
-      }
-      return new N.ALet(body.l, body.bind, hoistInRhs(rhs, invariant, hoisted), hoistAll(body.body, invariant, hoisted));
-    }
-    case 'a-arr-let':
-      return new N.AArrLet(body.l, body.bind, body.idx, hoistInRhs(body.e, invariant, hoisted), hoistAll(body.body, invariant, hoisted));
-    case 'a-var':
-      return new N.AVar(body.l, body.bind, hoistInRhs(body.e, invariant, hoisted), hoistAll(body.body, invariant, hoisted));
-    case 'a-seq':
-      return new N.ASeq(body.l, hoistInRhs(body.e1, invariant, hoisted), hoistAll(body.e2, invariant, hoisted));
-    case 'a-type-let':
-      return new N.ATypeLet(body.l, body.bind, hoistAll(body.body, invariant, hoisted));
-    case 'a-lettable':
-      return new N.ALettable(body.l, hoistInRhs(body.e, invariant, hoisted));
-    default:
-      return body;
-  }
-}
-
-// Descend into the branches of a control-flow lettable (only); other lettables
-// (including nested lambdas) are returned unchanged.
-function hoistInRhs(l: N.ALettable, invariant: Set<string>, hoisted: Hoist[]): N.ALettable {
-  switch (l.$name) {
-    case 'a-if':
-      return new N.AIf(l.l, l.c, hoistAll(l.t, invariant, hoisted), hoistAll(l.e, invariant, hoisted));
-    case 'a-cases': {
-      const branches = l.branches.map((b) => {
-        if (b.$name === 'a-cases-branch') {
-          return new N.ACasesBranch(b.l, b.patLoc, b.name, b.args, hoistAll(b.body, invariant, hoisted));
-        }
-        return new N.ASingletonCasesBranch(b.l, b.patLoc, b.name, hoistAll(b.body, invariant, hoisted));
-      });
-      return new N.ACases(l.l, l.typ, l.val, branches, hoistAll(l._else, invariant, hoisted));
-    }
-    default:
-      return l;
-  }
-}
-
-function operandsInvariant(rhs: N.ALettable, invariant: Set<string>): boolean {
-  for (const k of N.freevarsL(rhs).keys()) {
-    if (!invariant.has(k)) { return false; }
-  }
-  return true;
-}
-
-class Licm {
-  changed = false;
-
-  // Try to hoist invariant work out of a loop-body lambda; returns the hoisted
-  // bindings (to emit before the lambda) and the slimmed lambda, or null.
-  private tryHoist(lam: N.ALam): { hoisted: Hoist[]; lam: N.ALam } | null {
-    const fvs = N.freevarsL(lam);
-    const assigned = new Set<string>();
-    collectAssigned(lam.body, assigned);
-    const invariant = new Set<string>();
-    for (const k of fvs.keys()) { if (!assigned.has(k)) { invariant.add(k); } }
-    const hoisted: Hoist[] = [];
-    const newBody = hoistAll(lam.body, invariant, hoisted);
-    if (hoisted.length === 0) { return null; }
-    return { hoisted, lam: new N.ALam(lam.l, lam.name, lam.args, lam.ret, newBody) };
-  }
-
-  optExpr(e: N.AExpr): N.AExpr {
-    switch (e.$name) {
-      case 'a-let': {
-        if (e.e instanceof N.ALam && usedAsCallArg(e.bind.id, e.body)) {
-          const innerLam = new N.ALam(e.e.l, e.e.name, e.e.args, e.e.ret, this.optExpr(e.e.body));
-          const res = this.tryHoist(innerLam);
-          if (res !== null) {
-            this.changed = true;
-            // <hoisted lets> ; let lam = slimmed-lam : opt(body)
-            let out: N.AExpr = new N.ALet(e.l, e.bind, res.lam, this.optExpr(e.body));
-            for (let i = res.hoisted.length - 1; i >= 0; i--) {
-              const h = res.hoisted[i];
-              out = new N.ALet(h.l, h.bind, h.e, out);
-            }
-            return out;
-          }
-          return new N.ALet(e.l, e.bind, innerLam, this.optExpr(e.body));
-        }
-        return new N.ALet(e.l, e.bind, this.optLettable(e.e), this.optExpr(e.body));
-      }
-      case 'a-seq':
-        return new N.ASeq(e.l, this.optLettable(e.e1), this.optExpr(e.e2));
-      case 'a-arr-let':
-        return new N.AArrLet(e.l, e.bind, e.idx, this.optLettable(e.e), this.optExpr(e.body));
-      case 'a-var':
-        return new N.AVar(e.l, e.bind, this.optLettable(e.e), this.optExpr(e.body));
-      case 'a-type-let':
-        return new N.ATypeLet(e.l, e.bind, this.optExpr(e.body));
-      case 'a-lettable':
-        return new N.ALettable(e.l, this.optLettable(e.e));
-      default:
-        return e;
-    }
-  }
-
-  optLettable(l: N.ALettable): N.ALettable {
-    switch (l.$name) {
-      case 'a-lam':
-        return new N.ALam(l.l, l.name, l.args, l.ret, this.optExpr(l.body));
-      case 'a-method':
-        return new N.AMethod(l.l, l.name, l.args, l.ret, this.optExpr(l.body));
-      case 'a-if':
-        return new N.AIf(l.l, l.c, this.optExpr(l.t), this.optExpr(l.e));
-      case 'a-cases': {
-        const branches = l.branches.map((b) => {
-          if (b.$name === 'a-cases-branch') {
-            return new N.ACasesBranch(b.l, b.patLoc, b.name, b.args, this.optExpr(b.body));
-          }
-          return new N.ASingletonCasesBranch(b.l, b.patLoc, b.name, this.optExpr(b.body));
-        });
-        return new N.ACases(l.l, l.typ, l.val, branches, this.optExpr(l._else));
-      }
-      default:
-        return l;
-    }
-  }
-}
-
-// ============================================================================
-// Pass 3: common-subexpression elimination (CSE) for immutable field reads
+// Pass 2: common-subexpression elimination (CSE) for immutable field reads
 // ============================================================================
 //
 // Within a function scope, a repeated `obj.field` where `obj` is an immutable
@@ -896,10 +649,6 @@ export function optimizeProgram(prog: N.AProg): N.AProg {
     body = inliner.optExpr(body);
     changed = changed || inliner.changed;
   }
-
-  const licm = new Licm();
-  body = licm.optExpr(body);
-  changed = changed || licm.changed;
 
   const cse = new Cse(body);
   body = cse.optExpr(body, new Map());
