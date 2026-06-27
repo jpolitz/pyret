@@ -53,6 +53,49 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-06-27 — with the ANF optimizer middle-end: inliner + CSE)
+
+Same in-process loop timing as below. N=5 median LOOP-seconds, `node22 --max-old-space-size=6144`,
+isolated (no concurrent builds). The promise jarrs are now built with the ANF optimizer
+(`lang/src/ts-compiler/src/optimize-anf.ts`: inliner + CSE, promise backend only, default-on;
+`-no-optimize` disables it). cont — the frozen race target — is unchanged. All 9 are
+**output-identical** between backends (parity OK).
+
+| benchmark | cont med | prom med | p/c | parity |
+|---|---|---|---|---|
+| spell           | 4.38 | 3.99 | **0.91** | OK |
+| car-compute     | 4.03 | 3.71 | **0.92** | OK |
+| car-render      | 4.16 | 4.05 | 0.97 | OK |
+| lander          | 4.20 | 4.21 | 1.00 | OK |
+| orbital-compute | 3.66 | 3.61 | **0.99** | OK |
+| orbital-ems     | 2.62 | 2.60 | 0.99 | OK |
+| orbital-render  | 4.64 | 4.41 | 0.95 | OK |
+| boids-compute   | 4.01 | 5.00 | **1.25** | OK |
+| boids-raster    | 3.90 | 4.56 | **1.17** | OK |
+
+**7 of 9 now at or under frozen cont** — vs the pre-optimizer baseline below, where the four
+compute loops were 1.19–1.30×. Two sound ANF→ANF passes do the work:
+
+- **Inliner** — inlines non-recursive, directly-named helpers. On the async backend each user-fn
+  call is an `await` suspension, so inlining removes a per-call suspension *and* exposes the
+  callee's field reads. This is what flips the `for fold` integrators: **car-compute 1.30→0.92,
+  orbital-compute 1.27→0.99**.
+- **CSE** — dedupes repeated immutable `obj.field` reads (copy-propagation collapses `b.rest.rest…`
+  chains), cleaning up the reads inlining exposes.
+
+(A loop-invariant code-motion pass was prototyped and removed: hoisting a faulting field read to
+the loop preheader is unsound w.r.t. exception ordering — it can raise field-not-found before a
+`raise` that precedes it in the body — and hoisting only non-faulting constants bought nothing.)
+
+**Still over cont: boids** (compute 1.25, raster 1.17). Its O(n²) ticker is dominated by
+mutable-`var` box traffic and a `lists.each` loop whose closure escapes into the native
+`raw-list-fold`; closing it needs box-elimination / escape analysis, or specializing the combinator
+into an inline loop — none reachable by inlining + CSE alone. Ratios drift ~±5% run-to-run
+(machine variance; the cont baseline drifts too), so read the band, not the last digit.
+
+Full promise test suite (`main2`, `--stack-backend promise`, optimizer on): all 13156 tests pass,
+0 errored.
+
 ## Results (2026-06-26, in-process loop timing)
 
 N=3, median LOOP-seconds (startup floor excluded), `node22 --max-old-space-size=6144`, no
