@@ -20,12 +20,14 @@
   hoisted to just before the lambda, so they run once instead of once per
   iteration. "Invariant" = depends only on the lambda's free variables (none
   of which is reassigned in the body) -- never on a parameter or a
-  loop-varying local. Hoisted lettables are restricted to non-allocating,
-  effect-free reads (`a-val` copies and `a-dot` immutable field reads), which
-  preserves value identity and results bit-exactly. (As in standard LICM and
-  the hand-proof variants, a hoisted field read executes at loop-entry rather
-  than first-iteration; for the entered loops these benchmarks run this is
-  observationally identical.)
+  loop-varying local. Hoisting is restricted to pure TOTAL lettables -- ones
+  that cannot fault and have no effects, currently `a-val` copies/literals --
+  so moving them to the preheader (where they run unconditionally, before the
+  loop body, even on a zero-trip loop) cannot change observable behavior. A
+  faulting read such as `a-dot` is NOT hoisted: doing so could raise
+  field-not-found before a raise that precedes it in the body, or before a
+  zero-trip loop. Hoisting field reads soundly needs type-informed proof that
+  the field exists (see isHoistable); that is the next enhancement.
 
   Pass 3: common-subexpression elimination (CSE) of immutable field reads. A
   repeated `obj.field` on a non-`var` (immutable) binding is replaced by a copy
@@ -526,16 +528,29 @@ function plugTail(e: N.AExpr, k: (tail: N.ALettable, l: N.Loc) => N.AExpr): N.AE
 // Pass 2: loop-invariant code motion (LICM)
 // ============================================================================
 
-// Lettables we are willing to hoist out of a loop body: effect-free,
-// non-allocating, value-identity-preserving reads. `a-val` (a copy or
-// literal) and `a-dot` (an immutable field read) qualify. We deliberately
-// exclude allocations (a-obj/a-tuple/a-update/a-extend -- hoisting could
-// change observed object identity), ref dereferences (a-get-bang -- mutable),
-// and calls (a-app/a-method-app/a-prim-app -- possible effects).
+// Lettables we are willing to hoist out of a loop body. Hoisting moves a
+// computation to the preheader, where it runs unconditionally and before the
+// loop body. That is sound ONLY for computations that are pure AND TOTAL
+// (cannot fault and have no effects): a total pure value can be evaluated
+// early, replicated, or skipped with no observable difference.
+//
+// `a-val` (a copy of an already-evaluated value, or a literal) is total --
+// safe to hoist in all cases (including a zero-trip loop).
+//
+// `a-dot` (a field read) is NOT total: it raises field-not-found if the field
+// is absent. Hoisting it can move that fault before a raise/effect that
+// lexically precedes it in the body, or before a zero-trip loop never reached
+// it -- changing which error is raised (or introducing one). Example:
+//   for fold(...): raise("fail") ... obj.y ... end
+// should raise "fail", but hoisting obj.y raises field-not-found first.
+// So a-dot is hoisted ONLY when we can prove it cannot fault, which needs
+// type information ("obj statically has field f"). That proof is not yet
+// plumbed into this pass, so a-dot hoisting is currently disabled; recovering
+// it (the orbital field-read win, ~1% at parity) is the next step. See the
+// LICM comment in optimizeProgram and the project notes.
 function isHoistable(l: N.ALettable): boolean {
   switch (l.$name) {
     case 'a-val': return true;
-    case 'a-dot': return true;
     default: return false;
   }
 }
