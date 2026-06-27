@@ -2879,7 +2879,7 @@ export class SplittingCompiler extends CompilerVisitor {
   constructor(
     env: CS.CompileEnvironment,
     addPhase: (phase: string, data: any) => any,
-    flatnessEnvs: [FL.FEnv, FL.FEnv],
+    flatnessEnvs: FL.FlatnessEnv,
     provides: CS.Provides,
     postEnv: CS.ComputedEnvironment,
     options: SplitCompileOptions
@@ -2915,7 +2915,7 @@ export class SplittingCompiler extends CompilerVisitor {
 export function splittingCompiler(
   env: CS.CompileEnvironment,
   addPhase: (phase: string, data: any) => any,
-  flatnessEnvs: [FL.FEnv, FL.FEnv],
+  flatnessEnvs: FL.FlatnessEnv,
   provides: CS.Provides,
   postEnv: CS.ComputedEnvironment,
   options: SplitCompileOptions

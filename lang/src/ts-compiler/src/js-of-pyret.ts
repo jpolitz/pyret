@@ -118,7 +118,9 @@ export function traceMakeCompiledPyret(
   options: C.CompileOptions
 ): [C.Provides, C.CompileResult<CompiledCodePrinter>] {
   const anfed = addPhase('ANFed', N.anfProgram(programAst));
-  const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env));
+  // Numeric-flatness is enabled only for the promise backend (the cont backend's
+  // codegen + byte-parity oracle stay untouched).
+  const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env, C.isPromise(options.stackBackend)));
   const flatProvides = addPhase('Get flat-provides', FL.getFlatProvides(provides, env, postEnv, flatnessEnv, anfed));
   // Dispatch to the requested control-flow backend. `auto` is resolved to a
   // concrete promise|cont before reaching here (see compile-structs / the CLI),

@@ -824,18 +824,22 @@ export function argsOtherStmts(argCes: DAG.CExp[]): CList<J.JStmt> {
   return acc;
 }
 
-export function compileAppAsync(compiler: CompilerVisitor, l: Loc, f: N.AVal, args: N.AVal[], appInfo: A.AppInfo): CList<J.JStmt> {
+export function compileAppAsync(compiler: CompilerVisitor, l: Loc, f: N.AVal, args: N.AVal[], appInfo: A.AppInfo, node?: N.AApp): CList<J.JStmt> {
   const isSafeId = N.isAId(f) || N.isAIdSafeLetrec(f);
+  // A numeric-flat operator app (proven by flatness.ts to be on Number operands)
+  // never dispatches/suspends, so it is flat and is a known function (skip the
+  // isFunction check too).
+  const numFlat = node !== undefined && compiler.numericFlatApps.has(node);
   // is-flat must agree with the flatness analysis (flatness.ts), which decides
   // whether the enclosing function is emitted sync (j-fun) or async (j-async-fun).
   // If they disagree we either emit `await` inside a sync function (a JS syntax
   // error) or fail to await a Promise. For module-ref calls, the analysis uses
   // get-flatness-for-module-call, so we mirror it here.
-  const isFlat =
+  const isFlat = numFlat ? true :
     isSafeId ? isFunctionFlat(compiler.flatnessEnv, (f as any).id.key())
       : N.isAIdModref(f) ? isFlatEnough(FL.getFlatnessForModuleCall((f as any).id, (f as any).name, compiler.moduleBindings, compiler.env))
         : false;
-  const isFn = isSafeId && isIdFnName(compiler.flatnessEnv, (f as any).id.key());
+  const isFn = numFlat || (isSafeId && isIdFnName(compiler.flatnessEnv, (f as any).id.key()));
   const fCe = f.visit(compiler) as DAG.CExp;
   const argCes = args.map((a) => a.visit(compiler) as DAG.CExp);
   const compiledArgs = CL.map_list(getExp, argCes);
@@ -994,7 +998,7 @@ export function compileLettableAsync(compiler: CompilerVisitor, e: N.ALettable):
   // sub-expressions so no join point / trampoline case is needed.
   switch (e.$name) {
     case 'a-app':
-      return compileAppAsync(compiler, e.l, e._fun, e.args, e.appInfo);
+      return compileAppAsync(compiler, e.l, e._fun, e.args, e.appInfo, e);
     case 'a-method-app':
       return compileMethodAppAsync(compiler, e.l, e.obj, e.meth, e.args);
     case 'a-prim-app': {
@@ -2094,6 +2098,9 @@ export class CompilerVisitor {
   options!: SplitCompileOptions;
   flatnessEnv!: FL.FEnv;
   typeFlatnessEnv!: FL.FEnv;
+  // Operator a-apps proven flat by the numeric pass (flatness.ts); emitted with
+  // no conditional await. See compileAppAsync.
+  numericFlatApps!: Set<N.AApp>;
   bindings!: Map<string, CS.ValueBind>;
   typeBindings!: Map<string, CS.TypeBind>;
   moduleBindings!: Map<string, CS.ModuleBind>;
@@ -3142,7 +3149,7 @@ export class SplittingCompiler extends CompilerVisitor {
   constructor(
     env: CS.CompileEnvironment,
     addPhase: (phase: string, data: any) => any,
-    flatnessEnvs: [FL.FEnv, FL.FEnv],
+    flatnessEnvs: FL.FlatnessEnv,
     provides: CS.Provides,
     postEnv: CS.ComputedEnvironment,
     options: SplitCompileOptions
@@ -3153,6 +3160,7 @@ export class SplittingCompiler extends CompilerVisitor {
     this.options = options;
     this.flatnessEnv = flatnessEnvs[0];
     this.typeFlatnessEnv = flatnessEnvs[1];
+    this.numericFlatApps = flatnessEnvs[2];
     // Pyret accesses these fields directly; a computed-none here would be a
     // field-not-found error there too.
     this.bindings = (postEnv as CS.ComputedEnv).bindings;
@@ -3178,7 +3186,7 @@ export class SplittingCompiler extends CompilerVisitor {
 export function splittingCompiler(
   env: CS.CompileEnvironment,
   addPhase: (phase: string, data: any) => any,
-  flatnessEnvs: [FL.FEnv, FL.FEnv],
+  flatnessEnvs: FL.FlatnessEnv,
   provides: CS.Provides,
   postEnv: CS.ComputedEnvironment,
   options: SplitCompileOptions
