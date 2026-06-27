@@ -26,6 +26,7 @@
 import { sha256 } from './sha256';
 import * as A from './ast';
 import * as N from './ast-anf';
+import { INLINE_MARKER_BASE } from './optimize-anf';
 import * as J from './js-ast';
 import * as CS from './compile-structs';
 import * as CL from './concat-lists';
@@ -734,6 +735,15 @@ export function compileAexprAsync(compiler: CompilerVisitor, e: N.AExpr): CList<
     switch (cur.$name) {
       case 'a-let': {
         const b = cur.bind;
+        // Inline marker (PYRET_INLINE_COMMENTS, set by the ANF inliner): render as a
+        // `// inlined: <callee>` comment and emit no binding -- the value (callee name)
+        // is read here and the never-referenced binder is dropped.
+        if (b.id instanceof A.SAtom && b.id.base === INLINE_MARKER_BASE) {
+          const callee = (cur.e instanceof N.AVal && (cur.e as any).v instanceof N.AStr) ? (cur.e as any).v.s : 'fn';
+          acc = clAppend(acc, clSing<J.JStmt>(jExpr(jRawCode('// inlined: ' + callee))));
+          cur = cur.body;
+          continue;
+        }
         const bindComplete = (v: J.JExprT): CList<J.JStmt> => clSing(jExpr(jAssign(jsIdOf(b.id), v)));
         const eStmts = compileLettableAsync(ext(compiler, { complete: bindComplete, tailPos: false, curLetBind: new BLet(b) }), cur.e);
         acc = clAppend(acc, clCons(jVar(jsIdOf(b.id), UNDEFINED) as J.JStmt, eStmts));
