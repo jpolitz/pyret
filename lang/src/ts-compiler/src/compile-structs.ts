@@ -1048,6 +1048,9 @@ export interface CompileOptions {
   // default; -no-effect-tail-calls disables it to recover the un-optimized
   // baseline (used as a differential-testing correctness oracle).
   effectTailCalls: boolean;
+  // ANF optimizer middle-end (inliner + CSE; promise backend only). On by
+  // default; -no-optimize disables it to recover the un-optimized baseline.
+  optimize: boolean;
   stackBackend: StackBackend;
   inlineCaseBodyLimit: number;
   moduleEval: boolean;
@@ -1088,6 +1091,7 @@ export const defaultCompileOptions: CompileOptions = {
   ignoreUnbound: false,
   properTailCalls: true,
   effectTailCalls: true,
+  optimize: true,
   stackBackend: compiledStackBackend,
   inlineCaseBodyLimit: 5,
   moduleEval: true,

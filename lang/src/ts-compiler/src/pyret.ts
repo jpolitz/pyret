@@ -80,6 +80,8 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Run without proper tail calls')],
     ['no-effect-tail-calls',
       C.flag(C.once, 'Disable the tail-call-in-effect-position optimization (for differential testing)')],
+    ['no-optimize',
+      C.flag(C.once, 'Disable the ANF optimizer middle-end (inliner + CSE) on the promise backend')],
     ['collect-times',
       C.flag(C.once, 'Collect timing information about compilation')],
     ['type-check',
@@ -122,6 +124,7 @@ export function main(args: string[]): number {
     const typeCheck = r.has('type-check');
     const tailCalls = !r.has('improper-tail-calls');
     const effectTailCalls = !r.has('no-effect-tail-calls');
+    const optimize = !r.has('no-optimize');
     const compiledDir = r.get('compiled-dir');
     const standaloneFile = r.get('standalone-file');
     const addProfiling = r.has('profile');
@@ -197,6 +200,7 @@ export function main(args: string[]): number {
           ignoreUnbound: false,
           properTailCalls: tailCalls,
           effectTailCalls: effectTailCalls,
+          optimize: optimize,
           stackBackend: stackBackend,
           compiledCache: compiledDir,
           compiledReadOnly: r.has('compiled-read-only-dir') ? r.get('compiled-read-only-dir') : [],
@@ -232,6 +236,7 @@ export function main(args: string[]): number {
         ignoreUnbound: false,
         properTailCalls: tailCalls,
         effectTailCalls: effectTailCalls,
+        optimize: optimize,
         stackBackend: stackBackend,
         compileModule: false,
         displayProgress: displayProgress

@@ -122,7 +122,7 @@ export function traceMakeCompiledPyret(
   // ANF-to-ANF optimization middle-end (inliner/LICM/...). Promise backend
   // only: it mints fresh atoms, which the cont backend's byte-parity oracle
   // would notice, and the cont codegen stays frozen by design.
-  const anfed = C.isPromise(options.stackBackend) && !process.env.PYRET_NO_OPT
+  const anfed = C.isPromise(options.stackBackend) && options.optimize
     ? addPhase('Optimized ANF', OPT.optimizeProgram(anfedRaw))
     : anfedRaw;
   if (process.env.PYRET_DUMP_ANF) {
