@@ -1051,6 +1051,10 @@ export interface CompileOptions {
   // ANF optimizer middle-end (inliner + CSE; promise backend only). On by
   // default; -no-optimize disables it to recover the un-optimized baseline.
   optimize: boolean;
+  // Emit a `// inlined: <callee>` comment at each inliner splice site (promise
+  // backend). Off by default; -inline-comments turns it on for inspecting the
+  // optimizer. Inert unless the optimizer runs.
+  inlineComments: boolean;
   stackBackend: StackBackend;
   inlineCaseBodyLimit: number;
   moduleEval: boolean;
@@ -1092,6 +1096,7 @@ export const defaultCompileOptions: CompileOptions = {
   properTailCalls: true,
   effectTailCalls: true,
   optimize: true,
+  inlineComments: false,
   stackBackend: compiledStackBackend,
   inlineCaseBodyLimit: 5,
   moduleEval: true,

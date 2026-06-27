@@ -82,6 +82,8 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Disable the tail-call-in-effect-position optimization (for differential testing)')],
     ['no-optimize',
       C.flag(C.once, 'Disable the ANF optimizer middle-end (inliner + CSE) on the promise backend')],
+    ['inline-comments',
+      C.flag(C.once, 'Emit a `// inlined: <callee>` comment at each inliner splice site (promise backend; for inspecting the optimizer)')],
     ['collect-times',
       C.flag(C.once, 'Collect timing information about compilation')],
     ['type-check',
@@ -125,6 +127,7 @@ export function main(args: string[]): number {
     const tailCalls = !r.has('improper-tail-calls');
     const effectTailCalls = !r.has('no-effect-tail-calls');
     const optimize = !r.has('no-optimize');
+    const inlineComments = r.has('inline-comments');
     const compiledDir = r.get('compiled-dir');
     const standaloneFile = r.get('standalone-file');
     const addProfiling = r.has('profile');
@@ -201,6 +204,7 @@ export function main(args: string[]): number {
           properTailCalls: tailCalls,
           effectTailCalls: effectTailCalls,
           optimize: optimize,
+          inlineComments: inlineComments,
           stackBackend: stackBackend,
           compiledCache: compiledDir,
           compiledReadOnly: r.has('compiled-read-only-dir') ? r.get('compiled-read-only-dir') : [],
@@ -237,6 +241,7 @@ export function main(args: string[]): number {
         properTailCalls: tailCalls,
         effectTailCalls: effectTailCalls,
         optimize: optimize,
+        inlineComments: inlineComments,
         stackBackend: stackBackend,
         compileModule: false,
         displayProgress: displayProgress

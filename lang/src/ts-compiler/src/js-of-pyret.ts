@@ -123,7 +123,7 @@ export function traceMakeCompiledPyret(
   // only: it mints fresh atoms, which the cont backend's byte-parity oracle
   // would notice, and the cont codegen stays frozen by design.
   const anfed = C.isPromise(options.stackBackend) && options.optimize
-    ? addPhase('Optimized ANF', OPT.optimizeProgram(anfedRaw))
+    ? addPhase('Optimized ANF', OPT.optimizeProgram(anfedRaw, options.inlineComments))
     : anfedRaw;
   if (process.env.PYRET_DUMP_ANF) {
     process.stderr.write('===ANF[' + (programAst.l && (programAst.l as any).source) + ']===\n');

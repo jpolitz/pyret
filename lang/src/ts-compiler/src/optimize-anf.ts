@@ -54,6 +54,13 @@ const names = A.globalNames;
 // are well under this.
 const INLINE_SIZE_BUDGET = 80;
 
+// Binder base name of the optional per-inline marker (see splice). With the
+// -inline-comments flag, the inliner prepends a `let <marker> = "<callee>"` at
+// each inline site; the async loop compiler recognizes this binder and renders
+// it as a `// inlined: <callee>` JS comment (it never emits the binding itself).
+// Off by default, so normal builds are byte-for-byte unchanged.
+export const INLINE_MARKER_BASE = '$inlineComment';
+
 // ----- small AST helpers ----------------------------------------------------
 
 function isRealAnn(ann: A.Ann): boolean {
@@ -385,12 +392,14 @@ class Inliner {
   recursive: Set<string>;
   sizes: Map<string, number>;
   changed = false;
+  emitComments: boolean;
 
-  constructor(coll: FunCollection) {
+  constructor(coll: FunCollection, emitComments: boolean) {
     this.defs = coll.defs;
     this.recursive = findRecursive(coll.defs);
     this.sizes = new Map();
     for (const [k, lam] of coll.defs) { this.sizes.set(k, sizeExpr(lam.body)); }
+    this.emitComments = emitComments;
   }
 
   private inlinable(key: string, argc: number): N.ALam | undefined {
@@ -433,6 +442,15 @@ class Inliner {
     let out: N.AExpr = plugged;
     for (let i = freshParams.length - 1; i >= 0; i--) {
       out = new N.ALet(lam.l, freshParams[i], new N.AVal(lam.l, args[i]), out);
+    }
+    // Optional inline marker (-inline-comments): a never-read `let` whose binder
+    // the async loop compiler turns into a `// inlined: <callee>` comment. The value
+    // carries the callee name. One marker per inline site (splice runs for every one).
+    if (this.emitComments) {
+      const calleeName = (lam.name === undefined || lam.name === '') ? 'anon' : lam.name;
+      out = new N.ALet(lam.l,
+        new N.ABind(lam.l, names.makeAtom(INLINE_MARKER_BASE), new A.ABlank()),
+        new N.AVal(lam.l, new N.AStr(lam.l, calleeName)), out);
     }
     return out;
   }
@@ -668,14 +686,14 @@ class Cse {
 
 // ----- entry point ----------------------------------------------------------
 
-export function optimizeProgram(prog: N.AProg): N.AProg {
+export function optimizeProgram(prog: N.AProg, inlineComments: boolean = false): N.AProg {
   if (!(prog instanceof N.AProgram)) { return prog; }
   let body = prog.body;
   let changed = false;
 
   const coll = collectFunDefs(body);
   if (coll.defs.size > 0) {
-    const inliner = new Inliner(coll);
+    const inliner = new Inliner(coll, inlineComments);
     body = inliner.optExpr(body);
     changed = changed || inliner.changed;
   }
