@@ -231,10 +231,40 @@ function findRecursive(defs: Map<string, N.ALam>): Set<string> {
 
 function calleesOf(body: N.AExpr, defs: Map<string, N.ALam>): Set<string> {
   const out = new Set<string>();
+  // A call may reach a known function through a temp that merely *reads* it. The
+  // case that matters: a mutually-recursive sibling defined LATER in the same
+  // letrec is read via `let t = ~!f` (an a-id-letrec -- the uninitialized-guarded
+  // FORWARD reference) and then called as `t(...)`. The call's `_fun` is just the
+  // a-id `t`, so resolving the callee key directly sees `t`, not `f` -- the forward
+  // edge (and hence the whole mutual cycle) is missed, the cycle members are not
+  // marked recursive, and they get inlined, which breaks safe-for-space token
+  // minting (deep mutual recursion then OOMs under the optimizer). So we follow
+  // single-identifier alias bindings here. This only ADDS edges, so it can only
+  // make recursion detection more complete -> the inliner strictly more
+  // conservative; it never enables an unsound inline.
+  const alias = new Map<string, string>();
+  function resolve(key: string): string {
+    let k = key; const seen = new Set<string>();
+    while (alias.has(k) && !seen.has(k)) { seen.add(k); k = alias.get(k)!; }
+    return k;
+  }
+  // The name a lettable purely reads, if it is a single-identifier read.
+  function readTarget(l: N.ALettable): string | undefined {
+    if (l instanceof N.AIdLetrec) { return l.id.key(); }
+    if (l instanceof N.AIdVar) { return l.id.key(); }
+    if (l instanceof N.AVal$) {
+      const v = l.v;
+      if (v instanceof N.AId || v instanceof N.AIdSafeLetrec) { return v.id.key(); }
+    }
+    return undefined;
+  }
   function vExpr(e: N.AExpr): void {
     switch (e.$name) {
-      case 'a-let': case 'a-var': case 'a-arr-let':
+      case 'a-let': case 'a-var': case 'a-arr-let': {
+        const t = readTarget((e as any).e);
+        if (t !== undefined) { alias.set((e as any).bind.id.key(), t); }
         vLettable((e as any).e); vExpr((e as any).body); return;
+      }
       case 'a-seq':
         vLettable(e.e1); vExpr(e.e2); return;
       case 'a-type-let':
@@ -247,8 +277,8 @@ function calleesOf(body: N.AExpr, defs: Map<string, N.ALam>): Set<string> {
   function vLettable(l: N.ALettable): void {
     switch (l.$name) {
       case 'a-app': {
-        const k = calleeKey(l._fun);
-        if (k !== undefined && defs.has(k)) { out.add(k); }
+        const k0 = calleeKey(l._fun);
+        if (k0 !== undefined) { const k = resolve(k0); if (defs.has(k)) { out.add(k); } }
         return;
       }
       case 'a-lam': case 'a-method': vExpr(l.body); return;
