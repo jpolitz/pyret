@@ -1048,13 +1048,25 @@ export interface CompileOptions {
   // default; -no-effect-tail-calls disables it to recover the un-optimized
   // baseline (used as a differential-testing correctness oracle).
   effectTailCalls: boolean;
-  // ANF optimizer middle-end (inliner + CSE; promise backend only). On by
+  // ANF optimizer middle-end (inliner + CSE + LICM; promise backend only). On by
   // default; -no-optimize disables it to recover the un-optimized baseline.
   optimize: boolean;
+  // Loop-invariant code motion (field-read `??=` caching) within the optimizer.
+  // On by default; -no-licm disables just this pass (inliner + CSE still run),
+  // for A/B measurement. Inert unless `optimize` is on.
+  licm: boolean;
   // Emit a `// inlined: <callee>` comment at each inliner splice site (promise
   // backend). Off by default; -inline-comments turns it on for inspecting the
   // optimizer. Inert unless the optimizer runs.
   inlineComments: boolean;
+  // Box-elimination for function-local Pyret `var`s (promise backend only). On
+  // by default; -no-unbox-vars disables it for A/B measurement. A `var` declared
+  // inside a function/lambda body cannot be exported or read across a module/REPL
+  // boundary, so its `{$var: ...}` heap box is pointless -- a plain mutable JS
+  // local suffices. Top-level vars keep the box (they escape via provides/REPL).
+  // It's a codegen-repr choice in the async backend, not an ANF pass, so it's
+  // independent of `optimize`.
+  unboxVars: boolean;
   stackBackend: StackBackend;
   inlineCaseBodyLimit: number;
   moduleEval: boolean;
@@ -1096,7 +1108,9 @@ export const defaultCompileOptions: CompileOptions = {
   properTailCalls: true,
   effectTailCalls: true,
   optimize: true,
+  licm: true,
   inlineComments: false,
+  unboxVars: true,
   stackBackend: compiledStackBackend,
   inlineCaseBodyLimit: 5,
   moduleEval: true,
