@@ -1,0 +1,254 @@
+#lang pyret
+
+# Real-workload benchmark extracted from the Bootstrap "self-driving-car-library".
+# A car drives itself around a fixed practice track using a proportional
+# controller. Each tick: locate the car's nearest track parameter (windowed
+# search), read the sensors (offset / curvature / skew via parametric-track trig),
+# pick a steering angle, and integrate the car's pose. The render configuration
+# additionally rasterizes the driver's-eye POV scene (a ~60-segment perspective
+# road plus a text HUD) every frame. Only `reactor`/`big-bang` (the DOM canvas),
+# the trained-model/CSV/Table predictor interface, and random track regeneration
+# are dropped -- replaced by a fixed track + the library's documented stub
+# proportional controller -- so it runs headless and deterministically. Exercises
+# trig-heavy float math, many small function calls, records, and (when rendering)
+# place-image/rotate/text image-tree construction. Not async-targeted.
+
+import image as I
+
+rectangle = I.rectangle
+circle = I.circle
+place-image = I.place-image
+rotate = I.rotate
+overlay = I.overlay
+text = I.text
+above = I.above
+beside = I.beside
+square = I.square
+above-list = I.above-list
+image-width = I.image-width
+image-height = I.image-height
+empty-image = I.empty-image
+
+RENDER = REPLACE_RENDER
+
+WIDTH = 800
+HEIGHT = 600
+ROAD-HALF-WIDTH = 45
+CAR-LENGTH = 26
+CAR-WIDTH = 14
+TEXT-SPACING = 2
+STEERING-FACTOR = 0.035
+LOOKAHEAD = 0.08
+MAX-STEER = 90
+STEER-RATE = 8
+CAR-SPEED = 2.0
+MIN-SPEED = 2.0
+MAX-SPEED = 3.0
+SPEED-STEP = 0.05
+STEER-DEAD-BAND = 15
+CLOSEST-T-STEPS = 480
+CLOSEST-T-WINDOW = 10
+POV-HORIZON-Y = 250
+POV-FOCAL = 280
+POV-CAM-HEIGHT = 60
+POV-LOOKAHEAD = 60
+POV-STEP = 0.05
+POV-NEAR-D = 15
+
+data TrackParams:
+  | track-params(a1 :: Number, a2 :: Number, b1 :: Number, b2 :: Number,
+      ph :: Number, qx :: Number, qy :: Number)
+end
+
+# A fixed, hand-picked drivable track (replaces random-track's rejection loop).
+TRK = track-params(200, 45, 140, 37, 0.6, 1.7, 3.2)
+
+fun track-cx(trk, t): (WIDTH / 2) + (trk.a1 * num-cos(t + trk.ph)) + (trk.a2 * num-cos((3 * t) + trk.qx)) end
+fun track-cy(trk, t): (HEIGHT / 2) + (trk.b1 * num-sin(t + trk.ph)) + (trk.b2 * num-sin((2 * t) + trk.qy)) end
+fun track-dx(trk, t): (0 - (trk.a1 * num-sin(t + trk.ph))) + (0 - (3 * trk.a2 * num-sin((3 * t) + trk.qx))) end
+fun track-dy(trk, t): (trk.b1 * num-cos(t + trk.ph)) + (2 * trk.b2 * num-cos((2 * t) + trk.qy)) end
+fun track-heading(trk, t): num-atan2(track-dy(trk, t), track-dx(trk, t)) end
+
+fun wrap-angle(a):
+  ask:
+    | a > PI then: a - (2 * PI)
+    | a < (0 - PI) then: a + (2 * PI)
+    | otherwise: a
+  end
+end
+fun approach(current, target, max-step):
+  diff = target - current
+  if num-abs(diff) <= max-step: target
+  else if diff > 0: current + max-step
+  else: current - max-step
+  end
+end
+
+fun closest-t-near(trk, px, py, hint-i):
+  fun search(k, best-i, best-d2):
+    if k > (2 * CLOSEST-T-WINDOW): best-i
+    else:
+      raw-i = (hint-i + k) - CLOSEST-T-WINDOW
+      i = if raw-i < 0: raw-i + CLOSEST-T-STEPS
+        else if raw-i >= CLOSEST-T-STEPS: raw-i - CLOSEST-T-STEPS
+        else: raw-i end
+      t = (i / CLOSEST-T-STEPS) * 2 * PI
+      dx = track-cx(trk, t) - px
+      dy = track-cy(trk, t) - py
+      d2 = (dx * dx) + (dy * dy)
+      if d2 < best-d2: search(k + 1, i, d2)
+      else: search(k + 1, best-i, best-d2)
+      end
+    end
+  end
+  search(0, hint-i, 1.0e10)
+end
+
+fun offset-at-t(trk, px, py, t):
+  h = track-heading(trk, t)
+  ((py - track-cy(trk, t)) * num-cos(h)) - ((px - track-cx(trk, t)) * num-sin(h))
+end
+fun sharpness-at-t(trk, t):
+  wrap-angle(track-heading(trk, t + LOOKAHEAD) - track-heading(trk, t)) / LOOKAHEAD
+end
+fun skew-at-t(trk, t, car-h):
+  wrap-angle(car-h - track-heading(trk, t)) * (180 / PI)
+end
+
+data CarState:
+  | car(x :: Number, y :: Number, heading :: Number, alive :: Boolean,
+      speed-val :: Number, sharpness-val :: Number, offset-val :: Number,
+      skew-val :: Number, steer-val :: Number, t-prev :: Number)
+end
+
+# The library's documented stub proportional controller.
+fun stub-steering(s, sharp, off, he):
+  (sharp * 22) - (off * 3.0) - (he * 2.5)
+end
+
+fun snap-back(trk, t-i, s, sharpness, offset):
+  t = (t-i / CLOSEST-T-STEPS) * 2 * PI
+  cx = track-cx(trk, t)
+  cy = track-cy(trk, t)
+  h = track-heading(trk, t)
+  signed-snap = if offset >= 0: ROAD-HALF-WIDTH * 0.6 else: 0 - (ROAD-HALF-WIDTH * 0.6) end
+  new-x = cx - (signed-snap * num-sin(h))
+  new-y = cy + (signed-snap * num-cos(h))
+  car(new-x, new-y, h, true, s.speed-val, sharpness, signed-snap, 0, s.steer-val, t-i)
+end
+
+# Per-tick update (survival mode: snap back to the road instead of crashing, so
+# the benchmark drives forever on the fixed track).
+fun tick(trk, s):
+  t-i = closest-t-near(trk, s.x, s.y, s.t-prev)
+  t = (t-i / CLOSEST-T-STEPS) * 2 * PI
+  offset = offset-at-t(trk, s.x, s.y, t)
+  sharpness = sharpness-at-t(trk, t)
+  heading-err = skew-at-t(trk, t, s.heading)
+  if num-abs(offset) >= ROAD-HALF-WIDTH:
+    snap-back(trk, t-i, s, sharpness, offset)
+  else:
+    steering-deg = stub-steering(s, sharpness, offset, heading-err)
+    new-speed = if num-abs(steering-deg) < STEER-DEAD-BAND:
+        num-min(s.speed-val + SPEED-STEP, MAX-SPEED)
+      else: num-max(s.speed-val - SPEED-STEP, MIN-SPEED) end
+    delta-h = (steering-deg * (PI / 180)) * STEERING-FACTOR
+    new-h = s.heading + delta-h
+    new-x = s.x + (new-speed * num-cos(new-h))
+    new-y = s.y + (new-speed * num-sin(new-h))
+    car(new-x, new-y, new-h, true, new-speed, sharpness, offset, heading-err, steering-deg, t-i)
+  end
+end
+
+fun fmt(v): num-to-string-digits(v, 6) end
+
+HUD-LABELS = above-list(
+  [list:
+    text("speed:      ", 13, "white"),
+    square(TEXT-SPACING, "solid", "transparent"),
+    text("curve:      ", 13, "white"),
+    square(TEXT-SPACING, "solid", "transparent"),
+    text("offset:     ", 13, "white"),
+    square(TEXT-SPACING, "solid", "transparent"),
+    text("skew:       ", 13, "white"),
+    square(TEXT-SPACING, "solid", "transparent"),
+    text("steering-angle:  ", 13, "yellow")])
+
+POV-BACKGROUND = above(
+  rectangle(WIDTH, POV-HORIZON-Y, "solid", "skyblue"),
+  rectangle(WIDTH, HEIGHT - POV-HORIZON-Y, "solid", "darkgreen"))
+
+fun draw-pov(s, trk):
+  current-t = (s.t-prev / CLOSEST-T-STEPS) * 2 * PI
+  fx = num-cos(s.heading)
+  fy = num-sin(s.heading)
+  fun draw-segs(i, scene):
+    if i < 0: scene
+    else:
+      t-sample = current-t + (i * POV-STEP)
+      cx = track-cx(trk, t-sample)
+      cy = track-cy(trk, t-sample)
+      vx = cx - s.x
+      vy = cy - s.y
+      d-f = (vx * fx) + (vy * fy)
+      if d-f < POV-NEAR-D: draw-segs(i - 1, scene)
+      else:
+        d-r = (vy * fx) - (vx * fy)
+        scl = POV-FOCAL / d-f
+        sx = (WIDTH / 2) + (d-r * scl)
+        sy = POV-HORIZON-Y + (POV-CAM-HEIGHT * scl)
+        width = (2 * ROAD-HALF-WIDTH) * scl
+        if (sy > HEIGHT) or (width > (2 * WIDTH)): draw-segs(i - 1, scene)
+        else:
+          band-color = if num-modulo(i, 2) == 0: "gray" else: "dimgray" end
+          asphalt = rectangle(width, 7, "solid", band-color)
+          scene-1 = place-image(asphalt, sx, sy, scene)
+          scene-2 = if num-modulo(i, 2) == 0:
+              place-image(circle(2, "solid", "yellow"), sx, sy, scene-1)
+            else: scene-1 end
+          draw-segs(i - 1, scene-2)
+        end
+      end
+    end
+  end
+  scene = draw-segs(POV-LOOKAHEAD, POV-BACKGROUND)
+  values = above-list(
+    [list:
+      text(fmt(s.speed-val), 13, "white"),
+      square(TEXT-SPACING, "solid", "transparent"),
+      text(fmt(s.sharpness-val), 13, "white"),
+      square(TEXT-SPACING, "solid", "transparent"),
+      text(fmt(s.offset-val), 13, "white"),
+      square(TEXT-SPACING, "solid", "transparent"),
+      text(fmt(s.skew-val), 13, "white"),
+      square(TEXT-SPACING, "solid", "transparent"),
+      text(fmt(s.steer-val), 13, "yellow")])
+  sensor-lines = beside(HUD-LABELS, values)
+  hud = above(empty-image, sensor-lines)
+  place-image(hud, 104, 8 + (image-height(hud) / 2), scene)
+end
+
+s0 = car(track-cx(TRK, 0), track-cy(TRK, 0), track-heading(TRK, 0),
+  true, CAR-SPEED, 0, 0, 0, 0, 0)
+
+# Driver: per tick advance the car; in the render config also rasterize the POV
+# scene (image-width forces the image tree to be realized). acc accumulates so
+# nothing is elided.
+fun run-frames(n, s, acc):
+  if n == 0: acc
+  else:
+    s2 = tick(TRK, s)
+    if RENDER:
+      img = draw-pov(s2, TRK)
+      run-frames(n - 1, s2, acc + image-width(img))
+    else:
+      run-frames(n - 1, s2, acc + num-floor(num-abs(s2.x) + num-abs(s2.y)))
+    end
+  end
+end
+
+t0 = time-now()
+final-acc = run-frames(REPLACE_FRAMES, s0, 0)
+loop-ms = time-now() - t0
+print(num-to-string(num-floor(final-acc)) + "\n")
+print("LOOP-MS " + num-to-string(loop-ms) + "\n")

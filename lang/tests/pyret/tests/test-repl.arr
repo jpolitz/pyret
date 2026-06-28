@@ -248,11 +248,17 @@ check:
   result35 = next-interaction("fun g(): f() end")
   result36 = next-interaction("g()")
   result36.v satisfies L.is-failure-result
-  L.get-result-stacktrace(result36.v) is=~
-  [raw-array:
-    "definitions://: line 1, column 9",
-    "interactions://1: line 1, column 9",
-    "interactions://2: line 1, column 0"]
+  # Exact frame list is cont-only: the promise backend rides non-tail calls on
+  # JS `await`, which unwinds those frames before the trampoline can harvest them,
+  # so the trace collapses to the innermost frame. See test-stacktrace-portable.arr
+  # for the backend-agnostic version that runs on both.
+  when CS.is-cont(CS.compiled-stack-backend) block:
+    L.get-result-stacktrace(result36.v) is=~
+    [raw-array:
+      "definitions://: line 1, column 9",
+      "interactions://1: line 1, column 9",
+      "interactions://2: line 1, column 0"]
+  end
 
   # Call a bunch of flat functions
   result37 = restart("fun f(o): o.x end\n" +
@@ -283,8 +289,12 @@ check:
   # "middle" frames, though it should definitely have the topmost and bottom
   # most frames.
   raw-array-get(stacktrace, 0) is "definitions://: line 3, column 15"
-  raw-array-get(stacktrace,
-    raw-array-length(stacktrace) - 1) is "interactions://1: line 1, column 0"
+  # The bottom (repl-interaction) frame is cont-only; on promise the tail-recursive
+  # trace collapses to just the innermost frame checked above.
+  when CS.is-cont(CS.compiled-stack-backend) block:
+    raw-array-get(stacktrace,
+      raw-array-length(stacktrace) - 1) is "interactions://1: line 1, column 0"
+  end
 
   result41 = restart("fun f(o): o.x end\n" +
                      "fun g(): f(5)\n end", false)
@@ -301,11 +311,14 @@ check:
                      "fun g(): f({x: 5})\n end", false)
   result44 = next-interaction("g()")
   result44.v satisfies L.is-failure-result
-  L.get-result-stacktrace(result44.v) is=~
-  [raw-array:
-    "definitions://: line 1, column 10",
-    "definitions://: line 2, column 9",
-    "interactions://1: line 1, column 0"]
+  # Exact frame list is cont-only (promise collapses the non-tail method-call frames).
+  when CS.is-cont(CS.compiled-stack-backend) block:
+    L.get-result-stacktrace(result44.v) is=~
+    [raw-array:
+      "definitions://: line 1, column 10",
+      "definitions://: line 2, column 9",
+      "interactions://1: line 1, column 0"]
+  end
 
   # stacktrace through list.map()
   result45 = restart("fun f():\n" +
@@ -316,13 +329,19 @@ check:
   result46.v satisfies L.is-failure-result
   stacktrace46 = L.get-result-stacktrace(result46.v)
 
-  raw-array-length(stacktrace46) is 5
+  # The error site (index 0) and the two builtin:lists frames survive on both
+  # backends because the list builtin bounces through the trampoline.
   raw-array-get(stacktrace46, 0) is "definitions://: line 2, column 12"
   # Don't check the actual line number in the builtin:lists
   raw-array-get(stacktrace46, 1) is%(string-starts-with) "builtin://lists:"
   raw-array-get(stacktrace46, 2) is%(string-starts-with) "builtin://lists:"
-  raw-array-get(stacktrace46, 3) is "definitions://: line 3, column 0"
-  raw-array-get(stacktrace46, 4) is "interactions://1: line 1, column 0"
+  # The total length and the .map call-site + repl frames (indices 3, 4) are
+  # cont-only; on promise the trace stops after the builtin frames.
+  when CS.is-cont(CS.compiled-stack-backend) block:
+    raw-array-length(stacktrace46) is 5
+    raw-array-get(stacktrace46, 3) is "definitions://: line 3, column 0"
+    raw-array-get(stacktrace46, 4) is "interactions://1: line 1, column 0"
+  end
 
   # stacktrace through builtin raw-list-map
   result47 = restart("fun f():\n" +
@@ -331,11 +350,14 @@ check:
     "end", false)
   result48 = next-interaction("f()")
   result48.v satisfies L.is-failure-result
-  L.get-result-stacktrace(result48.v) is=~
-  [raw-array:
-    "definitions://: line 2, column 12",
-    "definitions://: line 3, column 0",
-    "interactions://1: line 1, column 0"]
+  # Exact frame list is cont-only (promise collapses the raw-list-map call frames).
+  when CS.is-cont(CS.compiled-stack-backend) block:
+    L.get-result-stacktrace(result48.v) is=~
+    [raw-array:
+      "definitions://: line 2, column 12",
+      "definitions://: line 3, column 0",
+      "interactions://1: line 1, column 0"]
+  end
 
 
   result49 = restart("fun sum(x):\n" +
@@ -352,10 +374,15 @@ check:
   result50.v satisfies L.is-failure-result
   stacktrace50-list = raw-array-to-list(L.get-result-stacktrace(result50.v))
 
-  stacktrace50-list is
-  [list: "definitions://: line 3, column 2"] +
-  repeat(ncalls, "definitions://: line 5, column 6") +
-  [list: "interactions://1: line 1, column 0"]
+  # The full ~1002-frame trace (one frame per non-tail recursion level) is cont-only.
+  # On promise these non-tail frames ride `await` and are unwound before capture, so
+  # the trace collapses to the innermost error site (asserted in the portable test).
+  when CS.is-cont(CS.compiled-stack-backend) block:
+    stacktrace50-list is
+    [list: "definitions://: line 3, column 2"] +
+    repeat(ncalls, "definitions://: line 5, column 6") +
+    [list: "interactions://1: line 1, column 0"]
+  end
 
   # Make sure the repl has standard-imports like lists and arrays
 

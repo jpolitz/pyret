@@ -31,7 +31,98 @@ import { InternalCompilerError, mapGetValue, raise } from './shared';
 export type Flatness = number | undefined;
 export type FEnv = Map<string, Flatness>;
 // The { sd; ad } tuple returned by make-prog-flatness-env
-export type FlatnessEnv = [FEnv, FEnv];
+// Third element: the set of operator a-apps proven flat by the numeric pass
+// below. Carried alongside the flatness envs so the (promise) compiler emits
+// them with no conditional await -- a sync function can't await.
+export type FlatnessEnv = [FEnv, FEnv, Set<AA.AApp>];
+
+// ---------------------------------------------------------------------------
+// Numeric-flatness analysis (sound, incomplete; gated to the promise backend).
+//
+// `a + b` compiles to a call of the global operator `_plus`, which has
+// *undefined* flatness because it can dispatch to a user-defined `_plus` method
+// (arbitrary, possibly suspending, code). But when both operands are statically
+// Number the operator ALWAYS takes the num-* fast path -- it never dispatches or
+// suspends -- so the call is flat. This pass tracks which ANF ids are provably
+// Number (from `:: Number` annotations, numeric literals, and the results of
+// numeric ops/builtins) and marks such operator apps flat, which lets the
+// enclosing arithmetic helper compile as a plain (sync) function on the promise
+// backend instead of an async one (no Promise alloc / await per call).
+// ---------------------------------------------------------------------------
+type NumEnv = Map<string, boolean>;
+interface NumCtx {
+  numEnv: NumEnv;
+  flatApps: Set<AA.AApp>;
+  bindings: Map<string, C.ValueBind>;
+  enabled: boolean;
+}
+const NUM_ARITH_OPS = new Set(['_plus', '_minus', '_times', '_divide']);
+const NUM_CMP_OPS = new Set(['_lessthan', '_greaterthan', '_lessequal', '_greaterequal']);
+// Builtins that take Number(s) and return a Number without ever dispatching;
+// used only to PROPAGATE Number-ness (they are already flat in the global env).
+const NUM_RETURNING_BUILTINS = new Set([
+  'num-sqrt', 'num-sqr', 'num-abs', 'num-floor', 'num-ceiling', 'num-round',
+  'num-round-even', 'num-negate', 'num-min', 'num-max', 'num-modulo',
+  'num-truncate', 'num-sin', 'num-cos', 'num-tan', 'num-asin', 'num-acos',
+  'num-atan', 'num-atan2', 'num-exp', 'num-log', 'num-expt',
+  'num-to-roughnum', 'num-to-rational', 'num-to-fixnum',
+]);
+
+// The global value name an operator AVal refers to (e.g. '_plus'), or undefined
+// if it is not a recognizable reference to a builtin global. Operators are
+// usually a local a-id bound via getModuleField, so we resolve through the
+// binding origin rather than just checking for an SGlobal atom.
+function globalOpName(v: AA.AVal, bindings: Map<string, C.ValueBind>): string | undefined {
+  if (AA.isAIdModref(v)) { return v.uri === 'builtin://global' ? v.name : undefined; }
+  if (AA.isAId(v)) {
+    if (A.isSGlobal(v.id)) { return v.id.toname(); }
+    const vb = bindings.get(v.id.key());
+    if (vb !== undefined && vb.origin.uriOfDefinition === 'builtin://global') {
+      return vb.origin.originalName.toname();
+    }
+  }
+  return undefined;
+}
+
+function valIsNumber(v: AA.AVal, numEnv: NumEnv): boolean {
+  if (AA.isANum(v)) { return true; }
+  if (AA.isAId(v)) { return numEnv.get(v.id.key()) === true; }
+  return false;
+}
+
+function annIsNumber(ann: A.Ann): boolean {
+  return A.isAName(ann) && ann.id.toname() === 'Number';
+}
+
+// Classify an operator app on (possibly) Number operands:
+//   flat  -- the op is statically a num-* fast path (no dispatch, no suspend)
+//   isNum -- the result is a Number (arith ops and num-* builtins; NOT comparisons)
+function numericAppInfo(lettable: AA.ALettable, nc: NumCtx): { flat: boolean; isNum: boolean } {
+  if (!AA.isAApp(lettable)) { return { flat: false, isNum: false }; }
+  const name = globalOpName(lettable._fun, nc.bindings);
+  if (name === undefined) { return { flat: false, isNum: false }; }
+  const args = lettable.args;
+  if (NUM_ARITH_OPS.has(name)) {
+    if (args.length === 2 && valIsNumber(args[0], nc.numEnv) && valIsNumber(args[1], nc.numEnv)) {
+      return { flat: true, isNum: true };
+    }
+  } else if (NUM_CMP_OPS.has(name)) {
+    if (args.length === 2 && valIsNumber(args[0], nc.numEnv) && valIsNumber(args[1], nc.numEnv)) {
+      return { flat: true, isNum: false };
+    }
+  } else if (NUM_RETURNING_BUILTINS.has(name)) {
+    if (args.length >= 1 && args.every((a) => valIsNumber(a, nc.numEnv))) {
+      return { flat: false, isNum: true };
+    }
+  }
+  return { flat: false, isNum: false };
+}
+
+// Is the value bound by a let provably a Number?
+function lettableIsNumber(val: AA.ALettable, nc: NumCtx): boolean {
+  if (AA.isAVal(val)) { return valIsNumber(val.v, nc.numEnv); }
+  return numericAppInfo(val, nc).isNum;
+}
 
 // Where Pyret used torepr in internal error messages; best-effort
 // structural rendering (same approach as anf.ts / compile-errors.ts).
@@ -316,7 +407,8 @@ export function makeExprFlatnessEnv(
   sd: FEnv,
   ad: FEnv,
   mb: Map<string, C.ModuleBind>,
-  env: C.CompileEnvironment
+  env: C.CompileEnvironment,
+  nc: NumCtx
 ): Flatness {
   // The body recursion (one chain node per statement) is rewritten as a
   // forward loop plus a backward fold so long programs don't overflow
@@ -343,9 +435,11 @@ export function makeExprFlatnessEnv(
           let argsFlatness = retFlatness;
           for (const elt of val.args) {
             argsFlatness = flatnessMax(argsFlatness, annFlatness(elt.ann, sd, ad, mb, env));
+            // Seed Number-typed parameters so operator apps in the body flatten.
+            if (nc.enabled && annIsNumber(elt.ann)) { nc.numEnv.set(elt.id.key(), true); }
           }
 
-          const bodyFlatness = makeExprFlatnessEnv(val.body, sd, ad, mb, env);
+          const bodyFlatness = makeExprFlatnessEnv(val.body, sd, ad, mb, env, nc);
           const lamFlatness = flatnessMax(bodyFlatness, argsFlatness);
 
           sd.set(bind.id.key(), lamFlatness);
@@ -361,6 +455,7 @@ export function makeExprFlatnessEnv(
           if (sd.has(valISL.id.key())) {
             sd.set(bind.id.key(), sd.get(valISL.id.key()));
           }
+          if (nc.enabled && nc.numEnv.get(valISL.id.key()) === true) { nc.numEnv.set(bind.id.key(), true); }
           // flatness of the binding part of the let is 0 since we don't
           // call anything
           valFlatness = 0;
@@ -369,7 +464,13 @@ export function makeExprFlatnessEnv(
           sd.set(bind.id.key(), funFlatness);
           valFlatness = 0;
         } else {
-          valFlatness = makeLettableFlatnessEnv(val, sd, ad, mb, env);
+          valFlatness = makeLettableFlatnessEnv(val, sd, ad, mb, env, nc);
+        }
+
+        // Track whether this binding is provably a Number (annotation or value),
+        // so downstream operator apps on it can flatten.
+        if (nc.enabled && (annIsNumber(bind.ann) || lettableIsNumber(val, nc))) {
+          nc.numEnv.set(bind.id.key(), true);
         }
 
         frames.push((bodyFlatness) => {
@@ -384,7 +485,8 @@ export function makeExprFlatnessEnv(
         // sd to let us keep track of the flatness if e is an a-lam, but for
         // now we don't since I'm not sure it'd work right.
         const annF = annFlatness(aexpr.bind.ann, sd, ad, mb, env);
-        const lettF = makeLettableFlatnessEnv(aexpr.e, sd, ad, mb, env);
+        const lettF = makeLettableFlatnessEnv(aexpr.e, sd, ad, mb, env, nc);
+        if (nc.enabled && annIsNumber(aexpr.bind.ann)) { nc.numEnv.set(aexpr.bind.id.key(), true); }
         frames.push((bodyFlatness) => flatnessMax(annF, flatnessMax(lettF, bodyFlatness)));
         aexpr = aexpr.body;
         continue;
@@ -392,18 +494,21 @@ export function makeExprFlatnessEnv(
       case 'a-var': {
         // Do same thing with a-var as with a-let for now
         const annF = annFlatness(aexpr.bind.ann, sd, ad, mb, env);
+        // Only annotated vars are provably Number: an unannotated var could be
+        // reassigned a non-Number, but `:: Number` is re-checked on every `:=`.
+        if (nc.enabled && annIsNumber(aexpr.bind.ann)) { nc.numEnv.set(aexpr.bind.id.key(), true); }
         frames.push((bodyFlatness) => flatnessMax(annF, bodyFlatness));
         aexpr = aexpr.body;
         continue;
       }
       case 'a-seq': {
-        const aFlatness = makeLettableFlatnessEnv(aexpr.e1, sd, ad, mb, env);
+        const aFlatness = makeLettableFlatnessEnv(aexpr.e1, sd, ad, mb, env, nc);
         frames.push((bodyFlatness) => flatnessMax(aFlatness, bodyFlatness));
         aexpr = aexpr.e2;
         continue;
       }
       case 'a-lettable':
-        result = makeLettableFlatnessEnv(aexpr.e, sd, ad, mb, env);
+        result = makeLettableFlatnessEnv(aexpr.e, sd, ad, mb, env, nc);
         break forward;
       default:
         throw new InternalCompilerError('makeExprFlatnessEnv: unknown expr ' + (aexpr as any).$name);
@@ -464,14 +569,15 @@ export function makeLettableFlatnessEnv(
   sd: FEnv,
   ad: FEnv,
   mb: Map<string, C.ModuleBind>,
-  env: C.CompileEnvironment
+  env: C.CompileEnvironment,
+  nc: NumCtx
 ): Flatness {
   const defaultRet: Flatness = 0;
   switch (lettable.$name) {
     case 'a-module':
       return defaultRet;
     case 'a-if':
-      return flatnessMax(makeExprFlatnessEnv(lettable.t, sd, ad, mb, env), makeExprFlatnessEnv(lettable.e, sd, ad, mb, env));
+      return flatnessMax(makeExprFlatnessEnv(lettable.t, sd, ad, mb, env, nc), makeExprFlatnessEnv(lettable.e, sd, ad, mb, env, nc));
 
     // NOTE -- a-assign might not be flat b/c it checks annotations
     case 'a-assign': {
@@ -487,6 +593,13 @@ export function makeLettableFlatnessEnv(
 
     case 'a-app': {
       const f = lettable._fun;
+      // Numeric fast path: an arithmetic/relational operator on provably-Number
+      // operands never dispatches, so it is flat. Record it so codegen emits no
+      // conditional await (consistency between this analysis and emission).
+      if (nc.enabled) {
+        const ni = numericAppInfo(lettable, nc);
+        if (ni.flat) { nc.flatApps.add(lettable); return 0; }
+      }
       // Look up flatness in the dictionary
       if (AA.isAId(f) || AA.isAIdSafeLetrec(f)) {
         return getFlatnessForCall(f.id.key(), sd);
@@ -535,7 +648,7 @@ export function makeLettableFlatnessEnv(
     case 'a-cases': {
       // Flatness is the max of the flatness all the cases branches
       const combine = (caseBranch: AA.ACasesBranch, maxFlatAcc: Flatness): Flatness => {
-        const branchFlatness = makeExprFlatnessEnv(caseBranch.body, sd, ad, mb, env);
+        const branchFlatness = makeExprFlatnessEnv(caseBranch.body, sd, ad, mb, env, nc);
         return flatnessMax(maxFlatAcc, branchFlatness);
       };
       let maxFlat: Flatness = 0;
@@ -543,7 +656,7 @@ export function makeLettableFlatnessEnv(
         maxFlat = combine(b, maxFlat);
       }
 
-      const elseFlat = makeExprFlatnessEnv(lettable._else, sd, ad, mb, env);
+      const elseFlat = makeExprFlatnessEnv(lettable._else, sd, ad, mb, env, nc);
       const typFlat = annFlatness(lettable.typ, sd, ad, mb, env);
       return flatnessMax(typFlat, flatnessMax(maxFlat, elseFlat));
     }
@@ -555,7 +668,8 @@ export function makeLettableFlatnessEnv(
 export function makeProgFlatnessEnv(
   anfed: AA.AProg,
   postEnv: C.ComputedEnvironment,
-  env: C.CompileEnvironment
+  env: C.CompileEnvironment,
+  enableNumeric: boolean = false
 ): FlatnessEnv {
   const pe = postEnv as C.ComputedEnv;
   const bindings = pe.bindings;
@@ -629,8 +743,10 @@ export function makeProgFlatnessEnv(
   // cases(AA.AProg) anfed: | a-program(_, prov, imports, body)
   const body = anfed.body;
   makeExprDataEnv(body, sd, ad, mb, env, new Map<string, AA.AVariant[]>(), new Map<string, string>());
-  makeExprFlatnessEnv(body, sd, ad, mb, env);
-  return [sd, ad];
+  const flatApps = new Set<AA.AApp>();
+  const nc: NumCtx = { numEnv: new Map(), flatApps, bindings, enabled: enableNumeric };
+  makeExprFlatnessEnv(body, sd, ad, mb, env, nc);
+  return [sd, ad, flatApps];
 }
 
 export function getDefinedValues(ast: AA.AProg): Map<string, string> {

@@ -509,7 +509,7 @@ export function compileModule(
           cleaned = cleaned.visit(AU.letrecVisitor)
             .visit(AU.inlineLams)
             .visit(AU.setRecursiveVisitor)
-            .visit(AU.setTailVisitor);
+            .visit(AU.makeSetTailVisitor(options.effectTailCalls));
           if (!options.userAnnotations) {
             cleaned = cleaned!.visit(AU.stripAnnotationsVisitor);
           }

@@ -26,6 +26,7 @@
 import { sha256 } from './sha256';
 import * as A from './ast';
 import * as N from './ast-anf';
+import { INLINE_MARKER_BASE } from './optimize-anf';
 import * as J from './js-ast';
 import * as CS from './compile-structs';
 import * as CL from './concat-lists';
@@ -110,7 +111,9 @@ const jAnd = J.jAnd;
 const jOr = J.jOr;
 const jLt = J.jLt;
 const jEq = J.jEq;
+const jNullish = J.jNullish;
 const jNeq = J.jNeq;
+const jEquals = J.jEquals;
 const jGeq = J.jGeq;
 const jUnop = (exp: J.JExprT, op: J.JUnopT): J.JUnop => new J.JUnop(exp, op);
 const jDecr = J.jDecr;
@@ -247,6 +250,7 @@ export const rtNameMap: Map<string, string> = new Map([
   ['isMethod', 'isM'],
   ['isPyretException', 'isPE'],
   ['isPyretTrue', 'isPT'],
+  ['isThenable', 'iT'],
   ['makeActivationRecord', 'mAR'],
   ['makeBoolean', 'mB'],
   ['makeBranderAnn', 'mBA'],
@@ -411,6 +415,68 @@ function ext<T extends object>(obj: T, fields: Record<string, any>): T {
   const out = Object.create(Object.getPrototypeOf(obj));
   Object.assign(out, obj, fields);
   return out as T;
+}
+
+// Box elimination for function-local `var`s. A Pyret `var` is normally compiled
+// to a `{$var: value}` heap box so its mutation is visible by-reference across
+// module/REPL boundaries (see the provide path's `s-local-ref`/`VbVar` case and
+// `aIdVarModref`). That visibility is the ONLY thing the box buys: a `var`
+// declared inside a function/lambda body can never be exported or read by
+// another module/the REPL, so for it the box is pure overhead -- a plain mutable
+// JS local is equivalent and far cheaper in a hot loop.
+//
+// This returns the `key()` set of every `var` declared in a nested scope (depth
+// >= 1, i.e. inside some a-lam/a-method body). Those are unboxed at the three
+// codegen sites (decl / a-assign / a-id-var). Top-level vars are left boxed:
+// they escape via provides and are mutable from the REPL.
+//
+// CRUCIAL: a Pyret `letrec` (every local `fun`/`rec`) is desugared in anf.ts to a
+// `var`-binding initialized to `undefined` plus an `s-assign` of the value (so
+// `fun f` becomes `var f = undefined; f := <lam>`). Its DECLARATION is therefore
+// an `AVar` -- indistinguishable here from a genuine `var` -- but its REFERENCES
+// are `AIdLetrec`/`AIdSafeLetrec`, which read `.$var` (the forward-ref /
+// uninitialized-on-read guard) rather than `AIdVar`. Unboxing only the decl
+// would leave those reads dereferencing a non-box -> `undefined`. So we collect
+// the ids referenced as letrec and SUBTRACT them: only genuine vars (referenced
+// solely via `AIdVar`/`AIdVarModref`) are unboxed. LETREC stays fully boxed.
+//
+// Post-ANF binding atoms are globally unique (`SAtom.key()` includes a serial),
+// so membership-by-key is unambiguous across the three sites.
+function collectUnboxableVarKeys(body: N.AExpr): Set<string> {
+  const candidates = new Set<string>();
+  const letrecRefs = new Set<string>();
+  let depth = 0;
+  const visitor: any = ext(N.defaultMapVisitor as any, {
+    aVar(node: N.AVar): any {
+      if (depth > 0) { candidates.add(node.bind.id.key()); }
+      node.e.visit(this);
+      node.body.visit(this);
+      return node;
+    },
+    aIdLetrec(node: N.AIdLetrec): any {
+      letrecRefs.add(node.id.key());
+      return node;
+    },
+    aIdSafeLetrec(node: N.AIdSafeLetrec): any {
+      letrecRefs.add(node.id.key());
+      return node;
+    },
+    aLam(node: N.ALam): any {
+      depth++;
+      node.body.visit(this);
+      depth--;
+      return node;
+    },
+    aMethod(node: N.AMethod): any {
+      depth++;
+      node.body.visit(this);
+      depth--;
+      return node;
+    },
+  });
+  body.visit(visitor);
+  for (const k of letrecRefs) { candidates.delete(k); }
+  return candidates;
 }
 
 export function compileAnn(ann: A.Ann, optName: string | undefined, visitor: CompilerVisitor): DAG.CExp {
@@ -686,6 +752,37 @@ export function completeReturn(v: J.JExprT): CList<J.JStmt> {
   return clSing(jReturn(v));
 }
 
+// The cross-realm-safe thenable test the async runtime itself uses
+// (runtime-async.js `isThenable` = `t !== null && typeof t === "object" &&
+// typeof t.then === "function"`). `t instanceof Promise` misses thenables from
+// other realms (web workers / FFI), which would leak a Promise as a Pyret value
+// ("Non Pyret value: Promise"). Emitted as a single short runtime call
+// (`R.iT(t)`) rather than inlining the 3-condition test, so adding a
+// conditional await to every non-flat call site does not bloat generated code.
+function jIsThenable(t: A.Name): J.JExprT {
+  return rtMethod('isThenable', clist<J.JExprT>(jId(t)));
+}
+
+// Conditional await: bind `callBase`'s result to fresh temp `t`, then `await`
+// it ONLY if it actually suspended (returned a thenable). The flatness analysis
+// marks a callee non-flat if it *could* be unbounded/async, but many such
+// callees return a flat value synchronously in the common case — the
+// arithmetic/relational runtime ops (_plus, _minus, equal-always, ...) are
+// plain JS functions that return a number/bool directly and only produce a
+// Promise when dispatching to a user-defined method/refinement. Unconditionally
+// `await`ing them costs a microtask round-trip per call even though nothing
+// suspended. Awaiting only real thenables skips that microtask on the hot
+// synchronous path while preserving deep-stack safety: a genuinely-suspending
+// callee returns a thenable, so we still await it (the await is what unwinds the
+// JS stack into the heap). This is the same idiom the runtime loop helpers
+// (eachLoop/map/fold) already use (`isThenable(res) ? await res : res`), and it
+// is value/error-transparent, so TS-cont ≡ TS-promise run parity is preserved.
+function callAndMaybeAwait(t: A.Name, callBase: J.JExprT): CList<J.JStmt> {
+  return clist<J.JStmt>(
+    jVar(t, callBase),
+    jIf1(jIsThenable(t), jBlock1(jExpr(jAssign(t, jAwait(jId(t)))))));
+}
+
 export function compileAexprAsync(compiler: CompilerVisitor, e: N.AExpr): CList<J.JStmt> {
   // Walk the AExpr "chain" (let / arr-let / var / seq / type-let) ITERATIVELY,
   // accumulating each link's straight-line statements, then advance to the body.
@@ -701,6 +798,15 @@ export function compileAexprAsync(compiler: CompilerVisitor, e: N.AExpr): CList<
     switch (cur.$name) {
       case 'a-let': {
         const b = cur.bind;
+        // Inline marker (PYRET_INLINE_COMMENTS, set by the ANF inliner): render as a
+        // `// inlined: <callee>` comment and emit no binding -- the value (callee name)
+        // is read here and the never-referenced binder is dropped.
+        if (b.id instanceof A.SAtom && b.id.base === INLINE_MARKER_BASE) {
+          const callee = (cur.e instanceof N.AVal && (cur.e as any).v instanceof N.AStr) ? (cur.e as any).v.s : 'fn';
+          acc = clAppend(acc, clSing<J.JStmt>(jExpr(jRawCode('// inlined: ' + callee))));
+          cur = cur.body;
+          continue;
+        }
         const bindComplete = (v: J.JExprT): CList<J.JStmt> => clSing(jExpr(jAssign(jsIdOf(b.id), v)));
         const eStmts = compileLettableAsync(ext(compiler, { complete: bindComplete, tailPos: false, curLetBind: new BLet(b) }), cur.e);
         acc = clAppend(acc, clCons(jVar(jsIdOf(b.id), UNDEFINED) as J.JStmt, eStmts));
@@ -723,7 +829,9 @@ export function compileAexprAsync(compiler: CompilerVisitor, e: N.AExpr): CList<
         const temp = jsIdOf(freshId(compilerName('var_init')));
         const tempComplete = (v: J.JExprT): CList<J.JStmt> => clSing(jExpr(jAssign(temp, v)));
         const eStmts = compileLettableAsync(ext(compiler, { complete: tempComplete, tailPos: false, curLetBind: undefined }), cur.e);
-        const varDecl = jVar(jsIdOf(b.id), jObj(clist<J.JFieldT>(jField('$var', jId(temp)))));
+        const varDecl = compiler.unboxedVars.has(b.id.key())
+          ? jVar(jsIdOf(b.id), jId(temp))
+          : jVar(jsIdOf(b.id), jObj(clist<J.JFieldT>(jField('$var', jId(temp)))));
         acc = clAppend(acc, clSnoc(clCons(jVar(temp, UNDEFINED) as J.JStmt, eStmts), varDecl as J.JStmt));
         cur = cur.body;
         continue;
@@ -791,18 +899,22 @@ export function argsOtherStmts(argCes: DAG.CExp[]): CList<J.JStmt> {
   return acc;
 }
 
-export function compileAppAsync(compiler: CompilerVisitor, l: Loc, f: N.AVal, args: N.AVal[], appInfo: A.AppInfo): CList<J.JStmt> {
+export function compileAppAsync(compiler: CompilerVisitor, l: Loc, f: N.AVal, args: N.AVal[], appInfo: A.AppInfo, node?: N.AApp): CList<J.JStmt> {
   const isSafeId = N.isAId(f) || N.isAIdSafeLetrec(f);
+  // A numeric-flat operator app (proven by flatness.ts to be on Number operands)
+  // never dispatches/suspends, so it is flat and is a known function (skip the
+  // isFunction check too).
+  const numFlat = node !== undefined && compiler.numericFlatApps.has(node);
   // is-flat must agree with the flatness analysis (flatness.ts), which decides
   // whether the enclosing function is emitted sync (j-fun) or async (j-async-fun).
   // If they disagree we either emit `await` inside a sync function (a JS syntax
   // error) or fail to await a Promise. For module-ref calls, the analysis uses
   // get-flatness-for-module-call, so we mirror it here.
-  const isFlat =
+  const isFlat = numFlat ? true :
     isSafeId ? isFunctionFlat(compiler.flatnessEnv, (f as any).id.key())
       : N.isAIdModref(f) ? isFlatEnough(FL.getFlatnessForModuleCall((f as any).id, (f as any).name, compiler.moduleBindings, compiler.env))
         : false;
-  const isFn = isSafeId && isIdFnName(compiler.flatnessEnv, (f as any).id.key());
+  const isFn = numFlat || (isSafeId && isIdFnName(compiler.flatnessEnv, (f as any).id.key()));
   const fCe = f.visit(compiler) as DAG.CExp;
   const argCes = args.map((a) => a.visit(compiler) as DAG.CExp);
   const compiledArgs = CL.map_list(getExp, argCes);
@@ -840,10 +952,16 @@ export function compileAppAsync(compiler: CompilerVisitor, l: Loc, f: N.AVal, ar
       compiler.tokenCell.set('minted', true);
       const token = rtMethod('tailCall', clist<J.JExprT>(fCe.exp, jList(false, compiledArgs)));
       return clAppend(pre, clAppend(fnCheck, clSing(jReturn(token))));
-    } else {
+    } else if (isFlat) {
       const callBase = app(l, fCe.exp, compiledArgs);
-      const value = isFlat ? callBase : jAwait(callBase);
-      return clAppend(pre, clAppend(fnCheck, compiler.complete(value)));
+      return clAppend(pre, clAppend(fnCheck, compiler.complete(callBase)));
+    } else {
+      // Conditional await (see callAndMaybeAwait): skip the microtask when the
+      // callee returned a flat value synchronously; still await real thenables.
+      const callBase = app(l, fCe.exp, compiledArgs);
+      const t = freshId(compilerName('app'));
+      return clAppend(pre, clAppend(fnCheck,
+        clAppend(callAndMaybeAwait(t, callBase), compiler.complete(jId(t)))));
     }
   }
 }
@@ -871,7 +989,10 @@ export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.
     const call = wrapWithSrcnode(l,
       rtMethod(helperName,
         clAppend(clist<J.JExprT>(compiledObj, jStr(methname), compiler.getLoc(l)), compiledArgs)));
-    return clAppend(pre, compiler.complete(jAwait(call)));
+    // Conditional await: a flat (synchronous) method returns a value directly;
+    // only a suspending method returns a thenable. See callAndMaybeAwait.
+    const t = freshId(compilerName('mans'));
+    return clAppend(pre, clAppend(callAndMaybeAwait(t, call), compiler.complete(jId(t))));
   } else {
     const objId = freshId(compilerName('obj'));
     const fieldId = freshId(compilerName('field'));
@@ -952,14 +1073,19 @@ export function compileLettableAsync(compiler: CompilerVisitor, e: N.ALettable):
   // sub-expressions so no join point / trampoline case is needed.
   switch (e.$name) {
     case 'a-app':
-      return compileAppAsync(compiler, e.l, e._fun, e.args, e.appInfo);
+      return compileAppAsync(compiler, e.l, e._fun, e.args, e.appInfo, e);
     case 'a-method-app':
       return compileMethodAppAsync(compiler, e.l, e.obj, e.meth, e.args);
     case 'a-prim-app': {
       const argCes = e.args.map((a) => a.visit(compiler) as DAG.CExp);
       const call = wrapWithSrcnode(e.l, rtMethod(e.f, CL.map_list(getExp, argCes)));
-      const value = e.appInfo.needsStep ? jAwait(call) : call;
-      return clAppend(argsOtherStmts(argCes), compiler.complete(value));
+      if (e.appInfo.needsStep) {
+        // Conditional await: skip the microtask when the prim returned a flat
+        // value synchronously; still await a real thenable. See callAndMaybeAwait.
+        const t = freshId(compilerName('prim'));
+        return clAppend(argsOtherStmts(argCes), clAppend(callAndMaybeAwait(t, call), compiler.complete(jId(t))));
+      }
+      return clAppend(argsOtherStmts(argCes), compiler.complete(call));
     }
     case 'a-if': {
       const condCe = e.c.visit(compiler) as DAG.CExp;
@@ -2001,14 +2127,16 @@ function* aVarGen(compiler: CompilerVisitor, node: N.AVar): ChainGen<DAG.CBlock>
   const compiledBody: DAG.CBlock = yield { body: node.body, compiler };
   const compiledE: DAG.CExp = node.e.visit(compiler);
   // TODO: annotations here?
+  const init = compiler.unboxedVars.has(node.bind.id.key())
+    ? compiledE.exp
+    : jObj(clist<J.JFieldT>(jField('$var', compiledE.exp)
+      // NOTE(joe): This can be useful to turn on for debugging
+      //                     , j-field("$name", j-str(b.id.toname()))
+    ));
   return cBlock(
     jBlock(
       clCons(
-        jVar(jsIdOf(node.bind.id),
-          jObj(clist<J.JFieldT>(jField('$var', compiledE.exp)
-            // NOTE(joe): This can be useful to turn on for debugging
-            //                     , j-field("$name", j-str(b.id.toname()))
-          ))) as J.JStmt,
+        jVar(jsIdOf(node.bind.id), init) as J.JStmt,
         DAG.stmtsOf(compiledBody.block))),
     compiledBody.newCases);
 }
@@ -2047,6 +2175,12 @@ export class CompilerVisitor {
   options!: SplitCompileOptions;
   flatnessEnv!: FL.FEnv;
   typeFlatnessEnv!: FL.FEnv;
+  // key() set of function-local vars to compile without the {$var} box; see
+  // collectUnboxableVarKeys. Populated in aProgram (empty when -no-unbox-vars).
+  unboxedVars: Set<string> = new Set();
+  // Operator a-apps proven flat by the numeric pass (flatness.ts); emitted with
+  // no conditional await. See compileAppAsync.
+  numericFlatApps!: Set<N.AApp>;
   bindings!: Map<string, CS.ValueBind>;
   typeBindings!: Map<string, CS.TypeBind>;
   moduleBindings!: Map<string, CS.ModuleBind>;
@@ -2235,7 +2369,10 @@ export class CompilerVisitor {
 
   aAssign(node: N.AAssign): DAG.CExp {
     const visitValue: DAG.CExp = node.value.visit(this);
-    return cExp(rtField('nothing'), clSnoc(visitValue.otherStmts, jExpr(jDotAssign(jId(jsIdOf(node.id)), '$var', visitValue.exp)) as J.JStmt));
+    const assignStmt: J.JStmt = this.unboxedVars.has(node.id.key())
+      ? jExpr(jAssign(jsIdOf(node.id), visitValue.exp)) as J.JStmt
+      : jExpr(jDotAssign(jId(jsIdOf(node.id)), '$var', visitValue.exp)) as J.JStmt;
+    return cExp(rtField('nothing'), clSnoc(visitValue.otherStmts, assignStmt));
   }
 
   aApp(_node: N.AApp): never {
@@ -2277,8 +2414,23 @@ export class CompilerVisitor {
 
   aDot(node: N.ADot): DAG.CExp {
     const visitObj: DAG.CExp = node.obj.visit(this);
-    return cExp(getFieldSafe(node.l, visitObj.exp, jStr(node.field), this.getLoc(node.l)),
-      clSnoc(visitObj.otherStmts, jExpr(jAssign(this.curApploc, this.getLoc(node.l))) as J.JStmt));
+    const baseRead = getFieldSafe(node.l, visitObj.exp, jStr(node.field), this.getLoc(node.l));
+    const stmts = clSnoc(visitObj.otherStmts, jExpr(jAssign(this.curApploc, this.getLoc(node.l))) as J.JStmt);
+    if (node.cacheVar !== undefined) {
+      // Cross-iteration write-once memoization of a loop-invariant immutable
+      // field read (ANF optimizer LICM): evaluate getField the first time the
+      // read is reached -- while the cell is still nullish -- and reuse it on
+      // every later iteration. Emitted as `cacheVar ?? (cacheVar = getField(...))`,
+      // i.e. the value form of `cacheVar ??= getField(...)`: a cached iteration
+      // does a single nullish load and NO store. The read stays at its original
+      // program point, so a preceding raise/effect (or a zero-trip loop) still
+      // wins -- unlike hoisting the read to the preheader, which reorders
+      // exceptions.
+      const cv = jId(jsIdOf(node.cacheVar));
+      const cached = jParens(jBinop(cv, jNullish, jParens(jAssign(jsIdOf(node.cacheVar), baseRead))));
+      return cExp(cached, stmts);
+    }
+    return cExp(baseRead, stmts);
   }
 
   aColon(node: N.AColon): DAG.CExp {
@@ -2389,6 +2541,9 @@ export class CompilerVisitor {
   }
 
   aIdVar(node: N.AIdVar): DAG.CExp {
+    if (this.unboxedVars.has(node.id.key())) {
+      return cExp(jId(jsIdOf(node.id)), clEmpty);
+    }
     return cExp(jDot(jId(jsIdOf(node.id)), '$var'), clEmpty);
   }
 
@@ -3095,7 +3250,7 @@ export class SplittingCompiler extends CompilerVisitor {
   constructor(
     env: CS.CompileEnvironment,
     addPhase: (phase: string, data: any) => any,
-    flatnessEnvs: [FL.FEnv, FL.FEnv],
+    flatnessEnvs: FL.FlatnessEnv,
     provides: CS.Provides,
     postEnv: CS.ComputedEnvironment,
     options: SplitCompileOptions
@@ -3106,6 +3261,7 @@ export class SplittingCompiler extends CompilerVisitor {
     this.options = options;
     this.flatnessEnv = flatnessEnvs[0];
     this.typeFlatnessEnv = flatnessEnvs[1];
+    this.numericFlatApps = flatnessEnvs[2];
     // Pyret accesses these fields directly; a computed-none here would be a
     // field-not-found error there too.
     this.bindings = (postEnv as CS.ComputedEnv).bindings;
@@ -3122,6 +3278,10 @@ export class SplittingCompiler extends CompilerVisitor {
     // add-phase("Remove useless ifs", simplified)
     const freevars = N.freevarsProg(new N.AProgram(node.l, node.provides, node.imports, node.body));
     this.addPhase('Freevars-e', freevars);
+    // Function-local var box elimination (promise backend codegen knob). Gated
+    // on -no-unbox-vars; see collectUnboxableVarKeys.
+    this.unboxedVars = this.options.unboxVars ? collectUnboxableVarKeys(node.body) : new Set();
+    this.addPhase('Unboxable vars: ' + this.unboxedVars.size, undefined);
     const ans = compileModule(this, node.l, node.provides, node.imports, node.body, freevars as Map<string, A.Name>, this.$provides, this.env);
     this.addPhase('Total simplification: ' + String(totalTime), undefined);
     return ans;
@@ -3131,7 +3291,7 @@ export class SplittingCompiler extends CompilerVisitor {
 export function splittingCompiler(
   env: CS.CompileEnvironment,
   addPhase: (phase: string, data: any) => any,
-  flatnessEnvs: [FL.FEnv, FL.FEnv],
+  flatnessEnvs: FL.FlatnessEnv,
   provides: CS.Provides,
   postEnv: CS.ComputedEnvironment,
   options: SplitCompileOptions

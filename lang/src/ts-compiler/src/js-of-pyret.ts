@@ -13,6 +13,7 @@ import * as AAL from './anf-loop-compiler-async';
 import * as C from './compile-structs';
 import * as CL from './concat-lists';
 import * as FL from './flatness';
+import * as OPT from './optimize-anf';
 import * as J from './js-ast';
 import * as PP from './pprint';
 
@@ -117,8 +118,20 @@ export function traceMakeCompiledPyret(
   provides: C.Provides,
   options: C.CompileOptions
 ): [C.Provides, C.CompileResult<CompiledCodePrinter>] {
-  const anfed = addPhase('ANFed', N.anfProgram(programAst));
-  const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env));
+  const anfedRaw = addPhase('ANFed', N.anfProgram(programAst));
+  // ANF-to-ANF optimization middle-end (inliner/LICM/...). Promise backend
+  // only: it mints fresh atoms, which the cont backend's byte-parity oracle
+  // would notice, and the cont codegen stays frozen by design.
+  const anfed = C.isPromise(options.stackBackend) && options.optimize
+    ? addPhase('Optimized ANF', OPT.optimizeProgram(anfedRaw, options.inlineComments, options.licm))
+    : anfedRaw;
+  if (process.env.PYRET_DUMP_ANF) {
+    process.stderr.write('===ANF[' + (programAst.l && (programAst.l as any).source) + ']===\n');
+    process.stderr.write((anfed as any).tosource().pretty(100).join('\n') + '\n===END ANF===\n');
+  }
+  // Numeric-flatness is enabled only for the promise backend (the cont backend's
+  // codegen + byte-parity oracle stay untouched).
+  const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env, C.isPromise(options.stackBackend)));
   const flatProvides = addPhase('Get flat-provides', FL.getFlatProvides(provides, env, postEnv, flatnessEnv, anfed));
   // Dispatch to the requested control-flow backend. `auto` is resolved to a
   // concrete promise|cont before reaching here (see compile-structs / the CLI),
