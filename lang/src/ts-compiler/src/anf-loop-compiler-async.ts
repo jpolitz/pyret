@@ -434,17 +434,31 @@ function ext<T extends object>(obj: T, fields: Record<string, any>): T {
 // `var`-binding initialized to `undefined` plus an `s-assign` of the value (so
 // `fun f` becomes `var f = undefined; f := <lam>`). Its DECLARATION is therefore
 // an `AVar` -- indistinguishable here from a genuine `var` -- but its REFERENCES
-// are `AIdLetrec`/`AIdSafeLetrec`, which read `.$var` (the forward-ref /
-// uninitialized-on-read guard) rather than `AIdVar`. Unboxing only the decl
-// would leave those reads dereferencing a non-box -> `undefined`. So we collect
-// the ids referenced as letrec and SUBTRACT them: only genuine vars (referenced
-// solely via `AIdVar`/`AIdVarModref`) are unboxed. LETREC stays fully boxed.
+// are `AIdLetrec`/`AIdSafeLetrec`, which read `.$var` rather than `AIdVar`.
+//
+// A letrec binding is ALSO unboxable, with one extra condition. The box's only
+// letrec-specific job is the uninitialized-on-read guard for FORWARD references
+// (a read that executes during letrec init, before the binding is assigned):
+// `AIdLetrec` with `safe === false` reads `x.$var === undefined ? raise : x.$var`.
+// A reference marked SAFE (`AIdSafeLetrec`, or `AIdLetrec safe === true`) is
+// provably reached only AFTER initialization, so the box buys it nothing -- a
+// plain JS binding (captured by closures the same way, so mutual recursion still
+// works) is equivalent. So we unbox a nested letrec binding iff ALL its
+// references are safe; a single `AIdLetrec safe===false` reference forces it to
+// stay boxed. (The decl/assign already unbox via the shared `unboxedVars` set;
+// the safe `aId*Letrec` read sites are updated to read `x` instead of `x.$var`.)
+//
+// We therefore collect candidate decls (nested AVars: genuine vars AND letrec
+// decls) and SUBTRACT only the ids that have an unsafe-letrec reference. Genuine
+// vars (referenced via AIdVar) are never subtracted; safe-only letrec ids survive.
+// Top-level decls (depth 0) are never candidates: they escape via provides/REPL,
+// and a provided `VbLetrec` reads `x.$var` by value -- unboxing would break it.
 //
 // Post-ANF binding atoms are globally unique (`SAtom.key()` includes a serial),
-// so membership-by-key is unambiguous across the three sites.
+// so membership-by-key is unambiguous across the read/decl/assign sites.
 function collectUnboxableVarKeys(body: N.AExpr): Set<string> {
   const candidates = new Set<string>();
-  const letrecRefs = new Set<string>();
+  const unsafeLetrecRefs = new Set<string>();
   let depth = 0;
   const visitor: any = ext(N.defaultMapVisitor as any, {
     aVar(node: N.AVar): any {
@@ -454,11 +468,9 @@ function collectUnboxableVarKeys(body: N.AExpr): Set<string> {
       return node;
     },
     aIdLetrec(node: N.AIdLetrec): any {
-      letrecRefs.add(node.id.key());
-      return node;
-    },
-    aIdSafeLetrec(node: N.AIdSafeLetrec): any {
-      letrecRefs.add(node.id.key());
+      // Only the unsafe (uninitialized-guard) reads force the binding to stay
+      // boxed; safe reads are fine unboxed.
+      if (!node.safe) { unsafeLetrecRefs.add(node.id.key()); }
       return node;
     },
     aLam(node: N.ALam): any {
@@ -475,7 +487,7 @@ function collectUnboxableVarKeys(body: N.AExpr): Set<string> {
     },
   });
   body.visit(visitor);
-  for (const k of letrecRefs) { candidates.delete(k); }
+  for (const k of unsafeLetrecRefs) { candidates.delete(k); }
   return candidates;
 }
 
@@ -2549,19 +2561,26 @@ export class CompilerVisitor {
 
   aIdSafeLetrec(node: N.AIdSafeLetrec): DAG.CExp {
     const s = jId(jsIdOf(node.id));
-    return cExp(jDot(s, '$var'), clEmpty);
+    // Unboxed safe-letrec: read the bare JS binding (see collectUnboxableVarKeys).
+    const read = this.unboxedVars.has(node.id.key()) ? s : jDot(s, '$var');
+    return cExp(read, clEmpty);
   }
 
   aIdLetrec(node: N.AIdLetrec): DAG.CExp {
     const s = jId(jsIdOf(node.id));
+    // An unboxed letrec id has only safe references (collectUnboxableVarKeys
+    // excludes any id with an unsafe ref), so the `read` is the bare binding; the
+    // unsafe branch below only fires for still-boxed ids. Written generally so
+    // both branches stay correct regardless.
+    const read = this.unboxedVars.has(node.id.key()) ? s : jDot(s, '$var');
     if (node.safe) {
-      return cExp(jDot(s, '$var'), clEmpty);
+      return cExp(read, clEmpty);
     } else {
       return cExp(
         jTernary(
-          jBinop(jDot(s, '$var'), jEq, UNDEFINED),
+          jBinop(read, jEq, UNDEFINED),
           raiseIdExn(this.getLoc(node.l), node.id.toname()),
-          jDot(s, '$var')),
+          read),
         clEmpty);
     }
   }
