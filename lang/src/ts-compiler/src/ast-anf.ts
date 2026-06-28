@@ -700,7 +700,12 @@ export class AExtend extends ALettableBase {
 
 export class ADot extends ALettableBase {
   get $name(): 'a-dot' { return 'a-dot'; }
-  constructor(public l: Loc, public obj: AVal, public field: string) { super(); }
+  // `cacheVar`, when set, names a plain JS variable declared in the loop
+  // preheader that memoizes this (loop-invariant, immutable) field read across
+  // iterations -- the promise-backend codegen emits `cacheVar ??= getField(...)`
+  // (see optimize-anf.ts LICM and anf-loop-compiler-async.ts aDot). It is never
+  // set by anfProgram itself; only the ANF optimizer introduces it.
+  constructor(public l: Loc, public obj: AVal, public field: string, public cacheVar?: A.Name) { super(); }
   visit(visitor: any): any { return visitor.aDot(this); }
   label(): string { return 'a-dot'; }
   tosource(): PP.PPrintDoc { return PP.infix(INDENT, 0, strPeriod, this.obj.tosource(), PP.str(this.field)); }
@@ -1155,7 +1160,7 @@ export class DefaultMapVisitor {
     return new AExtend(node.l, node.supe.visit(this), node.fields.map((f) => f.visit(this)));
   }
   aDot(node: ADot): ALettable {
-    return new ADot(node.l, node.obj.visit(this), node.field);
+    return new ADot(node.l, node.obj.visit(this), node.field, node.cacheVar);
   }
   aColon(node: AColon): ALettable {
     return new AColon(node.l, node.obj.visit(this), node.field);
@@ -1494,7 +1499,13 @@ export function freevarsLAcc(e: ALettable, seenSoFar: NameDict<A.Name>): NameDic
       }
       return acc;
     }
-    case 'a-dot': return freevarsVAcc(e.obj, seenSoFar);
+    case 'a-dot': {
+      const acc = freevarsVAcc(e.obj, seenSoFar);
+      // The memoization cell (set by the optimizer) is declared in the loop
+      // preheader, so it is free in this read's enclosing lambda.
+      if (e.cacheVar !== undefined) { acc.set(e.cacheVar.key(), e.cacheVar); }
+      return acc;
+    }
     case 'a-colon': return freevarsVAcc(e.obj, seenSoFar);
     case 'a-get-bang': return freevarsVAcc(e.obj, seenSoFar);
     case 'a-id-var': {

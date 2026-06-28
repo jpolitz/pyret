@@ -19,12 +19,23 @@
   collapse. Immutable objects can't change, so no invalidation is needed -- the
   pass is sound across calls and assignments.
 
-  (A loop-invariant code-motion pass was prototyped and removed: hoisting a
-  faulting field read to the loop preheader is unsound w.r.t. exception
-  ordering -- it can raise field-not-found before a raise that precedes it in
-  the body, or before a zero-trip loop -- and hoisting only non-faulting
-  `a-val` copies/constants bought nothing. A sound version needs type-informed
-  proof that a hoisted read cannot fault; left as future work.)
+  Pass 3: loop-invariant code motion (LICM) for field reads -- as a write-once
+  cross-iteration CACHE, not a hoist. A `let t = obj.field` inside a loop-body
+  lambda whose `obj` is loop-invariant (a free variable of the lambda that is
+  never reassigned) reads the same immutable value every iteration. Rather than
+  *move* the read to the preheader (unsound: it can raise field-not-found ahead
+  of a preceding raise/effect, or run on a zero-trip loop -- see the removed
+  prototype and test-anf-opt-soundness.arr), we keep the read exactly where it
+  is and give it a memo cell `cacheVar` declared in the preheader (init
+  `undefined`). Codegen emits `cacheVar ??= getField(obj, field)` (promise
+  backend, anf-loop-compiler-async.ts aDot): the first iteration to reach the
+  read evaluates getField at its original program point -- so exception ordering
+  is preserved -- and every later iteration reuses the cell. The cell is
+  declared in the immediately-enclosing scope, so it resets once per loop
+  invocation (and, for nested loops, once per outer iteration). This is the
+  colleague's "write-once CSE" idea: it trades N getField calls for one read
+  plus N-1 cheap `undefined` checks, with no exception-ordering hazard and no
+  need for type-informed non-faulting proof.
 
   Correctness contract (mirrors the parity goal):
     - Inlining is capture-avoiding: every binder introduced by the callee
@@ -684,9 +695,221 @@ class Cse {
   }
 }
 
+// ============================================================================
+// Pass 3: loop-invariant field-read caching (LICM as write-once memoization)
+// ============================================================================
+//
+// We look for a loop body: a lambda that is bound (`let lam = lam(...): ...`)
+// and then handed to a higher-order/iterating function (detected by
+// `usedAsCallArg`, the same proxy the old hoisting LICM used). Inside such a
+// body, a field read `let t = obj.field` whose `obj` is loop-invariant -- a
+// free variable of the lambda that is never reassigned in the body -- yields
+// the same immutable value on every iteration (a-dot reads only immutable
+// fields; mutable refs use a-get-bang). We do NOT move the read; we tag it with
+// a fresh `cacheVar` and declare `let cacheVar = undefined` in the preheader
+// (just before the lambda). Codegen turns the tagged read into
+// `cacheVar ??= getField(...)`, so the read still executes at its original spot
+// the first time it is reached -- preserving exception ordering and zero-trip
+// semantics -- and is reused thereafter.
+
+// Names assigned (`:=`) anywhere inside an expression -- such a free variable is
+// NOT loop-invariant even if it is free in the lambda.
+function collectAssigned(e: N.AExpr, acc: Set<string>): void {
+  function vExpr(x: N.AExpr): void {
+    switch (x.$name) {
+      case 'a-let': case 'a-var': case 'a-arr-let':
+        vLettable((x as any).e); vExpr((x as any).body); return;
+      case 'a-seq': vLettable(x.e1); vExpr(x.e2); return;
+      case 'a-type-let': vExpr(x.body); return;
+      case 'a-lettable': vLettable(x.e); return;
+      default: return;
+    }
+  }
+  function vLettable(l: N.ALettable): void {
+    switch (l.$name) {
+      case 'a-assign': acc.add(l.id.key()); return;
+      case 'a-lam': case 'a-method': vExpr(l.body); return;
+      case 'a-if': vExpr(l.t); vExpr(l.e); return;
+      case 'a-cases':
+        for (const b of l.branches) { vExpr(b.body); }
+        vExpr(l._else); return;
+      default: return;
+    }
+  }
+  vExpr(e);
+}
+
+// Does `name` get used as an argument to some function application inside `e`?
+// (A proxy for "this lambda is passed to a higher-order/iterating function",
+// i.e. it is a loop body worth caching reads in.)
+function usedAsCallArg(name: A.Name, e: N.AExpr): boolean {
+  const key = name.key();
+  let found = false;
+  function vExpr(x: N.AExpr): void {
+    if (found) { return; }
+    switch (x.$name) {
+      case 'a-let': case 'a-var': case 'a-arr-let':
+        vLettable((x as any).e); vExpr((x as any).body); return;
+      case 'a-seq': vLettable(x.e1); vExpr(x.e2); return;
+      case 'a-type-let': vExpr(x.body); return;
+      case 'a-lettable': vLettable(x.e); return;
+      default: return;
+    }
+  }
+  function argHit(args: N.AVal[]): boolean {
+    return args.some((a) => a instanceof N.AId && a.id.key() === key);
+  }
+  function vLettable(l: N.ALettable): void {
+    if (found) { return; }
+    switch (l.$name) {
+      case 'a-app': if (argHit(l.args)) { found = true; } return;
+      case 'a-method-app': if (argHit(l.args)) { found = true; } return;
+      case 'a-prim-app': if (argHit(l.args)) { found = true; } return;
+      case 'a-lam': case 'a-method': vExpr(l.body); return;
+      case 'a-if': vExpr(l.t); vExpr(l.e); return;
+      case 'a-cases':
+        for (const b of l.branches) { vExpr(b.body); }
+        vExpr(l._else); return;
+      default: return;
+    }
+  }
+  vExpr(e);
+  return found;
+}
+
+class LicmCache {
+  changed = false;
+
+  // Tag invariant field reads in `body` with fresh cache cells. Descends through
+  // the straight-line spine AND into a-if / a-cases branches (reads sit under a
+  // loop's conditionals), but NOT into nested lambdas -- those are separate
+  // scopes and are visited as their own loop bodies by optExpr. `invariant` is
+  // the set of names that are loop-invariant for this lambda; `cells` collects
+  // the cache cells to declare in the preheader.
+  private tagBody(body: N.AExpr, invariant: Set<string>, cells: A.Name[]): N.AExpr {
+    switch (body.$name) {
+      case 'a-let': {
+        const rhs = body.e;
+        if (rhs instanceof N.ADot && rhs.cacheVar === undefined
+            && rhs.obj instanceof N.AId && invariant.has(rhs.obj.id.key())) {
+          const cell = names.makeAtom('fieldcache');
+          cells.push(cell);
+          this.changed = true;
+          const tagged = new N.ADot(rhs.l, rhs.obj, rhs.field, cell);
+          return new N.ALet(body.l, body.bind, tagged, this.tagBody(body.body, invariant, cells));
+        }
+        return new N.ALet(body.l, body.bind, this.tagInRhs(rhs, invariant, cells), this.tagBody(body.body, invariant, cells));
+      }
+      case 'a-arr-let':
+        return new N.AArrLet(body.l, body.bind, body.idx, this.tagInRhs(body.e, invariant, cells), this.tagBody(body.body, invariant, cells));
+      case 'a-var':
+        return new N.AVar(body.l, body.bind, this.tagInRhs(body.e, invariant, cells), this.tagBody(body.body, invariant, cells));
+      case 'a-seq':
+        return new N.ASeq(body.l, this.tagInRhs(body.e1, invariant, cells), this.tagBody(body.e2, invariant, cells));
+      case 'a-type-let':
+        return new N.ATypeLet(body.l, body.bind, this.tagBody(body.body, invariant, cells));
+      case 'a-lettable':
+        return new N.ALettable(body.l, this.tagInRhs(body.e, invariant, cells));
+      default:
+        return body;
+    }
+  }
+
+  // Descend into the branches of a control-flow lettable; other lettables
+  // (including nested lambdas) are returned unchanged.
+  private tagInRhs(l: N.ALettable, invariant: Set<string>, cells: A.Name[]): N.ALettable {
+    switch (l.$name) {
+      case 'a-if':
+        return new N.AIf(l.l, l.c, this.tagBody(l.t, invariant, cells), this.tagBody(l.e, invariant, cells));
+      case 'a-cases': {
+        const branches = l.branches.map((b) => {
+          if (b.$name === 'a-cases-branch') {
+            return new N.ACasesBranch(b.l, b.patLoc, b.name, b.args, this.tagBody(b.body, invariant, cells));
+          }
+          return new N.ASingletonCasesBranch(b.l, b.patLoc, b.name, this.tagBody(b.body, invariant, cells));
+        });
+        return new N.ACases(l.l, l.typ, l.val, branches, this.tagBody(l._else, invariant, cells));
+      }
+      default:
+        return l;
+    }
+  }
+
+  // For a loop-body lambda, tag its invariant field reads; returns the cache
+  // cells to declare in the preheader and the rewritten lambda, or null.
+  private tryCache(lam: N.ALam): { cells: A.Name[]; lam: N.ALam } | null {
+    const fvs = N.freevarsL(lam);
+    const assigned = new Set<string>();
+    collectAssigned(lam.body, assigned);
+    const invariant = new Set<string>();
+    for (const k of fvs.keys()) { if (!assigned.has(k)) { invariant.add(k); } }
+    const cells: A.Name[] = [];
+    const newBody = this.tagBody(lam.body, invariant, cells);
+    if (cells.length === 0) { return null; }
+    return { cells, lam: new N.ALam(lam.l, lam.name, lam.args, lam.ret, newBody) };
+  }
+
+  optExpr(e: N.AExpr): N.AExpr {
+    switch (e.$name) {
+      case 'a-let': {
+        if (e.e instanceof N.ALam && usedAsCallArg(e.bind.id, e.body)) {
+          // Recurse into the body first so nested loops get their own cells.
+          const innerLam = new N.ALam(e.e.l, e.e.name, e.e.args, e.e.ret, this.optExpr(e.e.body));
+          const res = this.tryCache(innerLam);
+          if (res !== null) {
+            // <cache-cell decls> ; let lam = tagged-lam : opt(body)
+            let out: N.AExpr = new N.ALet(e.l, e.bind, res.lam, this.optExpr(e.body));
+            for (let i = res.cells.length - 1; i >= 0; i--) {
+              const cell = res.cells[i];
+              out = new N.ALet(N.dummyLoc, blankBind(cell), new N.AVal(N.dummyLoc, new N.AUndefined(N.dummyLoc)), out);
+            }
+            return out;
+          }
+          return new N.ALet(e.l, e.bind, innerLam, this.optExpr(e.body));
+        }
+        return new N.ALet(e.l, e.bind, this.optLettable(e.e), this.optExpr(e.body));
+      }
+      case 'a-seq':
+        return new N.ASeq(e.l, this.optLettable(e.e1), this.optExpr(e.e2));
+      case 'a-arr-let':
+        return new N.AArrLet(e.l, e.bind, e.idx, this.optLettable(e.e), this.optExpr(e.body));
+      case 'a-var':
+        return new N.AVar(e.l, e.bind, this.optLettable(e.e), this.optExpr(e.body));
+      case 'a-type-let':
+        return new N.ATypeLet(e.l, e.bind, this.optExpr(e.body));
+      case 'a-lettable':
+        return new N.ALettable(e.l, this.optLettable(e.e));
+      default:
+        return e;
+    }
+  }
+
+  optLettable(l: N.ALettable): N.ALettable {
+    switch (l.$name) {
+      case 'a-lam':
+        return new N.ALam(l.l, l.name, l.args, l.ret, this.optExpr(l.body));
+      case 'a-method':
+        return new N.AMethod(l.l, l.name, l.args, l.ret, this.optExpr(l.body));
+      case 'a-if':
+        return new N.AIf(l.l, l.c, this.optExpr(l.t), this.optExpr(l.e));
+      case 'a-cases': {
+        const branches = l.branches.map((b) => {
+          if (b.$name === 'a-cases-branch') {
+            return new N.ACasesBranch(b.l, b.patLoc, b.name, b.args, this.optExpr(b.body));
+          }
+          return new N.ASingletonCasesBranch(b.l, b.patLoc, b.name, this.optExpr(b.body));
+        });
+        return new N.ACases(l.l, l.typ, l.val, branches, this.optExpr(l._else));
+      }
+      default:
+        return l;
+    }
+  }
+}
+
 // ----- entry point ----------------------------------------------------------
 
-export function optimizeProgram(prog: N.AProg, inlineComments: boolean = false): N.AProg {
+export function optimizeProgram(prog: N.AProg, inlineComments: boolean = false, licm: boolean = true): N.AProg {
   if (!(prog instanceof N.AProgram)) { return prog; }
   let body = prog.body;
   let changed = false;
@@ -701,6 +924,17 @@ export function optimizeProgram(prog: N.AProg, inlineComments: boolean = false):
   const cse = new Cse(body);
   body = cse.optExpr(body, new Map());
   changed = changed || cse.changed;
+
+  // LICM after CSE: CSE first collapses within-iteration repeats, then LICM
+  // gives each surviving loop-invariant read a cross-iteration memo cell.
+  // The `-no-licm` CLI flag disables just this pass (A/B measurement knob; the
+  // inliner and CSE still run), analogous to `-no-optimize` for the whole
+  // middle-end.
+  if (licm) {
+    const licmPass = new LicmCache();
+    body = licmPass.optExpr(body);
+    changed = changed || licmPass.changed;
+  }
 
   if (!changed) { return prog; }
   return new N.AProgram(prog.l, prog.provides, prog.imports, body);

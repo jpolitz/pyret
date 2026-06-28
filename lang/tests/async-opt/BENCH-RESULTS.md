@@ -53,6 +53,61 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-06-28 — LICM revived as cross-iteration field-read caching)
+
+Same in-process loop timing as below. N=11 median LOOP-seconds, `node22 --max-old-space-size=6144`,
+isolated (no concurrent builds — see the variance note; an earlier run was polluted by stray
+background poll-loops and read ~0.02–0.10 high). The optimizer now runs a third pass after
+inliner + CSE: **LICM as a write-once cache**, not a hoist. A loop-invariant immutable field read
+(`let t = obj.field` where `obj` is a free var of the loop-body lambda, never reassigned) keeps its
+original program point and compiles to `cacheVar ?? (cacheVar = getField(...))` — the value form of
+`cacheVar ??= getField(...)`. It evaluates `getField` only the first iteration that reaches it and
+reuses it after. cont — the frozen race target — is unchanged. All 9 are **output-identical**
+between backends (parity OK).
+
+| benchmark | cont med | prom med | p/c | parity |
+|---|---|---|---|---|
+| spell           | 4.25 | 3.98 | **0.94** | OK |
+| car-compute     | 3.87 | 3.58 | **0.93** | OK |
+| car-render      | 4.09 | 4.05 | 0.99 | OK |
+| lander          | 4.00 | 3.98 | 0.99 | OK |
+| orbital-compute | 3.59 | 3.60 | **1.00** | OK |
+| orbital-ems     | 2.69 | 2.56 | **0.95** | OK |
+| orbital-render  | 4.71 | 4.54 | 0.96 | OK |
+| boids-compute   | 4.04 | 4.95 | **1.23** | OK |
+| boids-raster    | 3.90 | 4.45 | **1.14** | OK |
+
+**Same 7-of-9-at-or-under-cont shape as the inliner+CSE build above** — LICM caching is a small,
+consistent addition on top, not a step change. Isolated A/B on the same binary (the `-no-licm`
+flag disables just this pass; both variants built from one compiler, N=9, ratio = licm/base):
+
+| benchmark | licm/base | | benchmark | licm/base |
+|---|---|---|---|---|
+| spell           | **0.967** | | car-compute     | 0.991 |
+| orbital-compute | **0.973** | | orbital-render  | 0.996 |
+| orbital-ems     | 0.980 | | car-render      | 0.999 |
+| boids-raster    | 0.984 | | boids-compute   | 1.004 (noise) |
+| lander          | 0.986 | | | |
+
+**8 of 9 faster, none regressed.** Why it's sound where the removed hoisting pass was not: the read
+never moves, so it only ever runs the first time control reaches it — a preceding `raise` or a
+zero-trip loop still wins (regression-tested in `tests/pyret/tests/test-anf-opt-soundness.arr`),
+with no type-informed non-faulting proof required.
+
+**Implementation note (load-bearing):** the first cut emitted the desugaring
+`cacheVar = (cacheVar === undefined ? read : cacheVar)`, whose redundant `cacheVar = cacheVar`
+self-store every cached iteration (the cell is a heap closure var) turned car-compute into a *loss*
+(1.032 licm/base). Switching to true `??` (one nullish load, **no** store when cached — needed a new
+`JNullish` JS-AST node) flipped it to 0.991. Use `??`, never the ternary.
+
+**Still over cont: boids** (compute 1.23, raster 1.14) — unchanged from the inliner+CSE build, and
+LICM correctly leaves it ≈neutral (1.004). boids is mutable-`var` box traffic, not invariant field
+reads; it needs box-elimination / escape analysis, not caching. Ratios drift ~±5% run-to-run.
+
+Full promise test suite (`main2`, `--stack-backend promise`, optimizer on): all 13285 tests pass,
+0 errored. cont byte-parity 16/16; `-no-optimize` output byte-identical to HEAD (the pass is
+strictly additive).
+
 ## Results (2026-06-27 — with the ANF optimizer middle-end: inliner + CSE)
 
 Same in-process loop timing as below. N=5 median LOOP-seconds, `node22 --max-old-space-size=6144`,
@@ -221,3 +276,38 @@ To iterate fast *and* honestly, time the `run-frames(...)` call internally and r
 **Never run timings concurrently with builds or other node processes** — it contaminates results
 badly (heavy jarr compiles peak multi-GB and will OOM a small box; the benches themselves peak
 only ~170 MB).
+
+## Var-unboxing (2026-06-28): function-local var box elimination
+
+Added `-no-unbox-vars` (default on, promise backend only). Function-local Pyret
+`var`s now compile to plain mutable JS locals instead of `{$var:…}` heap boxes;
+top-level vars stay boxed (provide/REPL escape), and `letrec` bindings (which
+desugar to var-shaped ANF but are read via `.$var`) are excluded. See
+`anf-loop-compiler-async.ts` `collectUnboxableVarKeys`.
+
+Clean p/c (frozen cont vs new promise, no concurrent load):
+
+| benchmark | cont med | prom med | p/c | parity |
+| spell           | 4.59 | 4.11 | **0.90** | OK |
+| car-compute     | 4.08 | 3.69 | **0.90** | OK |
+| car-render      | 4.31 | 4.05 | **0.94** | OK |
+| lander          | 4.15 | 4.05 | **0.98** | OK |
+| orbital-compute | 3.84 | 3.58 | **0.93** | OK |
+| orbital-ems     | 2.60 | 2.65 | 1.02 | OK |
+| orbital-render  | 4.59 | 4.08 | **0.89** | OK |
+| boids-compute   | 3.98 | 4.84 | **1.22** | OK |
+| boids-raster    | 3.53 | 4.11 | 1.16 | OK |
+
+**Wins 7/9. Boids barely moved — the "mutable-var box tax" hypothesis above is
+WRONG.** Unboxing cut boids' hot-loop `.$var` ops 118→19, yet boxed≈unboxed≈4.8s
+(frozen cont≈3.9s). A CPU profile shows the dominant cost is the **async/await
+machinery** (`AsyncFunctionAwaitResolveClosure` + `CallApiCallbackGeneric`), not box
+access (V8 optimizes property access well). Boids' hot path is an O(n²)
+`lists.each(do_avg, birdlist)` where `do_avg` is an `async function` awaited per
+element; it's async because its operators (`+ - < ==`) act on untyped
+list-destructured values (`b.first`) and `+` on an arbitrary object can dispatch to
+an async user `_plus` method, so the flatness pass soundly can't prove them flat
+(`num-expt`/`num-sqrt` ARE flat, flat-by-registration). The real boids lever is
+making callback closures like `do_avg` flat (eliminate per-element await) — a deep,
+soundness-sensitive flatness change, not unboxing. Decision: ship unboxing, treat
+boids' async overhead as a separate investigation.

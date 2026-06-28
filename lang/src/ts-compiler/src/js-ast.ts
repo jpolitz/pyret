@@ -629,10 +629,14 @@ export class JInstanceof extends JBinopBase {
   get $name(): 'j-instanceof' { return 'j-instanceof'; }
   toUglySource(): string { return 'instanceof'; }
 }
+export class JNullish extends JBinopBase {
+  get $name(): 'j-nullish' { return 'j-nullish'; }
+  toUglySource(): string { return '??'; }
+}
 
 export type JBinopT =
   JPlus | JMinus | JTimes | JDivide | JAnd | JOr | JLt | JLeq | JGt | JGeq
-  | JEq | JEquals | JNeq | JNequals | JIn | JInstanceof;
+  | JEq | JEquals | JNeq | JNequals | JIn | JInstanceof | JNullish;
 
 export function isJPlus(x: any): x is JPlus { return x instanceof JPlus; }
 export function isJMinus(x: any): x is JMinus { return x instanceof JMinus; }
@@ -663,6 +667,7 @@ export const jGt: JGt = new JGt();
 export const jGeq: JGeq = new JGeq();
 export const jEq: JEq = new JEq();
 export const jEquals: JEquals = new JEquals();
+export const jNullish: JNullish = new JNullish();
 export const jNeq: JNeq = new JNeq();
 export const jNequals: JNequals = new JNequals();
 export const jIn: JIn = new JIn();
