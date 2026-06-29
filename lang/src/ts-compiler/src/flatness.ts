@@ -34,7 +34,25 @@ export type FEnv = Map<string, Flatness>;
 // Third element: the set of operator a-apps proven flat by the numeric pass
 // below. Carried alongside the flatness envs so the (promise) compiler emits
 // them with no conditional await -- a sync function can't await.
-export type FlatnessEnv = [FEnv, FEnv, Set<AA.AApp>];
+// Fourth/fifth elements: the method-flatness outputs (promise backend) -- the
+// set of method-application nodes proven flat (so codegen emits a direct,
+// no-await call) and the set of `a-method` nodes proven flat (so codegen emits
+// the method body as a synchronous function). Empty unless method flatness is
+// enabled (cont backend / no methodInfo -> empty, and never consulted there).
+export type FlatnessEnv = [FEnv, FEnv, Set<AA.AApp>, Set<AA.AMethodApp>, Set<AA.AMethod>];
+
+// Receiver/type facts the method-flatness analysis consumes (produced by
+// type-flow.ts's makeProgMethodInfo; structural to avoid an import cycle).
+export interface MethodFlatInfo {
+  receiver: Map<AA.AMethodApp, string>;
+  methodOf: Map<AA.AMethod, { dataId: string; methodName: string }>;
+  numberValues: Set<string>;
+}
+
+// A method/method-app is flat-eligible (sync emission / no-await call) only when
+// its flatness is within the same limit codegen uses for await elision.
+const METHOD_FLAT_LIMIT = 5;
+function methodFlatEnough(f: Flatness): boolean { return f !== undefined && f <= METHOD_FLAT_LIMIT; }
 
 // ---------------------------------------------------------------------------
 // Numeric-flatness analysis (sound, incomplete; gated to the promise backend).
@@ -55,6 +73,27 @@ interface NumCtx {
   flatApps: Set<AA.AApp>;
   bindings: Map<string, C.ValueBind>;
   enabled: boolean;
+  // ----- method flatness (promise backend; empty/disabled otherwise) -----------
+  methodsEnabled: boolean;
+  // value keys whose ub is Number (from type-flow), used to flatten arithmetic on
+  // data field reads etc. that the annotation-only numeric seeding cannot see.
+  numberValues: Set<string>;
+  // receiver data type id per method-app, and method-node -> (dataId, methodName).
+  methodReceiver: Map<AA.AMethodApp, string>;
+  methodOf: Map<AA.AMethod, { dataId: string; methodName: string }>;
+  // built incrementally: `dataId#methodName` -> the method's flatness (max over
+  // all variants' definitions of that method).
+  methodTable: Map<string, Flatness>;
+  // total number of method definitions per `dataId#methodName` (precomputed from
+  // methodOf) and how many have been recorded so far. A table entry is consulted
+  // only once it is COMPLETE (all variants recorded), so a method that calls a
+  // sibling method on `self` before every variant's copy is analyzed conservatively
+  // sees a miss (non-flat) rather than a possibly-too-flat partial maximum.
+  methodTotal: Map<string, number>;
+  methodDone: Map<string, number>;
+  // outputs consumed by codegen.
+  flatMethodApps: Set<AA.AMethodApp>;
+  flatMethods: Set<AA.AMethod>;
 }
 const NUM_ARITH_OPS = new Set(['_plus', '_minus', '_times', '_divide']);
 const NUM_CMP_OPS = new Set(['_lessthan', '_greaterthan', '_lessequal', '_greaterequal']);
@@ -84,9 +123,12 @@ function globalOpName(v: AA.AVal, bindings: Map<string, C.ValueBind>): string | 
   return undefined;
 }
 
-function valIsNumber(v: AA.AVal, numEnv: NumEnv): boolean {
+function valIsNumber(v: AA.AVal, nc: NumCtx): boolean {
   if (AA.isANum(v)) { return true; }
-  if (AA.isAId(v)) { return numEnv.get(v.id.key()) === true; }
+  if (AA.isAId(v)) {
+    const key = v.id.key();
+    return nc.numEnv.get(key) === true || nc.numberValues.has(key);
+  }
   return false;
 }
 
@@ -103,15 +145,15 @@ function numericAppInfo(lettable: AA.ALettable, nc: NumCtx): { flat: boolean; is
   if (name === undefined) { return { flat: false, isNum: false }; }
   const args = lettable.args;
   if (NUM_ARITH_OPS.has(name)) {
-    if (args.length === 2 && valIsNumber(args[0], nc.numEnv) && valIsNumber(args[1], nc.numEnv)) {
+    if (args.length === 2 && valIsNumber(args[0], nc) && valIsNumber(args[1], nc)) {
       return { flat: true, isNum: true };
     }
   } else if (NUM_CMP_OPS.has(name)) {
-    if (args.length === 2 && valIsNumber(args[0], nc.numEnv) && valIsNumber(args[1], nc.numEnv)) {
+    if (args.length === 2 && valIsNumber(args[0], nc) && valIsNumber(args[1], nc)) {
       return { flat: true, isNum: false };
     }
   } else if (NUM_RETURNING_BUILTINS.has(name)) {
-    if (args.length >= 1 && args.every((a) => valIsNumber(a, nc.numEnv))) {
+    if (args.length >= 1 && args.every((a) => valIsNumber(a, nc))) {
       return { flat: false, isNum: true };
     }
   }
@@ -120,7 +162,7 @@ function numericAppInfo(lettable: AA.ALettable, nc: NumCtx): { flat: boolean; is
 
 // Is the value bound by a let provably a Number?
 function lettableIsNumber(val: AA.ALettable, nc: NumCtx): boolean {
-  if (AA.isAVal(val)) { return valIsNumber(val.v, nc.numEnv); }
+  if (AA.isAVal(val)) { return valIsNumber(val.v, nc); }
   return numericAppInfo(val, nc).isNum;
 }
 
@@ -612,9 +654,28 @@ export function makeLettableFlatnessEnv(
       }
     }
 
-    case 'a-method-app':
-      // For now method calls are infinite flatness
+    case 'a-method-app': {
+      // Method calls are infinite flatness UNLESS the receiver resolves to a known
+      // in-module data type whose method (across all its variants) is itself flat.
+      // Sound because a value of type T has T's original methods (functional extend
+      // that overrides a method strips the brand, so it can't satisfy `:: T`), and
+      // the receiver type rests on that same annotation/constructor basis.
+      if (nc.methodsEnabled) {
+        const dataId = nc.methodReceiver.get(lettable);
+        if (dataId !== undefined) {
+          const key = dataId + '#' + lettable.meth;
+          const complete = nc.methodDone.get(key) === nc.methodTotal.get(key);
+          if (complete) {
+            const f = nc.methodTable.get(key);
+            if (methodFlatEnough(f)) {
+              nc.flatMethodApps.add(lettable);
+              return incrementFlatness(f);
+            }
+          }
+        }
+      }
       return undefined;
+    }
 
     // TODO: Treat prim-app as flat always? Track depths of prim-anns?
     case 'a-prim-app':
@@ -636,7 +697,32 @@ export function makeLettableFlatnessEnv(
     case 'a-colon': return defaultRet;
     case 'a-get-bang': return defaultRet;
     case 'a-lam': return defaultRet;
-    case 'a-method': return defaultRet;
+    case 'a-method': {
+      // A data type's method: analyze its body like a lambda and record the
+      // resulting flatness in the per-(dataType,methodName) table. Methods not
+      // attached to an in-module data type (object literals, or unresolved) are
+      // left opaque exactly as before (no recursion, no table entry).
+      if (nc.methodsEnabled) {
+        const mi = nc.methodOf.get(lettable);
+        if (mi !== undefined) {
+          const retF = annFlatness(lettable.ret, sd, ad, mb, env);
+          let argsF = retF;
+          for (const arg of lettable.args) {
+            argsF = flatnessMax(argsF, annFlatness(arg.ann, sd, ad, mb, env));
+            // Seed Number-typed params (incl. self's data fields via numberValues).
+            if (nc.enabled && annIsNumber(arg.ann)) { nc.numEnv.set(arg.id.key(), true); }
+          }
+          const bodyF = makeExprFlatnessEnv(lettable.body, sd, ad, mb, env, nc);
+          const methF = flatnessMax(bodyF, argsF);
+          const key = mi.dataId + '#' + mi.methodName;
+          const prev: Flatness = nc.methodTable.has(key) ? nc.methodTable.get(key) : 0;
+          nc.methodTable.set(key, flatnessMax(prev, methF));
+          nc.methodDone.set(key, (nc.methodDone.get(key) ?? 0) + 1);
+          if (methodFlatEnough(methF)) { nc.flatMethods.add(lettable); }
+        }
+      }
+      return defaultRet;
+    }
     case 'a-id-var': return defaultRet;
     case 'a-id-var-modref': return defaultRet;
     case 'a-id-letrec': return defaultRet;
@@ -669,7 +755,8 @@ export function makeProgFlatnessEnv(
   anfed: AA.AProg,
   postEnv: C.ComputedEnvironment,
   env: C.CompileEnvironment,
-  enableNumeric: boolean = false
+  enableNumeric: boolean = false,
+  methodInfo?: MethodFlatInfo
 ): FlatnessEnv {
   const pe = postEnv as C.ComputedEnv;
   const bindings = pe.bindings;
@@ -744,9 +831,35 @@ export function makeProgFlatnessEnv(
   const body = anfed.body;
   makeExprDataEnv(body, sd, ad, mb, env, new Map<string, AA.AVariant[]>(), new Map<string, string>());
   const flatApps = new Set<AA.AApp>();
-  const nc: NumCtx = { numEnv: new Map(), flatApps, bindings, enabled: enableNumeric };
+  const flatMethodApps = new Set<AA.AMethodApp>();
+  const flatMethods = new Set<AA.AMethod>();
+  // Precompute, per (dataType,method) slot, how many method definitions feed it,
+  // so the table is consulted only once every variant's copy has been recorded.
+  const methodTotal = new Map<string, number>();
+  if (methodInfo !== undefined) {
+    for (const mi of methodInfo.methodOf.values()) {
+      const key = mi.dataId + '#' + mi.methodName;
+      methodTotal.set(key, (methodTotal.get(key) ?? 0) + 1);
+    }
+  }
+  const nc: NumCtx = {
+    numEnv: new Map(), flatApps, bindings, enabled: enableNumeric,
+    methodsEnabled: methodInfo !== undefined,
+    numberValues: methodInfo?.numberValues ?? new Set(),
+    methodReceiver: methodInfo?.receiver ?? new Map(),
+    methodOf: methodInfo?.methodOf ?? new Map(),
+    methodTable: new Map(),
+    methodTotal,
+    methodDone: new Map(),
+    flatMethodApps,
+    flatMethods,
+  };
   makeExprFlatnessEnv(body, sd, ad, mb, env, nc);
-  return [sd, ad, flatApps];
+  if (process.env.PYRET_METHOD_DEBUG && nc.methodTable.size > 0) {
+    const rows = [...nc.methodTable.entries()].map(([k, f]) => `${k}=${f === undefined ? 'INF' : f}`);
+    process.stderr.write(`[method-flat] table: ${rows.join('  ')}\n[method-flat] flatMethods=${flatMethods.size} flatMethodApps=${flatMethodApps.size}\n`);
+  }
+  return [sd, ad, flatApps, flatMethodApps, flatMethods];
 }
 
 export function getDefinedValues(ast: AA.AProg): Map<string, string> {

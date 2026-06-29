@@ -137,6 +137,37 @@ interface Ctx {
   compileEnv: C.CompileEnvironment;
   flatnessEnv: FL.FlatnessEnv;
   moduleUri: string;
+  // When false (the receiver-type pre-pass for method flatness, which runs BEFORE
+  // the flatness env exists), the redundant-ann-check work in bindLet is skipped
+  // (it needs flatnessEnv); only the ub env is computed. When true (the ann-elision
+  // consumer, after flatness), the redundancy set is filled.
+  collectRedundant: boolean;
+  // ----- method-flatness receiver info (filled regardless of collectRedundant) ---
+  // For each method-application node, the canonical id of the receiver's data type,
+  // when the receiver resolves to a concrete in-module data type (else absent).
+  // The flatness pass keys its per-method flatness table on this id.
+  methodReceiver: Map<N.AMethodApp, string>;
+  // Each `a-method` node that is a member of an in-module data type, mapped to
+  // (dataId, methodName). Used by the flatness pass to know which method-table
+  // slot a method definition fills, and (here) to seed `self`'s type.
+  methodOf: Map<N.AMethod, { dataId: string; methodName: string }>;
+  // Transient (collect pass only): method-binding key -> the method node it binds,
+  // so a data-expr's withMembers/shared field (an a-id to that binding) resolves
+  // back to the method node.
+  methodBindNodes: Map<string, N.AMethod>;
+  // canonical dataId -> fieldName -> the field's type, for fields declared (with a
+  // consistent type) by EVERY non-singleton variant of the data type. A field read
+  // `v.field` where ub(v) is that data type therefore yields this type. Sound: the
+  // value is some variant, all of which carry the field with this type (constructor
+  // and ref-assignment field checks enforce it). Lets `self.x :: Number` reads feed
+  // the numeric-flatness pass so a method's arithmetic body can flatten.
+  fieldTypes: Map<string, Map<string, AbsType>>;
+  // Value keys whose ub is exactly `Number`. Exported to seed the numeric-flatness
+  // pass (flatness.ts) with Number-ness it cannot see on its own -- notably data
+  // field reads (`self.x`) and constructor/return Numbers -- so arithmetic on them
+  // flattens. A strict superset of the numeric pass's annotation-only seeds; sound
+  // because every entry rests on a check that runs (ann / field-ann / ctor).
+  numberValues: Set<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -260,6 +291,26 @@ function isNum(v: N.AVal, ctx: Ctx): boolean {
   return t.k === 'prim' && t.n === 'Number';
 }
 
+function absTypeEq(a: AbsType, b: AbsType): boolean {
+  if (a.k !== b.k) { return false; }
+  if (a.k === 'prim' && b.k === 'prim') { return a.n === b.n; }
+  if (a.k === 'data' && b.k === 'data') { return a.id === b.id && a.variant === b.variant; }
+  return a.k === b.k;   // any/bot
+}
+
+// Set ub(key) = t, and remember the key if it is exactly Number (for the numeric
+// pass seed). Used for every value-binding env write so numberValues stays in sync.
+function recordUb(ctx: Ctx, key: string, t: AbsType): void {
+  ctx.env.set(key, t);
+  if (t.k === 'prim' && t.n === 'Number') { ctx.numberValues.add(key); }
+}
+
+// Resolve `v.field` when v's ub is a known in-module data type carrying the field.
+function fieldTypeOf(obj: AbsType, field: string, ctx: Ctx): AbsType | undefined {
+  if (obj.k !== 'data') { return undefined; }
+  return ctx.fieldTypes.get(obj.id)?.get(field);
+}
+
 // ---------------------------------------------------------------------------
 // ub of values and lettables
 // ---------------------------------------------------------------------------
@@ -291,10 +342,29 @@ function absOfLettable(e: N.ALettable, ctx: Ctx): AbsType {
     // do not infer across calls (only declared return signatures are trusted).
     for (const arg of e.args) {
       const annT = annUpperBound(arg.ann, ctx);
-      ctx.env.set(arg.id.key(), annT ?? ANY);
+      recordUb(ctx, arg.id.key(), annT ?? ANY);
+    }
+    // Inside a data type's method, `self` (the first param, conventionally
+    // unannotated) is a value of that data type. Seeding it lets method calls on
+    // `self` (e.g. a method that calls a sibling method) resolve their receiver.
+    // Sound: the runtime dispatches a method only on a genuine value of its type.
+    if (N.isAMethod(e) && e.args.length > 0) {
+      const mi = ctx.methodOf.get(e);
+      if (mi !== undefined) { recordUb(ctx, e.args[0].id.key(), { k: 'data', id: mi.dataId }); }
     }
     analyzeExpr(e.body, ctx);
     return ANY;                            // the value is a function
+  }
+  if (N.isAMethodApp(e)) {
+    // Record the receiver's data type (if resolvable) for the flatness pass. The
+    // result type of a method call is not tracked (-> Any).
+    const ot = absOfVal(e.obj, ctx);
+    if (ot.k === 'data') { ctx.methodReceiver.set(e, ot.id); }
+    return ANY;
+  }
+  if (N.isADot(e)) {
+    // Field read on a known data type -> the field's declared type.
+    return fieldTypeOf(absOfVal(e.obj, ctx), e.field, ctx) ?? ANY;
   }
   if (N.isAApp(e)) {
     const f = e._fun;
@@ -338,7 +408,7 @@ function absOfLettable(e: N.ALettable, ctx: Ctx): AbsType {
         const fieldAnns = vmap.get(b.name);
         if (fieldAnns !== undefined && fieldAnns.length === b.args.length) {
           for (let i = 0; i < b.args.length; i++) {
-            ctx.env.set(b.args[i].bind.id.key(), annUpperBound(fieldAnns[i], ctx) ?? ANY);
+            recordUb(ctx, b.args[i].bind.id.key(), annUpperBound(fieldAnns[i], ctx) ?? ANY);
           }
         }
       }
@@ -375,7 +445,7 @@ function analyzeExpr(exprIn: N.AExpr, ctx: Ctx): AbsType {
         // value is Any and its check is never elided (annT !⊒ Any).
         const annT = annUpperBound(expr.bind.ann, ctx);
         absOfLettable(expr.e, ctx);          // walk for effects; value discarded
-        ctx.env.set(expr.bind.id.key(), annT ?? ANY);
+        recordUb(ctx, expr.bind.id.key(), annT ?? ANY);
         expr = expr.body;
         continue;
       }
@@ -406,22 +476,22 @@ function bindLet(bind: N.ABind, e: N.ALettable, ctx: Ctx): void {
   const ann = bind.ann;
   const key = bind.id.key();
   if (A.isABlank(ann) || A.isAAny(ann)) {
-    ctx.env.set(key, rhs);
+    recordUb(ctx, key, rhs);
     return;
   }
   const elideT = elidableAnnType(ann, ctx);   // refinement -> undefined (never elide)
   const ubT = annUpperBound(ann, ctx);         // refinement -> base type (for ub)
-  if (elideT !== undefined && subtype(rhs, elideT)
+  if (ctx.collectRedundant && elideT !== undefined && subtype(rhs, elideT)
       && flatAnn(ann, ctx.flatnessEnv, ctx.moduleBindings, ctx.compileEnv)) {
     // (a) ub ⊑ T proven and (b) T is a flat, non-refinement ann -> dead check.
     ctx.redundant.add(key);
-    ctx.env.set(key, rhs);                 // keep the (possibly tighter) rhs
+    recordUb(ctx, key, rhs);               // keep the (possibly tighter) rhs
   } else if (ubT !== undefined) {
     // Check stays; post-check the value is at least ubT (a refinement's base),
     // and still holds e's value -- keep rhs if it is already tighter.
-    ctx.env.set(key, subtype(rhs, ubT) ? rhs : ubT);
+    recordUb(ctx, key, subtype(rhs, ubT) ? rhs : ubT);
   } else {
-    ctx.env.set(key, rhs);                 // unresolvable ann: x still holds e
+    recordUb(ctx, key, rhs);               // unresolvable ann: x still holds e
   }
 }
 
@@ -499,7 +569,45 @@ function collectBind(key: string, e: N.ALettable, ctx: Ctx, dataObjs: Map<string
     for (const v of e.variants) {
       if (N.isAVariant(v)) { vmap.set(v.name, v.members.map((m) => m.bind.ann)); }
     }
+    // Associate each method member (a withMembers field on a variant, or a
+    // data-level shared field, whose value is an a-id to the method's let-binding)
+    // with (dataId, methodName), so the flatness pass can place its flatness. The
+    // method bindings precede the data-expr in the ANF spine, so methodBindNodes is
+    // already populated.
+    const recordMember = (fieldName: string, val: N.AVal): void => {
+      if (N.isAId(val) || N.isAIdSafeLetrec(val) || N.isAIdLetrec(val)) {
+        const node = ctx.methodBindNodes.get(val.id.key());
+        if (node !== undefined) { ctx.methodOf.set(node, { dataId: id, methodName: fieldName }); }
+      }
+    };
+    for (const v of e.variants) {
+      for (const wm of v.withMembers) { recordMember(wm.name, wm.value); }
+    }
+    for (const sh of e.shared) { recordMember(sh.name, sh.value); }
+    // Field types: a field read on a value of this data type is sound only when
+    // the field is present (with a consistent type) on EVERY variant. Intersect
+    // across variants. (Singleton variants have no fields -> any field present on
+    // them is none, so a type with a singleton variant contributes no safe fields.)
+    let common: Map<string, AbsType> | undefined;
+    for (const v of e.variants) {
+      const here = new Map<string, AbsType>();
+      if (N.isAVariant(v)) {
+        for (const m of v.members) {
+          const ft = annUpperBound(m.bind.ann, ctx);
+          if (ft !== undefined) { here.set(m.bind.id.toname(), ft); }
+        }
+      }
+      if (common === undefined) { common = here; }
+      else {
+        for (const [fn, ft] of [...common]) {
+          const o = here.get(fn);
+          if (o === undefined || !absTypeEq(o, ft)) { common.delete(fn); }
+        }
+      }
+    }
+    if (common !== undefined && common.size > 0) { ctx.fieldTypes.set(id, common); }
   } else if (N.isALam(e) || N.isAMethod(e)) {
+    if (N.isAMethod(e)) { ctx.methodBindNodes.set(key, e); }
     const r = annUpperBound(e.ret, ctx);
     if (r !== undefined) { ctx.funRet.set(key, r); }
   } else if (N.isADot(e)) {
@@ -550,19 +658,25 @@ function collectLettable(e: N.ALettable, ctx: Ctx, dataObjs: Map<string, DataObj
   }
 }
 
-// ---------------------------------------------------------------------------
-// Entry point. Returns the set of bind keys whose annotation check is provably
-// redundant. Threaded into the async compiler like numericFlatApps.
-// ---------------------------------------------------------------------------
-export function makeProgTypeFlowEnv(
-  anfed: N.AProg,
+// Receiver info the flatness pass consumes for method-call flatness.
+export interface MethodInfo {
+  // method-application node -> canonical id of its receiver's data type.
+  receiver: Map<N.AMethodApp, string>;
+  // a-method node -> the (dataId, methodName) slot it fills.
+  methodOf: Map<N.AMethod, { dataId: string; methodName: string }>;
+  // value keys whose ub is exactly Number (seed for the numeric-flatness pass).
+  numberValues: Set<string>;
+}
+
+function newCtx(
   postEnv: C.ComputedEnvironment,
   env: C.CompileEnvironment,
   flatnessEnv: FL.FlatnessEnv,
   moduleUri: string,
-): Set<string> {
+  collectRedundant: boolean,
+): Ctx {
   const pe = postEnv as C.ComputedEnv;
-  const ctx: Ctx = {
+  return {
     env: new Map(),
     redundant: new Set(),
     ctors: new Map(),
@@ -576,16 +690,43 @@ export function makeProgTypeFlowEnv(
     compileEnv: env,
     flatnessEnv,
     moduleUri,
+    collectRedundant,
+    methodReceiver: new Map(),
+    methodOf: new Map(),
+    methodBindNodes: new Map(),
+    fieldTypes: new Map(),
+    numberValues: new Set(),
   };
+}
+
+// The shared two-phase walk: collect data/ctor/method defs over the whole
+// program, drop flow-insensitive tags for genuinely-reassigned vars, then run
+// the forward abstract interpretation. Mutates ctx.
+function runTypeFlow(anfed: N.AProg, ctx: Ctx): void {
+  collectDefs(anfed.body, ctx, new Map());
+  // Drop flow-insensitive tags for any binding that took more than one value
+  // over its lifetime (a genuinely reassigned `var`): its return type / ctor
+  // identity at a given use site is no longer statically certain.
+  for (const [key, n] of ctx.valueSources) {
+    if (n > 1) { ctx.funRet.delete(key); ctx.ctors.delete(key); }
+  }
+  analyzeExpr(anfed.body, ctx);
+}
+
+// ---------------------------------------------------------------------------
+// Entry point. Returns the set of bind keys whose annotation check is provably
+// redundant. Threaded into the async compiler like numericFlatApps.
+// ---------------------------------------------------------------------------
+export function makeProgTypeFlowEnv(
+  anfed: N.AProg,
+  postEnv: C.ComputedEnvironment,
+  env: C.CompileEnvironment,
+  flatnessEnv: FL.FlatnessEnv,
+  moduleUri: string,
+): Set<string> {
+  const ctx = newCtx(postEnv, env, flatnessEnv, moduleUri, true);
   try {
-    collectDefs(anfed.body, ctx, new Map());
-    // Drop flow-insensitive tags for any binding that took more than one value
-    // over its lifetime (a genuinely reassigned `var`): its return type / ctor
-    // identity at a given use site is no longer statically certain.
-    for (const [key, n] of ctx.valueSources) {
-      if (n > 1) { ctx.funRet.delete(key); ctx.ctors.delete(key); }
-    }
-    analyzeExpr(anfed.body, ctx);
+    runTypeFlow(anfed, ctx);
     if (process.env.PYRET_TF_DEBUG) {
       process.stderr.write(`[type-flow ${moduleUri}] redundant=${ctx.redundant.size} ctors=${ctx.ctors.size} funRet=${ctx.funRet.size}\n`);
     }
@@ -595,4 +736,31 @@ export function makeProgTypeFlowEnv(
     return new Set();
   }
   return ctx.redundant;
+}
+
+// ---------------------------------------------------------------------------
+// Receiver-type pre-pass for method flatness. Runs BEFORE the flatness env is
+// built (it needs no flatness), so the flatness pass can resolve each method
+// call's receiver data type and analyze that type's methods. Same forward
+// abstract interpretation as above, minus the redundant-ann-check work.
+// ---------------------------------------------------------------------------
+export function makeProgMethodInfo(
+  anfed: N.AProg,
+  postEnv: C.ComputedEnvironment,
+  env: C.CompileEnvironment,
+  moduleUri: string,
+): MethodInfo {
+  // flatnessEnv is unused when collectRedundant is false; pass an empty one.
+  const dummyFlat: FL.FlatnessEnv = [new Map(), new Map(), new Set(), new Set(), new Set()];
+  const ctx = newCtx(postEnv, env, dummyFlat, moduleUri, false);
+  try {
+    runTypeFlow(anfed, ctx);
+    if (process.env.PYRET_TF_DEBUG) {
+      process.stderr.write(`[type-flow ${moduleUri}] methodReceiver=${ctx.methodReceiver.size} methodOf=${ctx.methodOf.size}\n`);
+    }
+  } catch (_e) {
+    // Fail safe to "no method info" (no method calls get flattened).
+    return { receiver: new Map(), methodOf: new Map(), numberValues: new Set() };
+  }
+  return { receiver: ctx.methodReceiver, methodOf: ctx.methodOf, numberValues: ctx.numberValues };
 }

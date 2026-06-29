@@ -1086,6 +1086,18 @@ export interface CompileOptions {
   // intact (the ub facts rest on the checks that DO run), so it self-disables
   // unless runtimeAnnotations && userAnnotations. Independent of `optimize`.
   annElision: boolean;
+  // Method-call flatness (flatness.ts + type-flow.ts; promise backend only). On
+  // by default; -no-method-flatness disables it for A/B measurement. The
+  // upper-bound type-flow resolves a method call's receiver to a concrete
+  // in-module data type; the flatness pass analyzes that type's methods and, when
+  // the resolved method is flat, marks the call flat (so the enclosing function
+  // can stay synchronous and the call elides its conditional await) and emits the
+  // method itself as a synchronous function. Sound on the same basis as
+  // direct-cases: a value satisfying `:: T` has T's original (analyzed) methods
+  // -- functional extend that overrides a method strips the brand -- so it
+  // self-disables unless runtimeAnnotations && userAnnotations. Independent of
+  // `optimize`.
+  methodFlatness: boolean;
   stackBackend: StackBackend;
   inlineCaseBodyLimit: number;
   moduleEval: boolean;
@@ -1132,6 +1144,7 @@ export const defaultCompileOptions: CompileOptions = {
   unboxVars: true,
   directCases: true,
   annElision: true,
+  methodFlatness: true,
   stackBackend: compiledStackBackend,
   inlineCaseBodyLimit: 5,
   moduleEval: true,

@@ -130,9 +130,18 @@ export function traceMakeCompiledPyret(
     process.stderr.write('===ANF[' + (programAst.l && (programAst.l as any).source) + ']===\n');
     process.stderr.write((anfed as any).tosource().pretty(100).join('\n') + '\n===END ANF===\n');
   }
+  // Method-call flatness (promise backend only): a receiver-type pre-pass resolves
+  // each method call's receiver to a concrete in-module data type and feeds the
+  // flatness pass so it can analyze that type's methods. Gated like the type-flow
+  // ann elision (the ub facts rest on the annotation/constructor checks that run).
+  const methodInfo =
+    (C.isPromise(options.stackBackend) && options.methodFlatness
+      && options.runtimeAnnotations && options.userAnnotations)
+      ? addPhase('Method receiver info', TF.makeProgMethodInfo(anfed, postEnv, env, provides.fromUri))
+      : undefined;
   // Numeric-flatness is enabled only for the promise backend (the cont backend's
   // codegen + byte-parity oracle stay untouched).
-  const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env, C.isPromise(options.stackBackend)));
+  const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env, C.isPromise(options.stackBackend), methodInfo));
   const flatProvides = addPhase('Get flat-provides', FL.getFlatProvides(provides, env, postEnv, flatnessEnv, anfed));
   // Upper-bound type-flow: bind keys whose `:: T` annotation check is provably
   // redundant. Promise backend only (cont codegen stays frozen for the byte-parity

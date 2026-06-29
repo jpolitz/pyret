@@ -92,6 +92,8 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Disable static field access for cases (promise backend; use the reflective $fieldNames/$mut_fields_mask chain, for A/B measurement)')],
     ['no-ann-elision',
       C.flag(C.once, 'Disable redundant annotation-check elimination (promise backend; keep every _checkAnn the type-flow analysis proved dead, for A/B measurement)')],
+    ['no-method-flatness',
+      C.flag(C.once, 'Disable method-call flatness (promise backend; keep all method calls/methods async, for A/B measurement)')],
     ['collect-times',
       C.flag(C.once, 'Collect timing information about compilation')],
     ['type-check',
@@ -140,6 +142,7 @@ export function main(args: string[]): number {
     const unboxVars = !r.has('no-unbox-vars');
     const directCases = !r.has('no-direct-cases');
     const annElision = !r.has('no-ann-elision');
+    const methodFlatness = !r.has('no-method-flatness');
     const compiledDir = r.get('compiled-dir');
     const standaloneFile = r.get('standalone-file');
     const addProfiling = r.has('profile');
@@ -221,6 +224,7 @@ export function main(args: string[]): number {
           unboxVars: unboxVars,
           directCases: directCases,
           annElision: annElision,
+          methodFlatness: methodFlatness,
           stackBackend: stackBackend,
           compiledCache: compiledDir,
           compiledReadOnly: r.has('compiled-read-only-dir') ? r.get('compiled-read-only-dir') : [],
@@ -262,6 +266,7 @@ export function main(args: string[]): number {
         unboxVars: unboxVars,
         directCases: directCases,
         annElision: annElision,
+        methodFlatness: methodFlatness,
         stackBackend: stackBackend,
         compileModule: false,
         displayProgress: displayProgress
