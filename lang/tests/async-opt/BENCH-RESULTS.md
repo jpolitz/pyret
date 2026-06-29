@@ -80,6 +80,29 @@ typed user programs. Across the 30 builtin/trove modules the pass elides **316 o
 1193** runtime checks (**26.5%**); in the bundled execution-suite jarr it removes
 **~1984 of 9947** (**~20%**).
 
+Ship benches, fresh rebuild with this branch (N=3 median LOOP-seconds, `node22`,
+isolated). `p/c` is the ship ratio (promise/cont); `ann on/off` is the same-binary
+ann-elision A/B (N=5, my flag) on the benches nearest the cont line — it isolates
+*this* pass's effect and shows it never costs time (off never beats on). All nine
+are output-identical cont≡promise.
+
+| benchmark | result | cont | prom | p/c | ann on/off | parity |
+|---|---|---|---|---|---|---|
+| spell           | 73       | 4.70 | 3.97 | **0.84** | —     | OK |
+| car-compute     | 14829840 | 4.28 | 3.86 | **0.90** | —     | OK |
+| car-render      | 400000   | 4.22 | 4.17 | 0.99 | —     | OK |
+| lander          | 4800000  | 4.08 | 4.10 | 1.00 | —     | OK |
+| orbital-compute | 2959     | 3.68 | 3.88 | 1.05 | 0.974 | OK |
+| orbital-ems     | 390000   | 2.81 | 2.76 | 0.98 | —     | OK |
+| orbital-render  | 180000   | 4.55 | 4.60 | 1.01 | 0.986 | OK |
+| boids-compute   | 236561   | 4.13 | 5.28 | 1.28 | 0.962 | OK |
+| boids-raster    | 250      | 3.98 | 4.48 | 1.13 | 1.007 | OK |
+
+Same shape as the prior (LICM) build — `spell`/`car-compute` improved (library-dense
+string/list code), the rest within ±5% N=3 noise, boids still the known async-call
+laggard. The `ann on/off` column is the load-bearing evidence the ship test didn't
+move: ≤ 1.0 everywhere, so ann-elision is neutral-to-faster, never a regression.
+
 `bench-anns` is a new annotation-heavy microbench (fully-typed recursive `cases`
 over a `Tree`, every helper carrying param + return anns) added to *show* the pass —
 the existing benches can't. N=7 median LOOP-ms, `node22`, isolated, output bit-exact:
@@ -96,16 +119,29 @@ variant fields take their declared types, diverging branches are bottom — lift
 this from 0.78 by letting return checks on `cases`-returning typed functions elide.)
 
 **Execution-suite split + measurement.** Re-derived by measurement that the
-nested-compile tests are ~46% of `main2`'s wall time (full `main2` 759s →
-`main2-exec`, with the 10 full-pipeline tests carved into `main2-compile`, 411s /
-12886 tests green), and they host the documented test-repl stacktrace-pin flakes.
-`main2-exec` is now the clean A/B oracle (make targets `ts-promise-exec-test` /
-`ts-promise-compile-test`). On it, ann-elision is **time-neutral** despite eliding
-~1984 checks — clean interleaved N=2: ON {411, 406}s vs OFF {413, 410, 412, 398}s,
-fully overlapping — because the suite is dominated by image/charts/tables float-math
-rendering, where brand checks aren't on the hot path. The honest read: lots of
-checks removed, but the suite spends its time elsewhere; the per-op win shows only
-where checks are a real fraction of the work (the microbenches).
+nested-compile tests are ~46% of `main2`'s wall time, and they host the documented
+test-repl stacktrace-pin flakes, so they're carved into a separate suite
+(`/usr/bin/time` wall clock, `node22`, promise backend, ann-elision on):
+
+| suite | tests | wall (s) | role |
+|---|---|---|---|
+| `main2` (full)                      | 13301 | 759  | full reference |
+| **`main2-exec`** (execution only)   | 12886 | ~408 | **clean A/B oracle** (`ts-promise-exec-test`) |
+| `main2-compile` (nested-compile)    | ~415  | ~348 | carved out; flaky repl pins (`ts-promise-compile-test`) |
+
+On `main2-exec`, ann-elision is **time-neutral** despite eliding ~1984 checks —
+clean interleaved A/B (`/usr/bin/time`, isolated; first ON run was a cold outlier,
+excluded from the median):
+
+| build | runs (s) | median |
+|---|---|---|
+| ON (ann-elision, default)     | 411.3, 405.9            | 408.6 |
+| OFF (`-no-ann-elision`)       | 413.0, 412.4, 410.5, 398.4 | 411.5 |
+
+Fully overlapping — neutral. The reason: the suite is dominated by image/charts/
+tables float-math rendering, where brand checks aren't on the hot path. The honest
+read: lots of checks removed (~1984), but the suite spends its time elsewhere; the
+per-op win shows only where checks are a real fraction of the work (the microbenches).
 
 Validation: cont byte-parity **16/16**; full exec suite **all 12886 tests passed, 0
 errored**; soundness corners regression-tested in `tests/pyret/tests/test-cases.arr`
