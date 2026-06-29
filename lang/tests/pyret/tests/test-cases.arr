@@ -119,3 +119,37 @@ check "ann-elision: reassigned function var keeps its result check (no stale ret
   g := lam(x :: Number) -> Number: x end
   use-g() is 5
 end
+
+# Regression checks for cases-branch field-type refinement (type-flow.ts): a
+# matched variant's field binds take the variant's declared field types, which
+# lets return checks on cases-returning functions elide. Must behave identically
+# in both backends and with -no-ann-elision.
+
+data ElColor: | el-red | el-green(shade :: Number) end
+
+fun el-describe(c :: ElColor) -> Number:
+  # shade :: Number is known from the variant; the compiler-inserted else throws
+  # (contributes no type), so the result is Number and `-> Number` elides.
+  cases(ElColor) c:
+    | el-red => 0
+    | el-green(shade) => shade
+  end
+end
+
+data ElBox2: | el-bnum(n :: Number) | el-bstr(s :: String) end
+
+fun el-get-num(b :: ElBox2) -> Number:
+  # branch field types are Number and String; their join is Any, so the
+  # `-> Number` return check must NOT be elided and el-bstr must raise.
+  cases(ElBox2) b:
+    | el-bnum(n) => n
+    | el-bstr(s) => s
+  end
+end
+
+check "ann-elision: cases-field refinement is correct and sound":
+  el-describe(el-red) is 0
+  el-describe(el-green(7)) is 7
+  el-get-num(el-bnum(5)) is 5
+  el-get-num(el-bstr("hi")) raises "Number"
+end

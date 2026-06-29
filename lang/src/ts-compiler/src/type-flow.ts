@@ -115,6 +115,14 @@ interface Ctx {
   // valued; a user `var f` reassigned to a different-typed function is not, and
   // its tags are purged after the collect pass.
   valueSources: Map<string, number>;
+  // canonical dataId -> variant name -> the variant's field annotations (in
+  // order), from in-module `data` definitions. Used to refine `cases` branch
+  // field binds to their declared field types (e.g. node(v,l,r) on a Tree gives
+  // v::Number). Sound because constructors check field anns (and ref-field
+  // assignment re-checks them), so a matched field always holds its declared
+  // type. Imported types aren't here (their data-exprs aren't in this ANF) ->
+  // those fields stay Any.
+  typeVariants: Map<string, Map<string, A.Ann[]>>;
   // resolution inputs
   typeBindings: Map<string, C.TypeBind>;
   moduleBindings: Map<string, C.ModuleBind>;
@@ -204,6 +212,14 @@ function globalOpName(v: N.AVal, ctx: Ctx): string | undefined {
   return undefined;
 }
 
+// Calls that never return a value (they throw). A branch ending in one of these
+// contributes nothing to a join, so an exhaustive `cases`/`if` whose only
+// non-value branch is the compiler-inserted throw still has a precise result
+// type. `throwNo{Cases,Branches}Matched` are prim-apps (desugar-post-tc /
+// desugar); `raise` is a global value app.
+const NEVER_RETURNS_PRIM = new Set(['throwNoCasesMatched', 'throwNoBranchesMatched']);
+const NEVER_RETURNS_GLOBAL = new Set(['raise']);
+
 function isNum(v: N.AVal, ctx: Ctx): boolean {
   const t = absOfVal(v, ctx);
   return t.k === 'prim' && t.n === 'Number';
@@ -259,6 +275,7 @@ function absOfLettable(e: N.ALettable, ctx: Ctx): AbsType {
     // Numeric operator / builtin on Number operands returns a Number.
     const name = globalOpName(f, ctx);
     if (name !== undefined) {
+      if (NEVER_RETURNS_GLOBAL.has(name)) { return BOT; }
       if (NUM_ARITH_OPS.has(name) && e.args.length === 2 && isNum(e.args[0], ctx) && isNum(e.args[1], ctx)) {
         return prim('Number');
       }
@@ -268,14 +285,28 @@ function absOfLettable(e: N.ALettable, ctx: Ctx): AbsType {
     }
     return ANY;
   }
+  if (N.isAPrimApp(e)) {
+    return NEVER_RETURNS_PRIM.has(e.f) ? BOT : ANY;
+  }
   if (N.isAIf(e)) {
     return join(analyzeExpr(e.t, ctx), analyzeExpr(e.e, ctx));
   }
   if (N.isACases(e)) {
+    // Refine each matched branch's field binds to the variant's declared field
+    // types, when the cases type resolves to an in-module data definition.
+    const dataT = resolveAnnType(e.typ, ctx);
+    const vmap = (dataT !== undefined && dataT.k === 'data')
+      ? ctx.typeVariants.get(dataT.id) : undefined;
     let acc: AbsType = BOT;
     for (const b of e.branches) {
-      // Branch field binds (a-cases-bind) are left at Any for now (variant-field
-      // type metadata is a later refinement); their keys are simply absent.
+      if (vmap !== undefined && N.isACasesBranch(b)) {
+        const fieldAnns = vmap.get(b.name);
+        if (fieldAnns !== undefined && fieldAnns.length === b.args.length) {
+          for (let i = 0; i < b.args.length; i++) {
+            ctx.env.set(b.args[i].bind.id.key(), resolveAnnType(fieldAnns[i], ctx) ?? ANY);
+          }
+        }
+      }
       acc = join(acc, analyzeExpr(b.body, ctx));
     }
     acc = join(acc, analyzeExpr(e._else, ctx));
@@ -419,7 +450,15 @@ function collectDefs(exprIn: N.AExpr, ctx: Ctx, dataObjs: Map<string, DataObjInf
 // Tag the binding `key = e`.
 function collectBind(key: string, e: N.ALettable, ctx: Ctx, dataObjs: Map<string, DataObjInfo>): void {
   if (N.isADataExpr(e)) {
-    dataObjs.set(key, { id: dataExprId(e, ctx), variants: e.variants });
+    const id = dataExprId(e, ctx);
+    dataObjs.set(key, { id, variants: e.variants });
+    // Record each (non-singleton) variant's field annotations for cases-branch
+    // field refinement.
+    let vmap = ctx.typeVariants.get(id);
+    if (vmap === undefined) { vmap = new Map(); ctx.typeVariants.set(id, vmap); }
+    for (const v of e.variants) {
+      if (N.isAVariant(v)) { vmap.set(v.name, v.members.map((m) => m.bind.ann)); }
+    }
   } else if (N.isALam(e) || N.isAMethod(e)) {
     const r = resolveAnnType(e.ret, ctx);
     if (r !== undefined) { ctx.funRet.set(key, r); }
@@ -489,6 +528,7 @@ export function makeProgTypeFlowEnv(
     ctors: new Map(),
     funRet: new Map(),
     valueSources: new Map(),
+    typeVariants: new Map(),
     typeBindings: pe.typeBindings,
     moduleBindings: pe.moduleBindings,
     bindings: pe.bindings,
