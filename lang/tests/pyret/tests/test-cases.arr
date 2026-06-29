@@ -153,3 +153,36 @@ check "ann-elision: cases-field refinement is correct and sound":
   el-get-num(el-bnum(5)) is 5
   el-get-num(el-bstr("hi")) raises "Number"
 end
+
+# Regression for refinement base-type propagation (type-flow.ts): a value that
+# passed `Number%(p)` is a Number for downstream ub purposes (so a later `:: Number`
+# elides), but the refinement's OWN check is never elided (p still runs and raises).
+
+fun el-is-small(n :: Number) -> Boolean: n < 100 end
+
+fun el-use-refined(x :: Number%(el-is-small)) -> Number:
+  y :: Number = x   # ub(x) = Number (the refinement's base) -> this check elides
+  y + 1
+end
+
+check "ann-elision: refinement base type propagates; refinement check still fires":
+  el-use-refined(5) is 6
+  el-use-refined(500) raises ""   # el-is-small fails -> the param refinement raises
+end
+
+# Regression for following type ALIASES to a refinement base (type-flow.ts):
+# `type T = Number%(p)` resolves to base Number for ub (so a downstream `:: Number`
+# elides), while the alias's own refinement check is still never elided. This is
+# the matrices.arr `NonZeroNat`/`Nat` pattern.
+
+type ElNZ = Number%(el-is-small)
+
+fun el-use-alias(x :: ElNZ) -> Number:
+  y :: Number = x   # ub(x) = Number via the alias's base -> this check elides
+  y + 1
+end
+
+check "ann-elision: aliased refinement base propagates; alias check still fires":
+  el-use-alias(5) is 6
+  el-use-alias(500) raises ""   # el-is-small fails through the alias -> raises
+end

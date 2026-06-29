@@ -29,9 +29,11 @@
        user code that may raise even when `v` is of `T`'s brand, so eliding it
        changes behavior; and a flat-restriction additionally excludes
        alias-to-refinement (those resolve non-flat) and keeps the sync-vs-async
-       flatness verdict provably unchanged. `resolveAnnType` returns `undefined`
+       flatness verdict provably unchanged. `elidableAnnType` returns `undefined`
        for predicate/arrow/record/tuple anns, and we additionally gate on
-       `annFlatness` being flat.
+       `annFlatness` being flat. (A refinement's BASE type still feeds the ub
+       lattice via `annUpperBound` -- a value that passed `Number%(p)` is a
+       Number for downstream purposes -- it just can't elide its own check.)
 
   All of the ub facts ultimately rest on the runtime annotation checks actually
   running (param checks seed types; declared return types are trusted because
@@ -123,6 +125,11 @@ interface Ctx {
   // type. Imported types aren't here (their data-exprs aren't in this ANF) ->
   // those fields stay Any.
   typeVariants: Map<string, Map<string, A.Ann[]>>;
+  // in-module type aliases: `type X = ann` binding key -> ann. Followed when
+  // resolving an annotation so e.g. `type NonZeroNat = Number%(p)` resolves to
+  // its base Number for the upper bound (while still never eliding its own
+  // refinement check). Cross-module aliases aren't here (a follow-on).
+  typeAliases: Map<string, A.Ann>;
   // resolution inputs
   typeBindings: Map<string, C.TypeBind>;
   moduleBindings: Map<string, C.ModuleBind>;
@@ -156,17 +163,28 @@ function resolveTypeId(ann: A.Ann, ctx: Ctx): string | undefined {
   return undefined;
 }
 
-// The AbsType an annotation GUARANTEES after its (passing) check, or undefined
-// if the annotation is not one whose check we can soundly elide on a `⊑` proof
-// (predicate/refinement, arrow, record, tuple, blank, any, type-var, or an
-// unresolvable name). a-app strips parametric args (the layout/brand is
-// invariant under instantiation); a-pred is intentionally rejected.
-function resolveAnnType(ann: A.Ann, ctx: Ctx): AbsType | undefined {
+// Resolve an annotation's head type. `unwrapPred` controls the one place the two
+// roles of this resolution diverge (see the two wrappers below): a-app always
+// strips parametric args (layout/brand is invariant under instantiation); a-pred
+// (a refinement `T%(p)`) is stripped to its base T only for the upper-bound role.
+function resolveHead(ann: A.Ann, ctx: Ctx, unwrapPred: boolean, seen?: Set<string>): AbsType | undefined {
   let cur: A.Ann = ann;
-  while (A.isAApp(cur)) { cur = cur.ann; }
+  while (A.isAApp(cur) || (unwrapPred && A.isAPred(cur))) { cur = cur.ann; }
   if (A.isAName(cur)) {
     const name = cur.id.toname();
     if (name === 'Number' || name === 'String' || name === 'Boolean') { return prim(name); }
+    // Follow an in-module type alias to its definition (e.g.
+    // `type NonZeroNat = Number%(p)` -> resolve `Number%(p)`). The unwrapPred
+    // flag carries through, so the alias is a refinement for elidability (stays
+    // unresolved -> not elided) but its base feeds the upper bound.
+    const key = cur.id.key();
+    const alias = ctx.typeAliases.get(key);
+    if (alias !== undefined) {
+      const s = seen ?? new Set<string>();
+      if (s.has(key)) { return undefined; }   // alias cycle -> give up
+      s.add(key);
+      return resolveHead(alias, ctx, unwrapPred, s);
+    }
     const id = resolveTypeId(cur, ctx);
     return id === undefined ? undefined : { k: 'data', id };
   }
@@ -175,6 +193,23 @@ function resolveAnnType(ann: A.Ann, ctx: Ctx): AbsType | undefined {
     return id === undefined ? undefined : { k: 'data', id };
   }
   return undefined;
+}
+
+// The AbsType to use when DECIDING whether the annotation's own runtime check is
+// redundant. A refinement `T%(p)` is rejected (undefined): even if the value is
+// `⊑ T`, the predicate `p` is user code that can still raise, so its check is
+// never redundant. arrow/record/tuple/blank/any/type-var/unresolvable -> undefined.
+function elidableAnnType(ann: A.Ann, ctx: Ctx): AbsType | undefined {
+  return resolveHead(ann, ctx, false);
+}
+
+// The sound upper bound an annotation GUARANTEES about the value AFTER a passing
+// check, for seeding/propagating ub downstream. Here a refinement contributes its
+// BASE type -- a value that passed `Number%(is-nonzero)` is still a Number -- so
+// `T%(p)` -> T. This never elides a check on its own; it only makes downstream
+// uses of the value more precise (e.g. enabling a later `:: Number` to elide).
+function annUpperBound(ann: A.Ann, ctx: Ctx): AbsType | undefined {
+  return resolveHead(ann, ctx, true);
 }
 
 // Canonical type id for a data-expr definition. Resolve its `namet` through the
@@ -255,7 +290,7 @@ function absOfLettable(e: N.ALettable, ctx: Ctx): AbsType {
     // so it is never itself redundant. Functions are analyzed independently; we
     // do not infer across calls (only declared return signatures are trusted).
     for (const arg of e.args) {
-      const annT = resolveAnnType(arg.ann, ctx);
+      const annT = annUpperBound(arg.ann, ctx);
       ctx.env.set(arg.id.key(), annT ?? ANY);
     }
     analyzeExpr(e.body, ctx);
@@ -294,7 +329,7 @@ function absOfLettable(e: N.ALettable, ctx: Ctx): AbsType {
   if (N.isACases(e)) {
     // Refine each matched branch's field binds to the variant's declared field
     // types, when the cases type resolves to an in-module data definition.
-    const dataT = resolveAnnType(e.typ, ctx);
+    const dataT = annUpperBound(e.typ, ctx);
     const vmap = (dataT !== undefined && dataT.k === 'data')
       ? ctx.typeVariants.get(dataT.id) : undefined;
     let acc: AbsType = BOT;
@@ -303,7 +338,7 @@ function absOfLettable(e: N.ALettable, ctx: Ctx): AbsType {
         const fieldAnns = vmap.get(b.name);
         if (fieldAnns !== undefined && fieldAnns.length === b.args.length) {
           for (let i = 0; i < b.args.length; i++) {
-            ctx.env.set(b.args[i].bind.id.key(), resolveAnnType(fieldAnns[i], ctx) ?? ANY);
+            ctx.env.set(b.args[i].bind.id.key(), annUpperBound(fieldAnns[i], ctx) ?? ANY);
           }
         }
       }
@@ -338,7 +373,7 @@ function analyzeExpr(exprIn: N.AExpr, ctx: Ctx): AbsType {
       case 'a-arr-let': {
         // Array-destructuring bind: element types aren't tracked, so the bound
         // value is Any and its check is never elided (annT !⊒ Any).
-        const annT = resolveAnnType(expr.bind.ann, ctx);
+        const annT = annUpperBound(expr.bind.ann, ctx);
         absOfLettable(expr.e, ctx);          // walk for effects; value discarded
         ctx.env.set(expr.bind.id.key(), annT ?? ANY);
         expr = expr.body;
@@ -374,15 +409,17 @@ function bindLet(bind: N.ABind, e: N.ALettable, ctx: Ctx): void {
     ctx.env.set(key, rhs);
     return;
   }
-  const annT = resolveAnnType(ann, ctx);
-  if (annT !== undefined && subtype(rhs, annT)
+  const elideT = elidableAnnType(ann, ctx);   // refinement -> undefined (never elide)
+  const ubT = annUpperBound(ann, ctx);         // refinement -> base type (for ub)
+  if (elideT !== undefined && subtype(rhs, elideT)
       && flatAnn(ann, ctx.flatnessEnv, ctx.moduleBindings, ctx.compileEnv)) {
     // (a) ub ⊑ T proven and (b) T is a flat, non-refinement ann -> dead check.
     ctx.redundant.add(key);
     ctx.env.set(key, rhs);                 // keep the (possibly tighter) rhs
-  } else if (annT !== undefined) {
-    // Check stays; post-check the value is of T (keep rhs if already tighter).
-    ctx.env.set(key, subtype(rhs, annT) ? rhs : annT);
+  } else if (ubT !== undefined) {
+    // Check stays; post-check the value is at least ubT (a refinement's base),
+    // and still holds e's value -- keep rhs if it is already tighter.
+    ctx.env.set(key, subtype(rhs, ubT) ? rhs : ubT);
   } else {
     ctx.env.set(key, rhs);                 // unresolvable ann: x still holds e
   }
@@ -413,6 +450,9 @@ function collectDefs(exprIn: N.AExpr, ctx: Ctx, dataObjs: Map<string, DataObjInf
   for (;;) {
     switch (expr.$name) {
       case 'a-type-let':
+        // Record `type X = ann` aliases so resolveHead can follow them. The
+        // a-type-let wraps its body, so the alias is recorded before any use.
+        if (N.isATypeBind(expr.bind)) { ctx.typeAliases.set(expr.bind.name.key(), expr.bind.ann); }
         expr = expr.body;
         continue;
       case 'a-let': {
@@ -460,7 +500,7 @@ function collectBind(key: string, e: N.ALettable, ctx: Ctx, dataObjs: Map<string
       if (N.isAVariant(v)) { vmap.set(v.name, v.members.map((m) => m.bind.ann)); }
     }
   } else if (N.isALam(e) || N.isAMethod(e)) {
-    const r = resolveAnnType(e.ret, ctx);
+    const r = annUpperBound(e.ret, ctx);
     if (r !== undefined) { ctx.funRet.set(key, r); }
   } else if (N.isADot(e)) {
     // key = DataObj.variantName  (constructor or singleton extraction)
@@ -529,6 +569,7 @@ export function makeProgTypeFlowEnv(
     funRet: new Map(),
     valueSources: new Map(),
     typeVariants: new Map(),
+    typeAliases: new Map(),
     typeBindings: pe.typeBindings,
     moduleBindings: pe.moduleBindings,
     bindings: pe.bindings,
