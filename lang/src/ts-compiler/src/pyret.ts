@@ -88,6 +88,8 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Emit a `// inlined: <callee>` comment at each inliner splice site (promise backend; for inspecting the optimizer)')],
     ['no-unbox-vars',
       C.flag(C.once, 'Disable function-local var box elimination (promise backend; keep all vars boxed, for A/B measurement)')],
+    ['no-direct-cases',
+      C.flag(C.once, 'Disable static field access for cases (promise backend; use the reflective $fieldNames/$mut_fields_mask chain, for A/B measurement)')],
     ['collect-times',
       C.flag(C.once, 'Collect timing information about compilation')],
     ['type-check',
@@ -134,6 +136,7 @@ export function main(args: string[]): number {
     const licm = !r.has('no-licm');
     const inlineComments = r.has('inline-comments');
     const unboxVars = !r.has('no-unbox-vars');
+    const directCases = !r.has('no-direct-cases');
     const compiledDir = r.get('compiled-dir');
     const standaloneFile = r.get('standalone-file');
     const addProfiling = r.has('profile');
@@ -213,6 +216,7 @@ export function main(args: string[]): number {
           licm: licm,
           inlineComments: inlineComments,
           unboxVars: unboxVars,
+          directCases: directCases,
           stackBackend: stackBackend,
           compiledCache: compiledDir,
           compiledReadOnly: r.has('compiled-read-only-dir') ? r.get('compiled-read-only-dir') : [],
@@ -252,6 +256,7 @@ export function main(args: string[]): number {
         licm: licm,
         inlineComments: inlineComments,
         unboxVars: unboxVars,
+        directCases: directCases,
         stackBackend: stackBackend,
         compileModule: false,
         displayProgress: displayProgress
