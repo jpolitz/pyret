@@ -60,33 +60,59 @@ forward abstract interpretation over the ANF computes a sound over-approximation
 each value's runtime type (its "upper bound"), and the promise backend skips the
 `_checkAnn` brand check for any `:: T` bind whose value is already provably `⊑ T`
 (and where `T` is a flat, non-refinement annotation, so the sync-vs-async flatness
-verdict is provably unchanged and refinement predicates are never elided). Promise
-backend only; cont stays frozen (byte-parity 16/16). `-no-ann-elision` disables it.
+verdict is provably unchanged and refinement predicates are never elided). Transfer
+rules: param anns seed types; literals/numeric-ops give Number; in-module data
+constructors and `cases`-branch field binds give their declared types; declared
+return types are trusted (the callee re-checks them); throws (`throwNoCasesMatched`,
+`raise`) are bottom; reassigned `var`s widen to Any. Promise backend only; cont
+stays frozen (byte-parity 16/16). `-no-ann-elision` disables it; the analysis is
+threaded into the async compiler like `numericFlatApps` and never rewrites the ANF.
 
-The nine real-workload benches above are essentially **un-annotated** compute loops,
-so they carry no `_checkAnn` and this pass is a no-op on them (it cannot regress the
-ship test). The win is in **annotation-heavy** code — which is most library code and
-typed user programs. Across the 30 builtin/trove modules the pass elides **304 of
-1195** runtime annotation checks (**25.4%**); per-module highs are lists, sets,
-tables, option (driven by trusting flat data-type/`Number` param, cases-scrutinee,
-and declared-return-type checks, plus in-module constructor results).
+**Where the win is — and isn't.** The nine real-workload benches above are
+essentially **un-annotated** compute loops, so they carry ~no `_checkAnn`; the pass
+is a no-op on them and **cannot regress the ship test**. Confirmed two ways: (1) all
+nine stay bit-exact cont≡promise and at their prior ratios on a fresh rebuild; (2) a
+same-binary A/B (`-no-ann-elision`, N=5) on the four benches nearest/over the cont
+line shows ann-elision is neutral-to-faster — **on/off = orbital-compute 0.974,
+orbital-render 0.986, boids-compute 0.962, boids-raster 1.007** (turning the opt off
+never recovers time). The win is in **annotation-dense** code — most library code and
+typed user programs. Across the 30 builtin/trove modules the pass elides **316 of
+1193** runtime checks (**26.5%**); in the bundled execution-suite jarr it removes
+**~1984 of 9947** (**~20%**).
 
 `bench-anns` is a new annotation-heavy microbench (fully-typed recursive `cases`
 over a `Tree`, every helper carrying param + return anns) added to *show* the pass —
-the existing benches can't. N=7 median LOOP-ms, `node22`, isolated, output bit-exact
-across all three:
+the existing benches can't. N=7 median LOOP-ms, `node22`, isolated, output bit-exact:
 
 | variant | LOOP-ms | ratio |
 |---|---|---|
-| cont (frozen reference)        | 3524 | 1.00 |
-| promise, `-no-ann-elision`     | 3336 | 0.95 |
-| promise, ann-elision (default) | 2610 | **0.74** |
+| cont (frozen reference)        | 3655 | 1.00 |
+| promise, `-no-ann-elision`     | 3503 | 0.96 |
+| promise, ann-elision (default) | 2537 | **0.69** |
 
-Ann-elision alone: **2610 / 3336 = 0.78** (22% faster, well outside the ±5% noise
-floor). vs frozen cont: **0.74**. Full promise suite (`main2`, optimizer on):
-**all 13301 tests passed, 0 errored**; cont byte-parity 16/16. Soundness corners
-(refinement never elided; reassigned-function-var return type not trusted;
-scrutinee-mismatch still raises) are regression-tested in `tests/pyret/tests/test-cases.arr`.
+Ann-elision alone: **2537 / 3503 = 0.72** (28% faster, well outside the ±5% noise
+floor); vs frozen cont **0.69**. (The cases-branch field refinement — matched
+variant fields take their declared types, diverging branches are bottom — lifted
+this from 0.78 by letting return checks on `cases`-returning typed functions elide.)
+
+**Execution-suite split + measurement.** Re-derived by measurement that the
+nested-compile tests are ~46% of `main2`'s wall time (full `main2` 759s →
+`main2-exec`, with the 10 full-pipeline tests carved into `main2-compile`, 411s /
+12886 tests green), and they host the documented test-repl stacktrace-pin flakes.
+`main2-exec` is now the clean A/B oracle (make targets `ts-promise-exec-test` /
+`ts-promise-compile-test`). On it, ann-elision is **time-neutral** despite eliding
+~1984 checks — clean interleaved N=2: ON {411, 406}s vs OFF {413, 410, 412, 398}s,
+fully overlapping — because the suite is dominated by image/charts/tables float-math
+rendering, where brand checks aren't on the hot path. The honest read: lots of
+checks removed, but the suite spends its time elsewhere; the per-op win shows only
+where checks are a real fraction of the work (the microbenches).
+
+Validation: cont byte-parity **16/16**; full exec suite **all 12886 tests passed, 0
+errored**; soundness corners regression-tested in `tests/pyret/tests/test-cases.arr`
+(28 checks, green in cont / promise-on / promise-off): refinement predicates never
+elided, reassigned-function-var return type not trusted, scrutinee-type mismatch
+still raises, and a `cases` whose branch field types disagree (Number vs String)
+joins to Any so its return check is kept.
 
 ## Results (2026-06-28 — LICM revived as cross-iteration field-read caching)
 
