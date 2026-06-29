@@ -28,7 +28,12 @@ class DesugarVisitor extends DefaultMapVisitor {
     const valExp = node.val.visit(this);
     const valId = new A.SId(l, name);
     return new A.SLetExpr(l, [new A.SLetBind(l, new A.SBind(l, false, name, typCompiled), valExp)],
-      new A.SCasesElse(l, A.aBlank, valId, node.branches.map((b) => b.visit(this)),
+      // Keep `typCompiled` on the cases node (was A.aBlank) so the promise backend
+      // can resolve the scrutinee's variant metadata for direct field access. The
+      // cont backend ignores cases `.typ`, so this is byte-parity-neutral. The
+      // scrutinee's runtime _checkAnn (the s-bind above) still guarantees the value
+      // is of this type, which is what makes the static field access sound.
+      new A.SCasesElse(l, typCompiled, valId, node.branches.map((b) => b.visit(this)),
         node._else.visit(this), true), false);
   }
   sCases(node: A.SCases): A.Expr {
@@ -38,7 +43,9 @@ class DesugarVisitor extends DefaultMapVisitor {
     const valExp = node.val.visit(this);
     const valId = new A.SId(l, name);
     return new A.SLetExpr(l, [new A.SLetBind(l, new A.SBind(l, false, name, typCompiled), valExp)],
-      new A.SCasesElse(l, A.aBlank, valId, node.branches.map((b) => b.visit(this)),
+      // See sCasesElse: keep `typCompiled` (was A.aBlank) for promise-backend direct
+      // field access; cont ignores it, scrutinee _checkAnn guarantees soundness.
+      new A.SCasesElse(l, typCompiled, valId, node.branches.map((b) => b.visit(this)),
         new A.SBlock(l, [noCasesExn(l, valId)]), true), false);
   }
   sCheck(node: A.SCheck): A.Expr {

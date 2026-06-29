@@ -422,6 +422,42 @@ ts-promise-pyret-test: warm-promise-cache tests/pyret/main2-ts-promise.jarr
 	@echo "=== TS-promise suite (expect: Errored 0; ~8 test-repl stacktrace-pin failures) ==="
 	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-ts-promise.jarr | tee /tmp/ts-promise-suite-result.txt; grep -q "Ended in Error: 0" /tmp/ts-promise-suite-result.txt && echo "TS-PROMISE SUITE OK (0 errors)" || { echo "TS-PROMISE SUITE: errors present"; exit 1; }
 
+# Execution-only and compile-pipeline splits of the promise suite (see
+# tests/pyret/main2-exec.arr / main2-compile.arr). main2-exec is the fast, clean
+# A/B oracle for runtime optimizations (no nested-compile noise, no flaky repl
+# stacktrace pins); main2-compile holds the carved-out full-pipeline tests.
+tests/pyret/main2-exec-ts-promise.jarr: ts-compiler tests/pyret/main2-exec.arr $(TEST_FILES)
+	$(TS_PYRET) \
+		  --builtin-js-dir src/js/trove/ \
+			--builtin-arr-dir src/arr/trove/ \
+			--require-config src/scripts/standalone-configA-async.json \
+			--compiled-dir tests/ts-compiled-promise/ \
+			--stack-backend promise \
+		--outfile tests/pyret/main2-exec-ts-promise.jarr \
+		--build-runnable tests/pyret/main2-exec.arr \
+		-check-all
+
+.PHONY : ts-promise-exec-test
+ts-promise-exec-test: warm-promise-cache tests/pyret/main2-exec-ts-promise.jarr
+	@echo "=== TS-promise EXECUTION suite (no nested-compile tests) ==="
+	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-exec-ts-promise.jarr | tee /tmp/ts-promise-exec-result.txt; grep -q "Ended in Error: 0" /tmp/ts-promise-exec-result.txt && echo "TS-PROMISE EXEC SUITE OK (0 errors)" || { echo "TS-PROMISE EXEC SUITE: errors present"; exit 1; }
+
+tests/pyret/main2-compile-ts-promise.jarr: ts-compiler tests/pyret/main2-compile.arr $(TEST_FILES)
+	$(TS_PYRET) \
+		  --builtin-js-dir src/js/trove/ \
+			--builtin-arr-dir src/arr/trove/ \
+			--require-config src/scripts/standalone-configA-async.json \
+			--compiled-dir tests/ts-compiled-promise/ \
+			--stack-backend promise \
+		--outfile tests/pyret/main2-compile-ts-promise.jarr \
+		--build-runnable tests/pyret/main2-compile.arr \
+		-check-all
+
+.PHONY : ts-promise-compile-test
+ts-promise-compile-test: warm-promise-cache tests/pyret/main2-compile-ts-promise.jarr
+	@echo "=== TS-promise COMPILE-pipeline suite (expect the ~8 test-repl stacktrace-pin failures) ==="
+	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-compile-ts-promise.jarr | tee /tmp/ts-promise-compile-result.txt; grep -q "Ended in Error: 0" /tmp/ts-promise-compile-result.txt && echo "TS-PROMISE COMPILE SUITE OK (0 errors)" || { echo "TS-PROMISE COMPILE SUITE: errors present"; exit 1; }
+
 .PHONY : ts-promise-test
 ts-promise-test: ts-parity-promise-test ts-promise-pyret-test
 

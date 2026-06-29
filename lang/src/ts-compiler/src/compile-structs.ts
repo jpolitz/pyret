@@ -1067,6 +1067,25 @@ export interface CompileOptions {
   // It's a codegen-repr choice in the async backend, not an ANF pass, so it's
   // independent of `optimize`.
   unboxVars: boolean;
+  // Direct (static) field access for `cases` (promise backend only). On by
+  // default; -no-direct-cases disables it for A/B measurement. When the cases
+  // scrutinee's type resolves to concrete variant metadata, the matched branch
+  // reads `cases_val.dict.<name>` with statically-known field names / mutability
+  // mask instead of the reflective `$constructor.$fieldNames[i]` + dynamic
+  // `dict[name]` + `$mut_fields_mask[i]` chain (and drops `derefField` entirely
+  // for plain immutable, non-ref fields). The scrutinee's runtime _checkAnn (or
+  // the static type proof under -type-check) guarantees the value is of the type,
+  // making the static names sound. It's a codegen choice in the async backend,
+  // independent of `optimize`.
+  directCases: boolean;
+  // Redundant annotation-check elimination driven by the upper-bound type-flow
+  // analysis (type-flow.ts; promise backend only). On by default; -no-ann-elision
+  // disables it for A/B measurement. When the analysis proves an `:: T` bind's
+  // value is already `⊑ T` (and T is a flat, non-refinement ann), the runtime
+  // `_checkAnn` brand check is skipped. Sound only when runtime annotations are
+  // intact (the ub facts rest on the checks that DO run), so it self-disables
+  // unless runtimeAnnotations && userAnnotations. Independent of `optimize`.
+  annElision: boolean;
   stackBackend: StackBackend;
   inlineCaseBodyLimit: number;
   moduleEval: boolean;
@@ -1111,6 +1130,8 @@ export const defaultCompileOptions: CompileOptions = {
   licm: true,
   inlineComments: false,
   unboxVars: true,
+  directCases: true,
+  annElision: true,
   stackBackend: compiledStackBackend,
   inlineCaseBodyLimit: 5,
   moduleEval: true,
