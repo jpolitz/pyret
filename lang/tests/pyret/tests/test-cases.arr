@@ -59,3 +59,63 @@ check "direct cases: scrutinee not of the cases type raises the annotation error
   cases(List) 5:     | empty => 0 | link(f, r) => f end raises "List"
   cases(Option) "x": | none => 0 | some(v) => v end raises "Option"
 end
+
+# Regression checks for the promise backend's redundant annotation-check
+# elimination (the -no-ann-elision optimization, type-flow.ts). These must
+# behave identically with the optimization on or off and in both backends -- the
+# cont backend never elides, so running this file in both pins the two paths.
+# See the upper-bound type-flow work on branch type-flow.
+
+data ElBox: | elbox(v :: Number) end
+
+fun el-pos(n :: Number) -> Boolean: n > 0 end
+type ElPos = Number%(el-pos)
+
+fun el-id-tree(t :: ElBox) -> ElBox:
+  # cases(ElBox) re-checks the scrutinee `:: ElBox`; with t already `:: ElBox`
+  # that re-check is elided, but the result is unchanged.
+  cases(ElBox) t: | elbox(v) => elbox(v) end
+end
+
+fun el-mk(n :: Number) -> ElBox: elbox(n) end
+
+check "ann-elision: elided scrutinee/return checks preserve behavior":
+  el-id-tree(elbox(5)) is elbox(5)
+  el-mk(7) is elbox(7)
+  el-mk(7) satisfies is-elbox
+  # scrutinee genuinely not of the type must still raise even though the
+  # desugared scrutinee re-check is a candidate for elision
+  el-id-tree(5) raises "ElBox"
+end
+
+check "ann-elision: a refinement check is NEVER elided (flat-restriction)":
+  # `y :: ElPos = x` with x already `:: Number` must still RUN el-pos and raise
+  # on a non-positive value -- the value being of Number's brand does not make
+  # the refinement redundant. If elision wrongly fired, f(-3) would return -3.
+  fun f(x :: Number) -> Number:
+    y :: ElPos = x
+    y
+  end
+  f(5) is 5
+  f(-3) raises ""
+end
+
+check "ann-elision: a var of changing type is not given a stale type":
+  var vv = 5
+  vv := "now a string"
+  vv is "now a string"
+end
+
+check "ann-elision: reassigned function var keeps its result check (no stale return type)":
+  # g's first value returns a String; binding its result `:: Number` must RAISE.
+  # If the flow-insensitive return-type tag were trusted across the reassignment,
+  # the check would be wrongly elided and the String would slip through.
+  var g = lam(x :: Number) -> String: num-to-string(x) end
+  fun use-g() -> Number:
+    r :: Number = g(5)
+    r
+  end
+  use-g() raises "Number"
+  g := lam(x :: Number) -> Number: x end
+  use-g() is 5
+end

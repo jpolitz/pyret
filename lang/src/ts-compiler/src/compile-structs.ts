@@ -1078,6 +1078,14 @@ export interface CompileOptions {
   // making the static names sound. It's a codegen choice in the async backend,
   // independent of `optimize`.
   directCases: boolean;
+  // Redundant annotation-check elimination driven by the upper-bound type-flow
+  // analysis (type-flow.ts; promise backend only). On by default; -no-ann-elision
+  // disables it for A/B measurement. When the analysis proves an `:: T` bind's
+  // value is already `⊑ T` (and T is a flat, non-refinement ann), the runtime
+  // `_checkAnn` brand check is skipped. Sound only when runtime annotations are
+  // intact (the ub facts rest on the checks that DO run), so it self-disables
+  // unless runtimeAnnotations && userAnnotations. Independent of `optimize`.
+  annElision: boolean;
   stackBackend: StackBackend;
   inlineCaseBodyLimit: number;
   moduleEval: boolean;
@@ -1123,6 +1131,7 @@ export const defaultCompileOptions: CompileOptions = {
   inlineComments: false,
   unboxVars: true,
   directCases: true,
+  annElision: true,
   stackBackend: compiledStackBackend,
   inlineCaseBodyLimit: 5,
   moduleEval: true,

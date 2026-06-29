@@ -53,6 +53,41 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-06-29 — upper-bound type-flow: redundant annotation-check elimination)
+
+New optimization on branch `type-flow` (`lang/src/ts-compiler/src/type-flow.ts`): a
+forward abstract interpretation over the ANF computes a sound over-approximation of
+each value's runtime type (its "upper bound"), and the promise backend skips the
+`_checkAnn` brand check for any `:: T` bind whose value is already provably `⊑ T`
+(and where `T` is a flat, non-refinement annotation, so the sync-vs-async flatness
+verdict is provably unchanged and refinement predicates are never elided). Promise
+backend only; cont stays frozen (byte-parity 16/16). `-no-ann-elision` disables it.
+
+The nine real-workload benches above are essentially **un-annotated** compute loops,
+so they carry no `_checkAnn` and this pass is a no-op on them (it cannot regress the
+ship test). The win is in **annotation-heavy** code — which is most library code and
+typed user programs. Across the 30 builtin/trove modules the pass elides **304 of
+1195** runtime annotation checks (**25.4%**); per-module highs are lists, sets,
+tables, option (driven by trusting flat data-type/`Number` param, cases-scrutinee,
+and declared-return-type checks, plus in-module constructor results).
+
+`bench-anns` is a new annotation-heavy microbench (fully-typed recursive `cases`
+over a `Tree`, every helper carrying param + return anns) added to *show* the pass —
+the existing benches can't. N=7 median LOOP-ms, `node22`, isolated, output bit-exact
+across all three:
+
+| variant | LOOP-ms | ratio |
+|---|---|---|
+| cont (frozen reference)        | 3524 | 1.00 |
+| promise, `-no-ann-elision`     | 3336 | 0.95 |
+| promise, ann-elision (default) | 2610 | **0.74** |
+
+Ann-elision alone: **2610 / 3336 = 0.78** (22% faster, well outside the ±5% noise
+floor). vs frozen cont: **0.74**. Full promise suite (`main2`, optimizer on):
+**all 13301 tests passed, 0 errored**; cont byte-parity 16/16. Soundness corners
+(refinement never elided; reassigned-function-var return type not trusted;
+scrutinee-mismatch still raises) are regression-tested in `tests/pyret/tests/test-cases.arr`.
+
 ## Results (2026-06-28 — LICM revived as cross-iteration field-read caching)
 
 Same in-process loop timing as below. N=11 median LOOP-seconds, `node22 --max-old-space-size=6144`,

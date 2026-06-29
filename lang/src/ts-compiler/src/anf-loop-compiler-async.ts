@@ -885,7 +885,10 @@ export function annCheckStmts(compiler: CompilerVisitor, b: N.ABind): CList<J.JS
   // annotation's _checkAnn is synchronous. This gate must agree with the flatness
   // analysis (which folds ann-flatness into the enclosing function's flatness),
   // or we get `await` in a sync function (JS syntax error) or an unawaited Promise.
-  if (A.isABlank(b.ann) || A.isAAny(b.ann)) {
+  if (A.isABlank(b.ann) || A.isAAny(b.ann) || compiler.redundantAnnChecks.has(b.id.key())) {
+    // Blank/any, or the type-flow analysis proved the value is already `⊑ T`:
+    // no check to emit. The value is already bound to b.id (the elided check
+    // would only have re-bound the identical, brand-verified value).
     return clEmpty;
   } else if (A.isATuple(b.ann) && (b.ann as A.ATuple).fields.every((a) => A.isABlank(a) || A.isAAny(a))) {
     // A tuple-destructuring bind with no field annotations: just check the tuple
@@ -1365,8 +1368,9 @@ export function compileAnns(
   let curTarget = entryLabel;
   let newCases: CList<J.JCaseT> = clEmpty;
   for (const b of binds) {
-    if (A.isABlank(b.ann) || A.isAAny(b.ann)) {
-      // acc unchanged
+    if (A.isABlank(b.ann) || A.isAAny(b.ann) || visitor.redundantAnnChecks.has(b.id.key())) {
+      // acc unchanged: blank/any, or the type-flow analysis proved `ub ⊑ T`, so
+      // no _checkAnn case is added and curTarget (the entry label) is preserved.
     } else if (A.isATuple(b.ann) && b.ann.fields.every((a) => A.isABlank(a) || A.isAAny(a))) {
       const newLabel = visitor.makeLabel();
       const newCase =
@@ -1431,7 +1435,10 @@ export function compileAnnotatedLet(
     return raise('Unknown ' + (b as any).value.label() + ' in compile-annotated-let');
   }
   const bind = b.value;
-  if (A.isABlank(bind.ann) || A.isAAny(bind.ann)) {
+  if (A.isABlank(bind.ann) || A.isAAny(bind.ann) || visitor.redundantAnnChecks.has(bind.id.key())) {
+    // Blank/any, or the type-flow analysis proved the value is already `⊑ T`:
+    // bind the value and continue inline with no _checkAnn (and no extra
+    // state-machine label). This is the same shape as a blank annotation.
     return cBlock(
       jBlock(
         clAppend(
@@ -2302,6 +2309,12 @@ export class CompilerVisitor {
   // Operator a-apps proven flat by the numeric pass (flatness.ts); emitted with
   // no conditional await. See compileAppAsync.
   numericFlatApps!: Set<N.AApp>;
+  // Bind keys whose `:: T` annotation check is provably redundant (the value is
+  // already known to be `⊑ T`), per the upper-bound type-flow analysis
+  // (type-flow.ts). The async backend skips emitting `_checkAnn` for these,
+  // treating them like a blank annotation. Empty unless ann-elision is enabled.
+  // See annCheckStmts / compileAnns / compileAnnotatedLet.
+  redundantAnnChecks: Set<string> = new Set();
   bindings!: Map<string, CS.ValueBind>;
   typeBindings!: Map<string, CS.TypeBind>;
   moduleBindings!: Map<string, CS.ModuleBind>;
@@ -3386,7 +3399,8 @@ export class SplittingCompiler extends CompilerVisitor {
     flatnessEnvs: FL.FlatnessEnv,
     provides: CS.Provides,
     postEnv: CS.ComputedEnvironment,
-    options: SplitCompileOptions
+    options: SplitCompileOptions,
+    redundantAnnChecks: Set<string> = new Set()
   ) {
     super();
     this.uri = provides.fromUri;
@@ -3395,6 +3409,7 @@ export class SplittingCompiler extends CompilerVisitor {
     this.flatnessEnv = flatnessEnvs[0];
     this.typeFlatnessEnv = flatnessEnvs[1];
     this.numericFlatApps = flatnessEnvs[2];
+    this.redundantAnnChecks = redundantAnnChecks;
     // Pyret accesses these fields directly; a computed-none here would be a
     // field-not-found error there too.
     this.bindings = (postEnv as CS.ComputedEnv).bindings;
@@ -3427,7 +3442,8 @@ export function splittingCompiler(
   flatnessEnvs: FL.FlatnessEnv,
   provides: CS.Provides,
   postEnv: CS.ComputedEnvironment,
-  options: SplitCompileOptions
+  options: SplitCompileOptions,
+  redundantAnnChecks: Set<string> = new Set()
 ): SplittingCompiler {
-  return new SplittingCompiler(env, addPhase, flatnessEnvs, provides, postEnv, options);
+  return new SplittingCompiler(env, addPhase, flatnessEnvs, provides, postEnv, options, redundantAnnChecks);
 }
