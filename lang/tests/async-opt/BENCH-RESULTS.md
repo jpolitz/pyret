@@ -113,6 +113,19 @@ ops); the residual async tax just barely tips it. Lesson: typing `do_avg` flat r
 wrapper, it was the combinators' per-element `await checkPause()`, which the CPS hit
 directly.
 
+**Whole-suite wall-clock (the honest in-the-large number).** `main2-exec` (~12899
+tests), built both backends with the TS compiler, run under `node22`, 2 runs each,
+**both all-pass**: cont **~227 s** (224/230), promise **~267 s** (268/267) → **p/c ≈
+1.18**. So promise *wins* the curated compute benches (0.76–0.89) but is ~18% slower
+across the full suite. That's not a regression in this work — it's the structural
+per-call `await` floor on heterogeneous, call-heavy check/test code, where there's no
+arithmetic to weaken and no list traversal to CPS (the promise-opt-on-vs-off A/B is
+within noise, ~556 vs ~564 s, confirming the levers don't bite here). The ~15–20%
+broad-suite floor is the per-call async cost itself, which only a sync-until-suspend
+(≈ cont) execution model would remove — out of scope for the promise backend. Net: the
+optimizations help exactly the compute/traversal-heavy programs that actually run slow
+for users; the suite overhead is a CI cost, not a student-facing one.
+
 ## Results (2026-06-30 — typed operator weakening + structural flatness re-architecture)
 
 Replaced the numeric-flatness *seam* in `flatness.ts` with a cleanly-separated design
