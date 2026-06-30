@@ -49,6 +49,7 @@ import * as N from './ast-anf';
 import * as C from './compile-structs';
 import * as T from './type-structs';
 import * as FL from './flatness';
+import { InternalCompilerError } from './shared';
 
 // ---------------------------------------------------------------------------
 // Lattice
@@ -872,6 +873,66 @@ const WEAKEN_UNARY_OPS: Map<string, string> = new Map([
   ['raise', 'raise_flat'],
 ]);
 
+// Both ends of every weakening entry are hand-written names that must line up
+// with global.js, and a mismatch on EITHER end fails silently:
+//   - a typo'd SOURCE (the polymorphic LHS we match on) simply never matches, so
+//     that rewrite quietly stops firing -- a performance regression with no error
+//     and nothing to grep for;
+//   - a missing / mistyped / non-flat TARGET (the monomorphic RHS) makes the
+//     "weakened" call resolve non-flat (or fail name resolution), defeating the
+//     optimization (or worse) just as quietly.
+// The target is also a multi-file surface: its name + arrow type + `flatness: 0`
+// live in global.js, it is registered in compile-structs' runtimeProvides, and
+// implemented in runtime.js / runtime-async.js.
+//
+// This tripwire pins that contract: every SOURCE must resolve as a global (it
+// need not be flat -- sources are exactly the suspending dispatchers we are
+// specializing away), and every TARGET must resolve as a `VFun` with flatness 0.
+// It runs once per process (the global env is fixed -- global.js) and, crucially,
+// is invoked OUTSIDE `weakenOperators`' fail-safe try below, so a broken table
+// fails LOUDLY in any compile (hence any parity/exec test) rather than silently.
+let weakenTableChecked = false;
+function assertWeakenTableResolves(env: C.CompileEnvironment): void {
+  if (weakenTableChecked) { return; }
+  weakenTableChecked = true;
+  // Sources: just need to exist as globals (a typo here silently disables the
+  // rewrite). NUM_ARITH_OPS / the `_plus`-string rule reuse these same names.
+  const sources = new Set<string>([
+    ...WEAKEN_NUM_OPS.keys(),
+    ...WEAKEN_STR_OPS.keys(),
+    ...WEAKEN_TOSTRING_OPS.keys(),
+    ...WEAKEN_UNARY_OPS.keys(),
+  ]);
+  for (const s of sources) {
+    if (env.globalValue(s) === undefined) {
+      throw new InternalCompilerError(
+        `operator-weakening source '${s}' is not a global in global.js: the weakening `
+        + `table in type-flow.ts names an operator that doesn't exist (a typo here `
+        + `silently disables that rewrite).`);
+    }
+  }
+  // Targets: must resolve as flat (flatness 0) globals or the rewritten call is
+  // no better (or breaks).
+  const targets: string[] = [
+    ...WEAKEN_NUM_OPS.values(),
+    ...WEAKEN_STR_OPS.values(),
+    ...WEAKEN_UNARY_OPS.values(),
+    ...[...WEAKEN_TOSTRING_OPS.values()].flatMap((v) => [v.Number, v.String, v.Boolean]),
+  ];
+  for (const t of targets) {
+    const ve = env.globalValue(t);
+    if (ve === undefined || !C.isVFun(ve) || ve.flatness !== 0) {
+      const got = ve === undefined ? 'missing from the global env'
+        : !C.isVFun(ve) ? `a ${ve.$name}, not a function`
+        : `a function with flatness ${ve.flatness} (expected 0)`;
+      throw new InternalCompilerError(
+        `operator-weakening target '${t}' is ${got}: every WEAKEN_* target must be `
+        + `a flat (flatness 0) global declared in global.js. The weakening table in `
+        + `type-flow.ts and global.js have drifted out of sync.`);
+    }
+  }
+}
+
 // The prim type of a value's ub, or undefined if not a primitive.
 function primNameOf(v: N.AVal, ctx: Ctx): 'Number' | 'String' | 'Boolean' | undefined {
   const t = absOfVal(v, ctx);
@@ -924,6 +985,10 @@ export function weakenOperators(
   env: C.CompileEnvironment,
   moduleUri: string,
 ): N.AProg {
+  // Pin the weakening table <-> global.js contract before doing any work, so a
+  // typo'd source or drifted/non-flat target trips here (loudly) rather than
+  // inside the fail-safe try, where it would be swallowed into a silent no-op.
+  assertWeakenTableResolves(env);
   // flatnessEnv is unused when collectRedundant is false; pass an empty one.
   const dummyFlat: FL.FlatnessEnv = [new Map(), new Map(), new Set(), new Set()];
   const ctx = newCtx(postEnv, env, dummyFlat, moduleUri, false);
