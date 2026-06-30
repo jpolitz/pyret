@@ -425,12 +425,15 @@ $(TS_PROMISE_SUITE_JARRS): tests/pyret/%-ts-promise.jarr: tests/pyret/%.arr ts-c
 # ./compiled-promise; COLD, each recompiles builtins in-process with the slow async
 # compiler and the run appears to hang. So PRE-WARM ./compiled-promise first (same as
 # pyret-test-promise). Run from $(CURDIR) under node22 with NODE_PATH (chart tests pull
-# in vega = ESM). Gate on "Ended in Error: 0" + the expected ~8 test-repl failures
-# (documented async stack-trace-shape pins), NOT a zero-failure total.
+# in vega = ESM). Gate on the suite's exit code (mirrors pyret-test-promise /
+# all-pyret-test): the stack-trace-shape pins that used to fail are now cont-only
+# (test-repl.arr gates them on CS.is-cont), so the promise suite is fully green.
 .PHONY : ts-promise-pyret-test
 ts-promise-pyret-test: warm-promise-cache tests/pyret/main2-ts-promise.jarr
-	@echo "=== TS-promise suite (expect: Errored 0; ~8 test-repl stacktrace-pin failures) ==="
-	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-ts-promise.jarr | tee /tmp/ts-promise-suite-result.txt; grep -q "Ended in Error: 0" /tmp/ts-promise-suite-result.txt && echo "TS-PROMISE SUITE OK (0 errors)" || { echo "TS-PROMISE SUITE: errors present"; exit 1; }
+	@echo "=== TS-promise suite (expect: all tests pass) ==="
+	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-ts-promise.jarr | tee /tmp/ts-promise-suite-result.txt; \
+	code=$${PIPESTATUS[0]}; \
+	test $$code -eq 0 && echo "TS-PROMISE SUITE OK" || { echo "TS-PROMISE SUITE: failures (exit $$code)"; exit 1; }
 
 # Execution-only and compile-pipeline splits of the promise suite (see
 # tests/pyret/main2-exec.arr / main2-compile.arr). main2-exec is the fast, clean
@@ -439,13 +442,17 @@ ts-promise-pyret-test: warm-promise-cache tests/pyret/main2-ts-promise.jarr
 # (Both jarrs are built by the TS_PROMISE_SUITE_JARRS pattern rule above.)
 .PHONY : ts-promise-exec-test
 ts-promise-exec-test: warm-promise-cache tests/pyret/main2-exec-ts-promise.jarr
-	@echo "=== TS-promise EXECUTION suite (no nested-compile tests) ==="
-	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-exec-ts-promise.jarr | tee /tmp/ts-promise-exec-result.txt; grep -q "Ended in Error: 0" /tmp/ts-promise-exec-result.txt && echo "TS-PROMISE EXEC SUITE OK (0 errors)" || { echo "TS-PROMISE EXEC SUITE: errors present"; exit 1; }
+	@echo "=== TS-promise EXECUTION suite (no nested-compile tests; expect: all tests pass) ==="
+	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-exec-ts-promise.jarr | tee /tmp/ts-promise-exec-result.txt; \
+	code=$${PIPESTATUS[0]}; \
+	test $$code -eq 0 && echo "TS-PROMISE EXEC SUITE OK" || { echo "TS-PROMISE EXEC SUITE: failures (exit $$code)"; exit 1; }
 
 .PHONY : ts-promise-compile-test
 ts-promise-compile-test: warm-promise-cache tests/pyret/main2-compile-ts-promise.jarr
-	@echo "=== TS-promise COMPILE-pipeline suite (expect the ~8 test-repl stacktrace-pin failures) ==="
-	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-compile-ts-promise.jarr | tee /tmp/ts-promise-compile-result.txt; grep -q "Ended in Error: 0" /tmp/ts-promise-compile-result.txt && echo "TS-PROMISE COMPILE SUITE OK (0 errors)" || { echo "TS-PROMISE COMPILE SUITE: errors present"; exit 1; }
+	@echo "=== TS-promise COMPILE-pipeline suite (expect: all tests pass) ==="
+	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-compile-ts-promise.jarr | tee /tmp/ts-promise-compile-result.txt; \
+	code=$${PIPESTATUS[0]}; \
+	test $$code -eq 0 && echo "TS-PROMISE COMPILE SUITE OK" || { echo "TS-PROMISE COMPILE SUITE: failures (exit $$code)"; exit 1; }
 
 .PHONY : ts-promise-test
 ts-promise-test: ts-parity-promise-test ts-promise-pyret-test
