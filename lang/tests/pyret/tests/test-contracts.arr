@@ -69,6 +69,41 @@ check "should work for refinements":
   end
 end
 
+check "refinements across module boundaries":
+  # See ~/refinement-alias-enforcement-goal.md for the full story. The behavior here
+  # splits on WHO builds the _checkAnn:
+  #  - A refinement EMBEDDED in an exported function/data annotation is enforced across
+  #    modules: the _checkAnn is compiled INTO the defining module's body (it sees the
+  #    predicate same-module), so the importer just calls it. Sound by design.
+  #  - A refinement reached only through an exported TYPE ALIAS is currently NOT
+  #    enforced cross-module: name resolution collapses `FetchNum` to its base `Number`
+  #    in the provides, dropping the predicate, and the importer rebuilds a bare Number
+  #    check. (Same-module the alias IS enforced -- see the control below.)
+  # mod1's source is embedded via `import file(<source>)`, which the test harness's
+  # dfind compiles as a separate module (genuine provides boundary).
+  mod1 = "provide *\nprovide-types *\n"
+    + "is-odd = lam(n): num-modulo(n, 2) == 1 end\n"
+    + "type FetchNum = Number%(is-odd)\n"
+    + "fun must-odd(x :: Number%(is-odd)) -> Number: x end\n"
+  imp = lam(body :: String): "import file(" + torepr(mod1) + ") as M\n" + body end
+
+  # EMBEDDED refinement (function arg ann) -- enforced across the boundary.
+  run-str(imp("M.must-odd(6)")) is%(output) contract-error   # 6 even -> is-odd false
+  run-str(imp("M.must-odd(5)")) is%(output) success          # 5 odd  -> passes
+
+  # STANDALONE alias -- NOT enforced cross-module today (KNOWN LIMITATION). When
+  # ~/refinement-alias-enforcement-goal.md lands, the first of these flips to
+  # contract-error; update this test then (it is the executable spec of that change).
+  run-str(imp("include from M: type FetchNum end\nx :: FetchNum = 6\nx")) is%(output) success
+  run-str(imp("include from M: type FetchNum end\nx :: FetchNum = 5\nx")) is%(output) success
+
+  # Control: the SAME alias IS enforced when used in its own defining module, proving
+  # the gap is specifically the cross-module provides erasure, not the refinement itself.
+  run-str("is-odd = lam(n): num-modulo(n, 2) == 1 end\n"
+    + "type FetchNum = Number%(is-odd)\n"
+    + "x :: FetchNum = 6\nx") is%(output) contract-error
+end
+
 check "should work for records":
   contract-errors = [list:
     { p: "x :: { x :: Number } = { x : 'foo' }", f: [list: "x"] },
