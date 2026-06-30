@@ -62,6 +62,75 @@
           [else (sluggify* title-terms)]))
   `(title-1 ([level "1"] [id ,title-sluggified]) ,@title-1))
 
+; Walk a docmodule body, collecting, in document order, every ◊section
+; heading and every ◊function/◊method-doc/◊form/◊type-spec definition
+; (the latter are marked with data-toc-fname/data-toc-label attributes
+; by verbatim.rkt and pyret-docs.rkt). Recurses into nested txexprs so
+; definitions wrapped in other tags are still found.
+(define (local-toc-collect elems)
+  (define acc '())
+  (define (walk x)
+    (cond
+      [(and (txexpr? x) (eq? (get-tag x) 'section-1))
+       (set! acc (cons (list 'section (attr-ref x 'id) (get-elements x)) acc))]
+      [(and (txexpr? x) (eq? (get-tag x) 'div) (attr-ref x 'data-toc-fname #f))
+       (set! acc (cons (list 'func (attr-ref x 'data-toc-fname) (attr-ref x 'data-toc-label)) acc))]
+      [(txexpr? x) (for-each walk (get-elements x))]
+      [else (void)]))
+  (for-each walk elems)
+  (reverse acc))
+
+; Group the flat, ordered (section . funcs) entries into a nested
+; structure: each section heading owns the functions that follow it,
+; up to the next section heading. Functions with no preceding section
+; (rare) are collected into a top-level preamble group.
+(define (local-toc-group entries)
+  (define groups '())
+  (define preamble '())
+  (define current-sec #f)
+  (define current-children '())
+  (define (flush!)
+    (when current-sec
+      (set! groups (cons (list current-sec (reverse current-children)) groups))))
+  (for ([e entries])
+    (case (first e)
+      [(section)
+       (flush!)
+       (set! current-sec e)
+       (set! current-children '())]
+      [(func)
+       (if current-sec
+           (set! current-children (cons e current-children))
+           (set! preamble (cons e preamble)))]))
+  (flush!)
+  (list (reverse preamble) (reverse groups)))
+
+(define (local-toc-func-item f)
+  (define fname (second f))
+  (define flabel (third f))
+  `(li () (a ([href ,(string-append "#" fname)]) ,flabel)))
+
+(define (local-toc-render preamble groups)
+  (if (and (null? preamble) (null? groups))
+      `(span ())
+      `(ul ([class "local-toc"])
+           ,@(map local-toc-func-item preamble)
+           ,@(map (lambda (g)
+                    (define sec (first g))
+                    (define funcs (second g))
+                    (define sec-id (second sec))
+                    (define sec-title (third sec))
+                    `(li ()
+                         (a ([href ,(string-append "#" sec-id)]) ,@sec-title)
+                         ,@(if (null? funcs)
+                               '()
+                               (list `(ul () ,@(map local-toc-func-item funcs))))))
+                  groups))))
+
+(define (local-toc body)
+  (define-values (preamble groups) (apply values (local-toc-group (local-toc-collect body))))
+  (local-toc-render preamble groups))
+
 (define (docmodule name #:friendly-title [friendly-title #f] #:noimport [noimport #f] . body)
   `(div ()
         (module-tag-1 () ,name)
@@ -71,6 +140,7 @@
                   (p () "Usage:")
                   (pre ([class "pyret-highlight"]) "include " ,name)
                   (pre ([class "pyret-highlight"]) "import " ,name " as ...")))
+       ,(local-toc body)
        ,@body))
 
 (define (itemlist . elems)
@@ -183,7 +253,7 @@
 
 (define (form a b . elems)
   ; (printf "doing form a = ~s\nb = ~s\nelems = ~s\n" a b elems)
-  `(div ()
+  `(div ([data-toc-fname ,(sluggify a)] [data-toc-label ,a])
         ,(make-gloss a)
         (pre ([class "pyret-display"]) ,b)
         ,@elems))
@@ -202,7 +272,7 @@
           ; (printf "alias = ~s\n" alias)
           ; (set! type-name (string-append type-name " = " alias))
           ; (set! type-name (format "~a = ~a" type-name alias))
-          `(div () ,(make-gloss og-type-name)
+          `(div ([data-toc-fname ,(sluggify og-type-name)] [data-toc-label ,og-type-name]) ,(make-gloss og-type-name)
                 (pre ([class "pyret-display"])
                      ,(ref-gloss og-type-name type-name))
                 ,@body) ]
@@ -214,7 +284,7 @@
                                   ,(apply string-append (add-between tyvars ", "))
                                   ">")))
               (set! body (cons  tyvars body)))
-          `(div ()
+          `(div ([data-toc-fname ,(sluggify og-type-name)] [data-toc-label ,og-type-name])
                 ,(make-gloss og-type-name)
                 (pre ([class "pyret-display"]) ,type-name)
                 ,@body)]))

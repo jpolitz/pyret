@@ -216,7 +216,7 @@
     (set! *functions-untested* (cons name *functions-untested*))
     ; (printf "functions-defined = ~s\n" *functions-untested*)
     )
-  `(div ()
+  `(div ([data-toc-fname ,(sluggify name)] [data-toc-label ,name])
         ,(make-gloss name)
         (pre ([class "pyret-display"])
              ,(ref-gloss name) " :: "
@@ -259,7 +259,7 @@
   (define methname (string-append "." name))
   (set! *functions-untested* (cons methname *functions-untested*))
   (unless contract (set! contract "unspecified_contract"))
-  `(div ()
+  `(div ([data-toc-fname ,(sluggify methname)] [data-toc-label ,methname])
         ,(make-gloss methname)
         (pre ([class "pyret-display"])
              ,methname " :: " ,contract)))
