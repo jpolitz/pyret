@@ -47,6 +47,7 @@
 import * as A from './ast';
 import * as N from './ast-anf';
 import * as C from './compile-structs';
+import * as T from './type-structs';
 import * as FL from './flatness';
 
 // ---------------------------------------------------------------------------
@@ -257,40 +258,20 @@ function dataExprId(de: N.ADataExpr, ctx: Ctx): string {
 }
 
 // ---------------------------------------------------------------------------
-// Numeric op recognition (a small slice of flatness.ts's numericAppInfo, reused
-// here only to learn that an op RESULT is a Number).
+// Result-type recognition for global calls.
+//
+// `_plus`/`_minus`/`_times`/`_divide` are POLYMORPHIC dispatchers (declared
+// `-> Any`): their result is a Number only when BOTH operands are -- a fact the
+// declared signature can't express, so they need the operand-typed rule in
+// `analyzeExpr` below. (`_plus` additionally yields a String on two Strings --
+// the only string-typed arithmetic operator.) Every OTHER global's result type
+// is just its declared return type, read from global.js via `globalDeclaredRet`;
+// no hardcoded name lists. That subsumes the former NUM_RETURNING_*/
+// STRING_RETURNING_GLOBALS/NEVER_RETURNS_GLOBAL tables and generalizes past them
+// for free (e.g. `string-append -> String`, `num-random -> Number`,
+// `raise -> Bot` all fall out without being enumerated).
 // ---------------------------------------------------------------------------
-const NUM_ARITH_OPS = new Set([
-  '_plus', '_minus', '_times', '_divide',
-  // The monomorphic forms the weakening pass emits also return a Number, so when
-  // this analysis re-runs on the weakened ANF (the method-info / ann-elision
-  // consumers) it keeps the result's Number-ness for chained arithmetic.
-  '_plus_nums', '_minus_nums', '_times_nums', '_divide_nums',
-]);
-const NUM_RETURNING_BUILTINS = new Set([
-  'num-sqrt', 'num-sqr', 'num-abs', 'num-floor', 'num-ceiling', 'num-round',
-  'num-round-even', 'num-negate', 'num-min', 'num-max', 'num-modulo',
-  'num-truncate', 'num-sin', 'num-cos', 'num-tan', 'num-asin', 'num-acos',
-  'num-atan', 'num-atan2', 'num-exp', 'num-log', 'num-expt',
-  'num-to-roughnum', 'num-to-rational', 'num-to-fixnum',
-]);
-// Builtins that ALWAYS return a Number regardless of argument types (their args
-// are not themselves Numbers, so they don't fit NUM_RETURNING_BUILTINS' all-Number
-// guard). Sound: each is a builtin with a declared `-> Number`. Lets e.g.
-// `index >= raw-array-length(arr)` see two Numbers and weaken to a flat comparison.
-const NUM_RETURNING_UNCOND = new Set([
-  'raw-array-length', 'string-length', 'string-to-code-point',
-]);
-// Globals that always return a String, regardless of operand types. `tostring`/
-// `torepr` (and their aliases) render any value to a String; `_plus_strings` is
-// string concat. Recorded so that, e.g., `"err " + tostring(i)` sees a String
-// right operand and the `+` itself weakens to the flat `_plus_strings` -- the
-// reason a method whose only non-flat work is an error-message string flips flat.
-const STRING_RETURNING_GLOBALS = new Set([
-  'tostring', 'torepr', 'to-string', 'to-repr',
-  '_plus_strings',
-  'tostring_num', 'torepr_num', 'tostring_str', 'torepr_str', 'tostring_bool', 'torepr_bool',
-]);
+const NUM_ARITH_OPS = new Set(['_plus', '_minus', '_times', '_divide']);
 
 function globalOpName(v: N.AVal, ctx: Ctx): string | undefined {
   if (N.isAIdModref(v)) { return v.uri === 'builtin://global' ? v.name : undefined; }
@@ -304,13 +285,41 @@ function globalOpName(v: N.AVal, ctx: Ctx): string | undefined {
   return undefined;
 }
 
-// Calls that never return a value (they throw). A branch ending in one of these
-// contributes nothing to a join, so an exhaustive `cases`/`if` whose only
+// The declared result type of a global call, read straight from global.js (via
+// the compile env). A global declared `... -> τ` yields a value `∈ ⟦τ⟧` WHENEVER
+// it returns: were it to produce some other shape it would raise instead, and a
+// raise yields no value, so the bound holds vacuously. Trusting the declared
+// return type is therefore a sound upper bound regardless of the argument types
+// -- the same belt-and-suspenders that lets `analyzeExpr` trust user functions'
+// declared returns (`funRet`). `raise`'s declared `-> tbot` gives BOT for free,
+// so a branch ending in `raise` still joins to a precise result type. Only
+// Number/String are surfaced (the lattice's only prims that consumers act on);
+// other returns widen to Any. Replaces the hardcoded NUM_RETURNING_*/
+// STRING_RETURNING_GLOBALS/NEVER_RETURNS_GLOBAL sets.
+function globalDeclaredRet(name: string, ctx: Ctx): AbsType | undefined {
+  const ve = ctx.compileEnv.globalValue(name);
+  // VAlias carries no type; VFun/VJustType/VVar all expose the declared `.t`.
+  if (ve === undefined || (!C.isVFun(ve) && !C.isVJustType(ve) && !C.isVVar(ve))) {
+    return undefined;
+  }
+  let t: T.Type = ve.t;
+  while (T.isTForall(t)) { t = t.onto; }
+  if (!T.isTArrow(t)) { return undefined; }
+  const r = t.ret;
+  if (T.isTBot(r)) { return BOT; }
+  if (T.isTName(r)) {
+    const n = r.id.toname();
+    if (n === 'Number' || n === 'String') { return prim(n); }
+  }
+  return undefined;
+}
+
+// Prim-apps that never return a value (they throw). A branch ending in one of
+// these contributes nothing to a join, so an exhaustive `cases`/`if` whose only
 // non-value branch is the compiler-inserted throw still has a precise result
 // type. `throwNo{Cases,Branches}Matched` are prim-apps (desugar-post-tc /
-// desugar); `raise` is a global value app.
+// desugar); the global `raise` is handled by `globalDeclaredRet` (`-> tbot`).
 const NEVER_RETURNS_PRIM = new Set(['throwNoCasesMatched', 'throwNoBranchesMatched']);
-const NEVER_RETURNS_GLOBAL = new Set(['raise', 'raise_flat']);
 
 function isNum(v: N.AVal, ctx: Ctx): boolean {
   const t = absOfVal(v, ctx);
@@ -411,10 +420,11 @@ function absOfLettable(e: N.ALettable, ctx: Ctx): AbsType {
       const r = ctx.funRet.get(f.id.key());
       if (r !== undefined) { return r; }
     }
-    // Numeric operator / builtin on Number operands returns a Number.
     const name = globalOpName(f, ctx);
     if (name !== undefined) {
-      if (NEVER_RETURNS_GLOBAL.has(name)) { return BOT; }
+      // Polymorphic arithmetic dispatchers: a Number result only when the
+      // operands prove it (their declared `-> Any` can't), so this must precede
+      // the declared-return fallback.
       if (NUM_ARITH_OPS.has(name) && e.args.length === 2 && isNum(e.args[0], ctx) && isNum(e.args[1], ctx)) {
         return prim('Number');
       }
@@ -424,15 +434,10 @@ function absOfLettable(e: N.ALettable, ctx: Ctx): AbsType {
       if (name === '_plus' && e.args.length === 2 && isStr(e.args[0], ctx) && isStr(e.args[1], ctx)) {
         return prim('String');
       }
-      if (NUM_RETURNING_BUILTINS.has(name) && e.args.length >= 1 && e.args.every((a) => isNum(a, ctx))) {
-        return prim('Number');
-      }
-      if (NUM_RETURNING_UNCOND.has(name)) {
-        return prim('Number');
-      }
-      if (STRING_RETURNING_GLOBALS.has(name)) {
-        return prim('String');
-      }
+      // Everything else (`_plus_nums`, `num-*`, `string-*`, `tostring`, `raise`,
+      // ...): trust the global's declared return type from global.js.
+      const r = globalDeclaredRet(name, ctx);
+      if (r !== undefined) { return r; }
     }
     return ANY;
   }
