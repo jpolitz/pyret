@@ -69,36 +69,36 @@ check "should work for refinements":
   end
 end
 
-check "refinements across module boundaries":
-  # See ~/refinement-alias-enforcement-goal.md for the full story. The behavior here
-  # splits on WHO builds the _checkAnn:
-  #  - A refinement EMBEDDED in an exported function/data annotation is enforced across
-  #    modules: the _checkAnn is compiled INTO the defining module's body (it sees the
-  #    predicate same-module), so the importer just calls it. Sound by design.
-  #  - A refinement reached only through an exported TYPE ALIAS is currently NOT
-  #    enforced cross-module: name resolution collapses `FetchNum` to its base `Number`
-  #    in the provides, dropping the predicate, and the importer rebuilds a bare Number
-  #    check. (Same-module the alias IS enforced -- see the control below.)
-  # mod1's source is embedded via `import file(<source>)`, which the test harness's
-  # dfind compiles as a separate module (genuine provides boundary).
+check "refinements across module boundaries (issue #1532)":
+  # https://github.com/brownplt/pyret-lang/issues/1532 (filed by jpolitz; root cause
+  # diagnosed by Dylan Hu): an exported refinement type alias loses its predicate when
+  # reached through `include` (a bare type name), but is enforced correctly through a
+  # qualified `import` reference. mod1's source is embedded via `import file(<source>)`,
+  # which the test harness's dfind compiles as a separate module (real provides boundary).
   mod1 = "provide *\nprovide-types *\n"
     + "is-odd = lam(n): num-modulo(n, 2) == 1 end\n"
     + "type FetchNum = Number%(is-odd)\n"
     + "fun must-odd(x :: Number%(is-odd)) -> Number: x end\n"
   imp = lam(body :: String): "import file(" + torepr(mod1) + ") as M\n" + body end
 
-  # EMBEDDED refinement (function arg ann) -- enforced across the boundary.
-  run-str(imp("M.must-odd(6)")) is%(output) contract-error   # 6 even -> is-odd false
-  run-str(imp("M.must-odd(5)")) is%(output) success          # 5 odd  -> passes
+  # (1) Qualified IMPORT reference -- the refinement IS enforced across the boundary.
+  run-str(imp("x :: M.FetchNum = 6\nx")) is%(output) contract-error  # 6 even -> is-odd false
+  run-str(imp("x :: M.FetchNum = 5\nx")) is%(output) success
 
-  # STANDALONE alias -- NOT enforced cross-module today (KNOWN LIMITATION). When
-  # ~/refinement-alias-enforcement-goal.md lands, the first of these flips to
-  # contract-error; update this test then (it is the executable spec of that change).
+  # (2) Embedded in an exported function annotation -- also enforced (the _checkAnn is
+  # compiled into mod1's body; the importer just calls it).
+  run-str(imp("M.must-odd(6)")) is%(output) contract-error
+  run-str(imp("M.must-odd(5)")) is%(output) success
+
+  # (3) THE BUG (#1532): reached through `include` as a bare type name -- the predicate
+  # is DROPPED (`include` desugaring aliases the type directly to its base `Number`), so
+  # an even value wrongly passes. This pins current behavior; when #1532 is fixed the
+  # first of these flips to contract-error (match (1)) -- update this test then.
   run-str(imp("include from M: type FetchNum end\nx :: FetchNum = 6\nx")) is%(output) success
   run-str(imp("include from M: type FetchNum end\nx :: FetchNum = 5\nx")) is%(output) success
 
-  # Control: the SAME alias IS enforced when used in its own defining module, proving
-  # the gap is specifically the cross-module provides erasure, not the refinement itself.
+  # Control: same-module the alias IS enforced -- the gap is the cross-module `include`
+  # path, not the refinement itself.
   run-str("is-odd = lam(n): num-modulo(n, 2) == 1 end\n"
     + "type FetchNum = Number%(is-odd)\n"
     + "x :: FetchNum = 6\nx") is%(output) contract-error
