@@ -53,6 +53,66 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-06-30 — var-ub fixpoint + ==/LHS-arith weakening + CPS list combinators)
+
+Four promise-backend-only changes on top of the weakening re-architecture below
+(all `isPromise`-gated; cont codegen frozen). **Promise exec suite 12899/12899
+"shipshape"; all output-parity cont≡promise OK.** (commits `b5237a3ab` + the
+`bench-boids-compute-data` bench `8e13d7cae`):
+
+1. **Nested-var upper-bound fixpoint** (`type-flow.ts`): a var declared inside a
+   function body (top-level vars stay `Any` — REPL-mutable) gets `ub` = join over its
+   init + every `:=` value, via an ascending fixpoint seeded from the init (so
+   `j := j + 1` resolves). The weakener then flattens counters **and string
+   accumulators** (`_plus_strings`).
+2. **`==`/`<>` weakening**: `equal-always` → flat `equal-always-prim` when both operands
+   are proven primitives. (Subtlety the suite caught: it is *not* `identical3` —
+   `equal-always(1, ~1)` must *raise* "Roughnums", which `identical3` reports as merely
+   `false`.)
+3. **LHS-arith result rule**: `_plus`/`_minus`/`_times`/`_divide` dispatch on the LEFT
+   operand, so a Number LHS yields Number-or-raises regardless of the RHS (`random(x) +
+   e` is Number even when `e` is untyped).
+4. **CPS / maybe-promise `raw_list_map` + `raw_list_fold`** — the flat-bodied `each`/
+   `map`/`fold` fast-path the section below called for. A NON-`async` loop that returns
+   its result synchronously when nothing suspends, and a resumable
+   `<thenable>.then(() => resume(rest, acc))` only on a fuel pause or callback suspend
+   (the loop's whole continuation is `(remaining-list, accumulator)`). Removes the
+   gratuitous always-Promise of an `async function`; cooperative yield preserved exactly;
+   stack-safe; **zero codegen change**.
+
+Ship table (`run-bench-table.sh 5`, median LOOP-seconds, `node22`, isolated). `p/c` =
+promise/cont. All output-identical. **9/11 meet-or-beat cont.**
+
+| benchmark | result | cont | prom | p/c | parity |
+|---|---|---|---|---|---|
+| car-compute     | 14829840 | 2.88 | 2.18 | **0.76** | OK |
+| spell           | 73       | 3.11 | 2.52 | **0.81** | OK |
+| vec-methods     | 250590   | 2.61 | 2.19 | **0.84** | OK |
+| matrix          | 640615   | 3.17 | 2.82 | **0.89** | OK |
+| car-render      | 400000   | 2.92 | 2.70 | 0.92 | OK |
+| orbital-render  | 180000   | 3.04 | 2.87 | 0.94 | OK |
+| orbital-compute | 2959     | 2.46 | 2.42 | 0.98 | OK |
+| lander          | 4800000  | 2.60 | 2.66 | 1.02 | OK |
+| orbital-ems     | 390000   | 1.68 | 1.75 | 1.04 | OK |
+| boids-raster    | 250      | 2.71 | 3.00 | 1.11 | OK |
+| boids-compute   | 236561   | 2.58 | 3.14 | 1.22 | OK |
+
+The CPS combinators move every list-traversing bench (boids-compute 1.26→1.22,
+boids-raster 1.15→1.11, orbital-compute 1.00→0.98) by removing the **innermost**
+combinator boundary await. The residual on boids is the **outer** async wrappers
+(`each → fold` Pyret wrappers, `.map(update)`, `run-frames` recursion) the runtime CPS
+can't reach — closing them needs cross-module inlining or a maybe-promise *forwarding*
+rule, deferred as not worth the complexity.
+
+**`data Bird` experiment** (`bench-boids-compute-data.arr`): fully typing boids (`data
+Bird`/`World`/`Coord` + `uniform -> Number` + `==` weakening) makes `do_avg` statically
+flat. p/c: untyped **1.20** → typed **1.12** → typed + CPS **1.05**. Differential
+profile: the typed-promise *non-async* JS is already cheaper than cont (weakened flat
+ops); the residual async tax just barely tips it. Lesson: typing `do_avg` flat removed
+26/27 polymorphic ops yet barely moved wall-clock — the tax was never the callback's
+wrapper, it was the combinators' per-element `await checkPause()`, which the CPS hit
+directly.
+
 ## Results (2026-06-30 — typed operator weakening + structural flatness re-architecture)
 
 Replaced the numeric-flatness *seam* in `flatness.ts` with a cleanly-separated design
