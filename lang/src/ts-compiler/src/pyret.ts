@@ -94,6 +94,8 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Disable redundant annotation-check elimination (promise backend; keep every _checkAnn the type-flow analysis proved dead, for A/B measurement)')],
     ['no-method-flatness',
       C.flag(C.once, 'Disable method-call flatness (promise backend; keep all method calls/methods async, for A/B measurement)')],
+    ['no-op-weakening',
+      C.flag(C.once, 'Disable typed operator weakening (promise backend; keep polymorphic _plus etc. instead of monomorphic _plus_nums, for A/B measurement)')],
     ['collect-times',
       C.flag(C.once, 'Collect timing information about compilation')],
     ['type-check',
@@ -143,6 +145,7 @@ export function main(args: string[]): number {
     const directCases = !r.has('no-direct-cases');
     const annElision = !r.has('no-ann-elision');
     const methodFlatness = !r.has('no-method-flatness');
+    const opWeakening = !r.has('no-op-weakening');
     const compiledDir = r.get('compiled-dir');
     const standaloneFile = r.get('standalone-file');
     const addProfiling = r.has('profile');
@@ -225,6 +228,7 @@ export function main(args: string[]): number {
           directCases: directCases,
           annElision: annElision,
           methodFlatness: methodFlatness,
+          opWeakening: opWeakening,
           stackBackend: stackBackend,
           compiledCache: compiledDir,
           compiledReadOnly: r.has('compiled-read-only-dir') ? r.get('compiled-read-only-dir') : [],
@@ -267,6 +271,7 @@ export function main(args: string[]): number {
         directCases: directCases,
         annElision: annElision,
         methodFlatness: methodFlatness,
+        opWeakening: opWeakening,
         stackBackend: stackBackend,
         compileModule: false,
         displayProgress: displayProgress

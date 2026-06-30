@@ -4256,6 +4256,42 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       }
     };
 
+    // Monomorphic, non-dispatching numeric operators (see the matching block in
+    // runtime.js). Emitted by the typed-operator-weakening pass (promise backend)
+    // when an upper-bound type analysis proves both operands are Number, so the
+    // isNumber/isString/isObject dispatch of plus/minus/... is statically the
+    // numeric-tower branch. Bit-identical to that branch -> flat (never suspend,
+    // never dispatch), registered with flatness 0 in global.js. Plain sync
+    // functions (like plus/minus here), so a call returns a value, not a thenable.
+    var plus_nums      = function(l, r) { return thisRuntime.makeNumberBig(jsnums.add(l, r)); };
+    var minus_nums     = function(l, r) { return thisRuntime.makeNumberBig(jsnums.subtract(l, r)); };
+    var times_nums     = function(l, r) { return thisRuntime.makeNumberBig(jsnums.multiply(l, r)); };
+    var divide_nums    = function(l, r) { return thisRuntime.makeNumberBig(jsnums.divide(l, r)); };
+    var lessthan_nums     = function(l, r) { return thisRuntime.makeBoolean(jsnums.lessThan(l, r)); };
+    var greaterthan_nums  = function(l, r) { return thisRuntime.makeBoolean(jsnums.greaterThan(l, r)); };
+    var lessequal_nums    = function(l, r) { return thisRuntime.makeBoolean(jsnums.lessThanOrEqual(l, r)); };
+    var greaterequal_nums = function(l, r) { return thisRuntime.makeBoolean(jsnums.greaterThanOrEqual(l, r)); };
+
+    // Monomorphic String operators (the string fast paths of plus/lessthan/...
+    // exposed under a name; flat). Emitted by operator weakening when both
+    // operands are proven String.
+    var plus_strings         = function(l, r) { return thisRuntime.makeString(l.concat(r)); };
+    var lessthan_strings     = function(l, r) { return thisRuntime.makeBoolean(l < r); };
+    var greaterthan_strings  = function(l, r) { return thisRuntime.makeBoolean(l > r); };
+    var lessequal_strings    = function(l, r) { return thisRuntime.makeBoolean(l <= r); };
+    var greaterequal_strings = function(l, r) { return thisRuntime.makeBoolean(l >= r); };
+
+    // Monomorphic tostring/torepr on a primitive. toReprJS dispatches Number/
+    // String/Boolean DIRECTLY (no user `_output`/`_torepr` callback, never
+    // suspends), so these are the exact primitive paths exposed flat. Emitted by
+    // operator weakening when the argument is proven Number/String/Boolean.
+    var tostring_num  = function(n) { return thisRuntime.makeString(String(n)); };
+    var torepr_num    = function(n) { return thisRuntime.makeString(String(n)); };
+    var tostring_str  = function(s) { return s; };
+    var torepr_str    = function(s) { return thisRuntime.makeString('"' + replaceUnprintableStringChars(String(s)) + '"'); };
+    var tostring_bool = function(b) { return thisRuntime.makeString(String(b)); };
+    var torepr_bool   = function(b) { return thisRuntime.makeString(String(b)); };
+
     var checkArrayIndex = function(methodName, arr, ix) {
       var throwErr = function(reason) {
         thisRuntime.ffi.throwInvalidArrayIndex(methodName, arr, ix, reason);
@@ -5645,6 +5681,10 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       'display-error': display_error,
       'brander': brander,
       'raise': makeFunction(raiseJSJS, "raise"), //raiseUserException),
+      // Same synchronous throw, exposed flat (raise never dispatches/suspends).
+      // Emitted by operator weakening for `raise(x)` so error-only branches don't
+      // force the enclosing function async.
+      'raise_flat': makeFunction(raiseJSJS, "raise_flat"),
       'builtins': builtins,
       'nothing': nothing,
       'is-nothing': makeFunction(isNothing, "is-nothing"),
@@ -5677,6 +5717,28 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       '_greaterthan': makeFunction(greaterthan, "_greaterthan"),
       '_greaterequal': makeFunction(greaterequal, "_greaterequal"),
       '_lessequal': makeFunction(lessequal, "_lessequal"),
+
+      '_plus_nums': makeFunction(plus_nums, "_plus_nums"),
+      '_minus_nums': makeFunction(minus_nums, "_minus_nums"),
+      '_times_nums': makeFunction(times_nums, "_times_nums"),
+      '_divide_nums': makeFunction(divide_nums, "_divide_nums"),
+      '_lessthan_nums': makeFunction(lessthan_nums, "_lessthan_nums"),
+      '_greaterthan_nums': makeFunction(greaterthan_nums, "_greaterthan_nums"),
+      '_greaterequal_nums': makeFunction(greaterequal_nums, "_greaterequal_nums"),
+      '_lessequal_nums': makeFunction(lessequal_nums, "_lessequal_nums"),
+
+      '_plus_strings': makeFunction(plus_strings, "_plus_strings"),
+      '_lessthan_strings': makeFunction(lessthan_strings, "_lessthan_strings"),
+      '_greaterthan_strings': makeFunction(greaterthan_strings, "_greaterthan_strings"),
+      '_lessequal_strings': makeFunction(lessequal_strings, "_lessequal_strings"),
+      '_greaterequal_strings': makeFunction(greaterequal_strings, "_greaterequal_strings"),
+
+      'tostring_num': makeFunction(tostring_num, "tostring_num"),
+      'torepr_num': makeFunction(torepr_num, "torepr_num"),
+      'tostring_str': makeFunction(tostring_str, "tostring_str"),
+      'torepr_str': makeFunction(torepr_str, "torepr_str"),
+      'tostring_bool': makeFunction(tostring_bool, "tostring_bool"),
+      'torepr_bool': makeFunction(torepr_bool, "torepr_bool"),
 
       'num-random': makeFunction(num_random, "num-random"),
       'num-random-seed': makeFunction(num_random_seed, "num-random-seed"),

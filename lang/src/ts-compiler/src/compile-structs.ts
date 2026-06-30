@@ -1098,6 +1098,15 @@ export interface CompileOptions {
   // self-disables unless runtimeAnnotations && userAnnotations. Independent of
   // `optimize`.
   methodFlatness: boolean;
+  // Typed operator weakening (type-flow.ts; promise backend only). On by default;
+  // -no-op-weakening disables it for A/B measurement. Rewrites a polymorphic,
+  // dispatching operator app (`_plus` ...) into its monomorphic, non-dispatching,
+  // known-flat global (`_plus_nums` ...) where upper-bound type-flow proves both
+  // operands are Number, so ordinary structural flatness flattens the arithmetic
+  // and the runtime skips the per-op type re-check. Sound on the same basis as ann
+  // elision (the ub facts rest on the runtime annotation checks), so it self-
+  // disables unless runtimeAnnotations && userAnnotations. Independent of `optimize`.
+  opWeakening: boolean;
   stackBackend: StackBackend;
   inlineCaseBodyLimit: number;
   moduleEval: boolean;
@@ -1145,6 +1154,7 @@ export const defaultCompileOptions: CompileOptions = {
   directCases: true,
   annElision: true,
   methodFlatness: true,
+  opWeakening: true,
   stackBackend: compiledStackBackend,
   inlineCaseBodyLimit: 5,
   moduleEval: true,
@@ -1266,6 +1276,29 @@ export const runtimeProvides: Provides = new Provides("builtin://global",
     ["_lessequal", tTop],
     ["_greaterthan", tTop],
     ["_greaterequal", tTop],
+    // Monomorphic numeric operators emitted by the operator-weakening pass
+    // (typed tTop here exactly like the polymorphic originals above; the real
+    // arrow types/flatness come from the global module provides, global.js).
+    ["_plus_nums", tTop],
+    ["_minus_nums", tTop],
+    ["_times_nums", tTop],
+    ["_divide_nums", tTop],
+    ["_lessthan_nums", tTop],
+    ["_lessequal_nums", tTop],
+    ["_greaterthan_nums", tTop],
+    ["_greaterequal_nums", tTop],
+    ["_plus_strings", tTop],
+    ["_lessthan_strings", tTop],
+    ["_greaterthan_strings", tTop],
+    ["_lessequal_strings", tTop],
+    ["_greaterequal_strings", tTop],
+    ["tostring_num", tTop],
+    ["torepr_num", tTop],
+    ["tostring_str", tTop],
+    ["torepr_str", tTop],
+    ["tostring_bool", tTop],
+    ["torepr_bool", tTop],
+    ["raise_flat", tTop],
     ["string-equal", tTop],
     ["string-contains", tTop],
     ["string-starts-with", tTop],

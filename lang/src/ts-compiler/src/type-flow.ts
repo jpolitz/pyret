@@ -5,13 +5,16 @@
   is guaranteed `∈ ⟦τ⟧`; the analysis never excludes a value `x` could hold.
   `Any` (⊤) is the always-sound, useless fallback.
 
-  This is the generalization the numeric-flatness pass (flatness.ts) prototypes
-  for `{Number, ⊤}`. It is kept DELIBERATELY DECOUPLED from that await-critical
-  flatness number: this pass produces only optimization-facts in their own
-  consumed-set and never rewrites the ANF, so it cannot perturb cont codegen
-  (cont never consults the set) nor the sync-vs-async emission decision (which
-  reads annotations, which this pass leaves untouched). It mirrors the
-  `numericFlatApps` plumbing exactly.
+  This is the upper-bound type analysis that REPLACED the old numeric-flatness
+  seam in flatness.ts. It has three consumers, all promise-only and all gated by
+  the caller on `runtimeAnnotations && userAnnotations`:
+    1. `weakenOperators` (below): rewrites polymorphic operator apps (`_plus` ...)
+       into monomorphic, known-flat globals (`_plus_nums` ...) where both operands
+       are proven Number, so ordinary structural flatness flattens the arithmetic.
+    2. `makeProgMethodInfo`: resolves each method call's receiver data type.
+    3. `makeProgTypeFlowEnv`: redundant `_checkAnn` elimination (below).
+  The cont backend consults none of these, so its codegen and byte-parity oracle
+  stay frozen.
 
   ----------------------------------------------------------------------------
   First consumer: redundant `_checkAnn` elimination.
@@ -162,12 +165,12 @@ interface Ctx {
   // and ref-assignment field checks enforce it). Lets `self.x :: Number` reads feed
   // the numeric-flatness pass so a method's arithmetic body can flatten.
   fieldTypes: Map<string, Map<string, AbsType>>;
-  // Value keys whose ub is exactly `Number`. Exported to seed the numeric-flatness
-  // pass (flatness.ts) with Number-ness it cannot see on its own -- notably data
-  // field reads (`self.x`) and constructor/return Numbers -- so arithmetic on them
-  // flattens. A strict superset of the numeric pass's annotation-only seeds; sound
-  // because every entry rests on a check that runs (ann / field-ann / ctor).
-  numberValues: Set<string>;
+  // canonical `dataId#methodName` -> the method's DECLARED return-annotation upper
+  // bound (joined over variants). Trusted on the same basis as funRet: a method's
+  // `-> T` is _checkAnn'd before it returns, so `obj.m()` is a value of T's ub. Lets
+  // e.g. `self.length() - 1` weaken (length returns Number) so a method using a
+  // sibling's numeric result still flattens.
+  methodRet: Map<string, AbsType>;
 }
 
 // ---------------------------------------------------------------------------
@@ -257,13 +260,36 @@ function dataExprId(de: N.ADataExpr, ctx: Ctx): string {
 // Numeric op recognition (a small slice of flatness.ts's numericAppInfo, reused
 // here only to learn that an op RESULT is a Number).
 // ---------------------------------------------------------------------------
-const NUM_ARITH_OPS = new Set(['_plus', '_minus', '_times', '_divide']);
+const NUM_ARITH_OPS = new Set([
+  '_plus', '_minus', '_times', '_divide',
+  // The monomorphic forms the weakening pass emits also return a Number, so when
+  // this analysis re-runs on the weakened ANF (the method-info / ann-elision
+  // consumers) it keeps the result's Number-ness for chained arithmetic.
+  '_plus_nums', '_minus_nums', '_times_nums', '_divide_nums',
+]);
 const NUM_RETURNING_BUILTINS = new Set([
   'num-sqrt', 'num-sqr', 'num-abs', 'num-floor', 'num-ceiling', 'num-round',
   'num-round-even', 'num-negate', 'num-min', 'num-max', 'num-modulo',
   'num-truncate', 'num-sin', 'num-cos', 'num-tan', 'num-asin', 'num-acos',
   'num-atan', 'num-atan2', 'num-exp', 'num-log', 'num-expt',
   'num-to-roughnum', 'num-to-rational', 'num-to-fixnum',
+]);
+// Builtins that ALWAYS return a Number regardless of argument types (their args
+// are not themselves Numbers, so they don't fit NUM_RETURNING_BUILTINS' all-Number
+// guard). Sound: each is a builtin with a declared `-> Number`. Lets e.g.
+// `index >= raw-array-length(arr)` see two Numbers and weaken to a flat comparison.
+const NUM_RETURNING_UNCOND = new Set([
+  'raw-array-length', 'string-length', 'string-to-code-point',
+]);
+// Globals that always return a String, regardless of operand types. `tostring`/
+// `torepr` (and their aliases) render any value to a String; `_plus_strings` is
+// string concat. Recorded so that, e.g., `"err " + tostring(i)` sees a String
+// right operand and the `+` itself weakens to the flat `_plus_strings` -- the
+// reason a method whose only non-flat work is an error-message string flips flat.
+const STRING_RETURNING_GLOBALS = new Set([
+  'tostring', 'torepr', 'to-string', 'to-repr',
+  '_plus_strings',
+  'tostring_num', 'torepr_num', 'tostring_str', 'torepr_str', 'tostring_bool', 'torepr_bool',
 ]);
 
 function globalOpName(v: N.AVal, ctx: Ctx): string | undefined {
@@ -284,11 +310,16 @@ function globalOpName(v: N.AVal, ctx: Ctx): string | undefined {
 // type. `throwNo{Cases,Branches}Matched` are prim-apps (desugar-post-tc /
 // desugar); `raise` is a global value app.
 const NEVER_RETURNS_PRIM = new Set(['throwNoCasesMatched', 'throwNoBranchesMatched']);
-const NEVER_RETURNS_GLOBAL = new Set(['raise']);
+const NEVER_RETURNS_GLOBAL = new Set(['raise', 'raise_flat']);
 
 function isNum(v: N.AVal, ctx: Ctx): boolean {
   const t = absOfVal(v, ctx);
   return t.k === 'prim' && t.n === 'Number';
+}
+
+function isStr(v: N.AVal, ctx: Ctx): boolean {
+  const t = absOfVal(v, ctx);
+  return t.k === 'prim' && t.n === 'String';
 }
 
 function absTypeEq(a: AbsType, b: AbsType): boolean {
@@ -298,11 +329,9 @@ function absTypeEq(a: AbsType, b: AbsType): boolean {
   return a.k === b.k;   // any/bot
 }
 
-// Set ub(key) = t, and remember the key if it is exactly Number (for the numeric
-// pass seed). Used for every value-binding env write so numberValues stays in sync.
+// Set ub(key) = t. Used for every value-binding env write.
 function recordUb(ctx: Ctx, key: string, t: AbsType): void {
   ctx.env.set(key, t);
-  if (t.k === 'prim' && t.n === 'Number') { ctx.numberValues.add(key); }
 }
 
 // Resolve `v.field` when v's ub is a known in-module data type carrying the field.
@@ -356,10 +385,15 @@ function absOfLettable(e: N.ALettable, ctx: Ctx): AbsType {
     return ANY;                            // the value is a function
   }
   if (N.isAMethodApp(e)) {
-    // Record the receiver's data type (if resolvable) for the flatness pass. The
-    // result type of a method call is not tracked (-> Any).
+    // Record the receiver's data type (if resolvable) for the flatness pass, and
+    // use the method's declared return-ann ub as the call's result type (trusted:
+    // the method _checkAnn's its return value). Lets `obj.m() <op> ...` chains weaken.
     const ot = absOfVal(e.obj, ctx);
-    if (ot.k === 'data') { ctx.methodReceiver.set(e, ot.id); }
+    if (ot.k === 'data') {
+      ctx.methodReceiver.set(e, ot.id);
+      const r = ctx.methodRet.get(ot.id + '#' + e.meth);
+      if (r !== undefined) { return r; }
+    }
     return ANY;
   }
   if (N.isADot(e)) {
@@ -384,8 +418,20 @@ function absOfLettable(e: N.ALettable, ctx: Ctx): AbsType {
       if (NUM_ARITH_OPS.has(name) && e.args.length === 2 && isNum(e.args[0], ctx) && isNum(e.args[1], ctx)) {
         return prim('Number');
       }
+      // `_plus` on two Strings is concat -> String (the only string-typed operator;
+      // mirrors NUM_ARITH for Number). Needed so chained `a + b + c` string-building
+      // sees a String left operand at each step and the whole chain weakens.
+      if (name === '_plus' && e.args.length === 2 && isStr(e.args[0], ctx) && isStr(e.args[1], ctx)) {
+        return prim('String');
+      }
       if (NUM_RETURNING_BUILTINS.has(name) && e.args.length >= 1 && e.args.every((a) => isNum(a, ctx))) {
         return prim('Number');
+      }
+      if (NUM_RETURNING_UNCOND.has(name)) {
+        return prim('Number');
+      }
+      if (STRING_RETURNING_GLOBALS.has(name)) {
+        return prim('String');
       }
     }
     return ANY;
@@ -577,7 +623,16 @@ function collectBind(key: string, e: N.ALettable, ctx: Ctx, dataObjs: Map<string
     const recordMember = (fieldName: string, val: N.AVal): void => {
       if (N.isAId(val) || N.isAIdSafeLetrec(val) || N.isAIdLetrec(val)) {
         const node = ctx.methodBindNodes.get(val.id.key());
-        if (node !== undefined) { ctx.methodOf.set(node, { dataId: id, methodName: fieldName }); }
+        if (node !== undefined) {
+          ctx.methodOf.set(node, { dataId: id, methodName: fieldName });
+          // Record the method's declared return-ann ub (joined over variants).
+          const rt = annUpperBound(node.ret, ctx);
+          if (rt !== undefined) {
+            const rk = id + '#' + fieldName;
+            const prev = ctx.methodRet.get(rk);
+            ctx.methodRet.set(rk, prev === undefined ? rt : join(prev, rt));
+          }
+        }
       }
     };
     for (const v of e.variants) {
@@ -664,8 +719,6 @@ export interface MethodInfo {
   receiver: Map<N.AMethodApp, string>;
   // a-method node -> the (dataId, methodName) slot it fills.
   methodOf: Map<N.AMethod, { dataId: string; methodName: string }>;
-  // value keys whose ub is exactly Number (seed for the numeric-flatness pass).
-  numberValues: Set<string>;
 }
 
 function newCtx(
@@ -695,7 +748,7 @@ function newCtx(
     methodOf: new Map(),
     methodBindNodes: new Map(),
     fieldTypes: new Map(),
-    numberValues: new Set(),
+    methodRet: new Map(),
   };
 }
 
@@ -715,7 +768,7 @@ function runTypeFlow(anfed: N.AProg, ctx: Ctx): void {
 
 // ---------------------------------------------------------------------------
 // Entry point. Returns the set of bind keys whose annotation check is provably
-// redundant. Threaded into the async compiler like numericFlatApps.
+// redundant. Threaded into the async compiler as redundantAnnChecks.
 // ---------------------------------------------------------------------------
 export function makeProgTypeFlowEnv(
   anfed: N.AProg,
@@ -751,7 +804,7 @@ export function makeProgMethodInfo(
   moduleUri: string,
 ): MethodInfo {
   // flatnessEnv is unused when collectRedundant is false; pass an empty one.
-  const dummyFlat: FL.FlatnessEnv = [new Map(), new Map(), new Set(), new Set(), new Set()];
+  const dummyFlat: FL.FlatnessEnv = [new Map(), new Map(), new Set(), new Set()];
   const ctx = newCtx(postEnv, env, dummyFlat, moduleUri, false);
   try {
     runTypeFlow(anfed, ctx);
@@ -760,7 +813,133 @@ export function makeProgMethodInfo(
     }
   } catch (_e) {
     // Fail safe to "no method info" (no method calls get flattened).
-    return { receiver: new Map(), methodOf: new Map(), numberValues: new Set() };
+    return { receiver: new Map(), methodOf: new Map() };
   }
-  return { receiver: ctx.methodReceiver, methodOf: ctx.methodOf, numberValues: ctx.numberValues };
+  return { receiver: ctx.methodReceiver, methodOf: ctx.methodOf };
+}
+
+// ---------------------------------------------------------------------------
+// Typed operator weakening (ANF -> ANF; promise backend only).
+//
+// `a + b` lowers to a call of the POLYMORPHIC global `_plus`, which dispatches on
+// operand type (numeric tower / string concat / a user `_plus` method -- arbitrary,
+// possibly suspending code), so `_plus` has UNDEFINED flatness and the enclosing
+// arithmetic compiles to an async function. But when this analysis proves both
+// operands are Number, the dispatch ALWAYS takes the numeric-tower branch, so the
+// call is statically a MONOMORPHIC, non-dispatching, known-flat `_plus_nums` -- the
+// same numeric fast path exposed under a name and registered flat (0) in the global
+// env (global.js). Rewriting `_plus` -> `_plus_nums` lets ORDINARY structural
+// function-flatness pick it up with NO numeric special-casing in flatness.ts, and
+// skips `_plus`'s per-call `isNumber` re-check at runtime.
+//
+// Soundness rests entirely on this upper-bound analysis (same basis as ann
+// elision); the caller gates on `runtimeAnnotations && userAnnotations`, promise
+// only. The rewrite ONLY rebuilds operator a-app nodes' callee; the method-info
+// receiver pre-pass runs AFTER this on the weakened ANF, so method-app node
+// identity is never stale.
+// ---------------------------------------------------------------------------
+// Binary operators that monomorphize on Number operands.
+const WEAKEN_NUM_OPS: Map<string, string> = new Map([
+  ['_plus', '_plus_nums'], ['_minus', '_minus_nums'],
+  ['_times', '_times_nums'], ['_divide', '_divide_nums'],
+  ['_lessthan', '_lessthan_nums'], ['_greaterthan', '_greaterthan_nums'],
+  ['_lessequal', '_lessequal_nums'], ['_greaterequal', '_greaterequal_nums'],
+]);
+// Binary operators that monomorphize on String operands (`_plus` = concat; the
+// comparisons are lexicographic). `_minus`/`_times`/`_divide` have no String path.
+const WEAKEN_STR_OPS: Map<string, string> = new Map([
+  ['_plus', '_plus_strings'],
+  ['_lessthan', '_lessthan_strings'], ['_greaterthan', '_greaterthan_strings'],
+  ['_lessequal', '_lessequal_strings'], ['_greaterequal', '_greaterequal_strings'],
+]);
+// Unary tostring/torepr: pick the monomorphic flat helper by the operand's prim
+// type (no user `_output`/`_torepr` dispatch possible on a primitive).
+const WEAKEN_TOSTRING_OPS: Map<string, { Number: string; String: string; Boolean: string }> = new Map([
+  ['tostring', { Number: 'tostring_num', String: 'tostring_str', Boolean: 'tostring_bool' }],
+  ['torepr', { Number: 'torepr_num', String: 'torepr_str', Boolean: 'torepr_bool' }],
+]);
+// Unary globals that monomorphize with NO operand-type condition: they never
+// dispatch and never suspend regardless of argument. `raise` always constructs
+// and throws a PyretFailException synchronously, so its only-suspending-looking
+// status was purely a conservative flatness default -- exposing it flat lets a
+// branch whose sole work is `raise(msg)` (a bounds/guard error path) stay flat.
+const WEAKEN_UNARY_OPS: Map<string, string> = new Map([
+  ['raise', 'raise_flat'],
+]);
+
+// The prim type of a value's ub, or undefined if not a primitive.
+function primNameOf(v: N.AVal, ctx: Ctx): 'Number' | 'String' | 'Boolean' | undefined {
+  const t = absOfVal(v, ctx);
+  return t.k === 'prim' ? t.n : undefined;
+}
+
+class WeakenVisitor extends N.DefaultMapVisitor {
+  constructor(private ctx: Ctx, private count: { n: number }) { super(); }
+  aApp(node: N.AApp): N.ALettable {
+    const name = globalOpName(node._fun, this.ctx);
+    if (name !== undefined) {
+      // Binary numeric / string operator on two same-prim operands.
+      if (node.args.length === 2) {
+        const p0 = primNameOf(node.args[0], this.ctx);
+        const p1 = primNameOf(node.args[1], this.ctx);
+        let weak: string | undefined;
+        if (p0 === 'Number' && p1 === 'Number') { weak = WEAKEN_NUM_OPS.get(name); }
+        else if (p0 === 'String' && p1 === 'String') { weak = WEAKEN_STR_OPS.get(name); }
+        if (weak !== undefined) { return this.weakenTo(node, weak); }
+      }
+      // Unary globals.
+      if (node.args.length === 1) {
+        // Unconditional (no operand-type guard): e.g. raise.
+        const uncond = WEAKEN_UNARY_OPS.get(name);
+        if (uncond !== undefined) { return this.weakenTo(node, uncond); }
+        // tostring/torepr on a primitive operand.
+        const variants = WEAKEN_TOSTRING_OPS.get(name);
+        if (variants !== undefined) {
+          const p = primNameOf(node.args[0], this.ctx);
+          if (p !== undefined) { return this.weakenTo(node, variants[p]); }
+        }
+      }
+    }
+    return super.aApp(node);
+  }
+  // An s-global reference rides the ordinary global-value rails: it is a free var,
+  // so compile-module emits `var <name> = getModuleField('builtin://global',
+  // 'values','<name>')`, and flatness resolves its (flat) flatness from the global
+  // env. Args are leaf values -- left unchanged.
+  private weakenTo(node: N.AApp, weak: string): N.ALettable {
+    this.count.n += 1;
+    const newFun = new N.AId(node._fun.l, new A.SGlobal(weak));
+    return new N.AApp(node.l, newFun, node.args, node.appInfo);
+  }
+}
+
+export function weakenOperators(
+  anfed: N.AProg,
+  postEnv: C.ComputedEnvironment,
+  env: C.CompileEnvironment,
+  moduleUri: string,
+): N.AProg {
+  // flatnessEnv is unused when collectRedundant is false; pass an empty one.
+  const dummyFlat: FL.FlatnessEnv = [new Map(), new Map(), new Set(), new Set()];
+  const ctx = newCtx(postEnv, env, dummyFlat, moduleUri, false);
+  try {
+    runTypeFlow(anfed, ctx);
+    const count = { n: 0 };
+    // Transform only the body and rebuild the program, preserving imports/provides
+    // (the ANF map-visitor doesn't handle the surface s-import nodes the program
+    // still carries -- and they contain no operator apps to weaken anyway).
+    const newBody = anfed.body.visit(new WeakenVisitor(ctx, count)) as N.AExpr;
+    const out = new N.AProgram(anfed.l, anfed.provides, anfed.imports, newBody);
+    if (process.env.PYRET_TF_DEBUG) {
+      process.stderr.write(`[op-weaken ${moduleUri}] weakened=${count.n}\n`);
+    }
+    return out;
+  } catch (_e) {
+    // Optimization only: an analysis miss or unexpected node must never break
+    // compilation. Fail safe to "weaken nothing".
+    if (process.env.PYRET_TF_DEBUG) {
+      process.stderr.write(`[op-weaken ${moduleUri}] FAILED: ${(_e as any)?.stack ?? _e}\n`);
+    }
+    return anfed;
+  }
 }

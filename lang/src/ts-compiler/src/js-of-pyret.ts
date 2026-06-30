@@ -123,9 +123,20 @@ export function traceMakeCompiledPyret(
   // ANF-to-ANF optimization middle-end (inliner/LICM/...). Promise backend
   // only: it mints fresh atoms, which the cont backend's byte-parity oracle
   // would notice, and the cont codegen stays frozen by design.
-  const anfed = C.isPromise(options.stackBackend) && options.optimize
+  const anfedOpt = C.isPromise(options.stackBackend) && options.optimize
     ? addPhase('Optimized ANF', OPT.optimizeProgram(anfedRaw, options.inlineComments, options.licm))
     : anfedRaw;
+  // Typed operator weakening (promise backend only): rewrite polymorphic operator
+  // apps (`_plus` ...) into monomorphic, known-flat globals (`_plus_nums` ...) where
+  // upper-bound type-flow proves the operand types, so ORDINARY structural flatness
+  // flattens the arithmetic (no numeric special-casing in flatness.ts). Runs BEFORE
+  // the method-receiver pre-pass so that pass keys method-app node identity off the
+  // weakened ANF. Gated like ann elision: the ub facts rest on the runtime ann checks.
+  const anfed =
+    (C.isPromise(options.stackBackend) && options.opWeakening
+      && options.runtimeAnnotations && options.userAnnotations)
+      ? addPhase('Operator weakening', TF.weakenOperators(anfedOpt, postEnv, env, provides.fromUri))
+      : anfedOpt;
   if (process.env.PYRET_DUMP_ANF) {
     process.stderr.write('===ANF[' + (programAst.l && (programAst.l as any).source) + ']===\n');
     process.stderr.write((anfed as any).tosource().pretty(100).join('\n') + '\n===END ANF===\n');
@@ -141,7 +152,7 @@ export function traceMakeCompiledPyret(
       : undefined;
   // Numeric-flatness is enabled only for the promise backend (the cont backend's
   // codegen + byte-parity oracle stay untouched).
-  const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env, C.isPromise(options.stackBackend), methodInfo));
+  const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env, methodInfo));
   const flatProvides = addPhase('Get flat-provides', FL.getFlatProvides(provides, env, postEnv, flatnessEnv, anfed));
   // Upper-bound type-flow: bind keys whose `:: T` annotation check is provably
   // redundant. Promise backend only (cont codegen stays frozen for the byte-parity

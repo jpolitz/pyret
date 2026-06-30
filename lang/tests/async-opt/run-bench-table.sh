@@ -9,7 +9,7 @@ set -u
 cd "$(dirname "$0")/../.."   # lang/
 N="${1:-5}"
 NODE="node22 --max-old-space-size=6144"  # 6G < 7.8G phys (no swap); benches peak ~170MB so this is pure safety margin
-BENCHES="bench-spell bench-car-compute bench-car-render bench-lander bench-orbital-compute bench-orbital-ems bench-orbital-render bench-boids-compute bench-boids-raster bench-vec-methods"
+BENCHES="bench-spell bench-car-compute bench-car-render bench-lander bench-orbital-compute bench-orbital-ems bench-orbital-render bench-boids-compute bench-boids-raster bench-vec-methods bench-matrix"
 
 median() { sort -n | awk '{a[NR]=$1} END{print (NR%2)?a[int(NR/2)+1]:(a[NR/2]+a[NR/2+1])/2}'; }
 minv()   { sort -n | head -1; }

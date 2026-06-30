@@ -916,20 +916,20 @@ export function argsOtherStmts(argCes: DAG.CExp[]): CList<J.JStmt> {
 
 export function compileAppAsync(compiler: CompilerVisitor, l: Loc, f: N.AVal, args: N.AVal[], appInfo: A.AppInfo, node?: N.AApp): CList<J.JStmt> {
   const isSafeId = N.isAId(f) || N.isAIdSafeLetrec(f);
-  // A numeric-flat operator app (proven by flatness.ts to be on Number operands)
-  // never dispatches/suspends, so it is flat and is a known function (skip the
-  // isFunction check too).
-  const numFlat = node !== undefined && compiler.numericFlatApps.has(node);
   // is-flat must agree with the flatness analysis (flatness.ts), which decides
   // whether the enclosing function is emitted sync (j-fun) or async (j-async-fun).
   // If they disagree we either emit `await` inside a sync function (a JS syntax
-  // error) or fail to await a Promise. For module-ref calls, the analysis uses
-  // get-flatness-for-module-call, so we mirror it here.
-  const isFlat = numFlat ? true :
-    isSafeId ? isFunctionFlat(compiler.flatnessEnv, (f as any).id.key())
-      : N.isAIdModref(f) ? isFlatEnough(FL.getFlatnessForModuleCall((f as any).id, (f as any).name, compiler.moduleBindings, compiler.env))
-        : false;
-  const isFn = numFlat || (isSafeId && isIdFnName(compiler.flatnessEnv, (f as any).id.key()));
+  // error) or fail to await a Promise. Resolve via the SAME helper the analysis
+  // uses (getAppFunFlatness) so they can never disagree. This subsumes the
+  // module-ref path and the s-global env fallback for weakened operators
+  // (`_plus_nums`), which are flat globals not bound in sd.
+  const isFlat = (isSafeId || N.isAIdModref(f))
+    ? isFlatEnough(FL.getAppFunFlatness(f, compiler.flatnessEnv, compiler.moduleBindings, compiler.env))
+    : false;
+  // A flat global (incl. a weakened `_plus_nums`) is known to be a function, so the
+  // dynamic isFunction guard can be skipped along with the await.
+  const isFn = isSafeId && (isIdFnName(compiler.flatnessEnv, (f as any).id.key())
+    || (!compiler.flatnessEnv.has((f as any).id.key()) && A.isSGlobal((f as any).id) && isFlat));
   const fCe = f.visit(compiler) as DAG.CExp;
   const argCes = args.map((a) => a.visit(compiler) as DAG.CExp);
   const compiledArgs = CL.map_list(getExp, argCes);
@@ -2326,9 +2326,6 @@ export class CompilerVisitor {
   // key() set of function-local vars to compile without the {$var} box; see
   // collectUnboxableVarKeys. Populated in aProgram (empty when -no-unbox-vars).
   unboxedVars: Set<string> = new Set();
-  // Operator a-apps proven flat by the numeric pass (flatness.ts); emitted with
-  // no conditional await. See compileAppAsync.
-  numericFlatApps!: Set<N.AApp>;
   // Method-application nodes proven flat (the receiver's data type resolves and
   // its method is flat); emitted as a direct call with NO conditional await. And
   // `a-method` nodes proven flat; emitted as a synchronous function (makeMethod,
@@ -3440,9 +3437,8 @@ export class SplittingCompiler extends CompilerVisitor {
     this.options = options;
     this.flatnessEnv = flatnessEnvs[0];
     this.typeFlatnessEnv = flatnessEnvs[1];
-    this.numericFlatApps = flatnessEnvs[2];
-    this.flatMethodApps = flatnessEnvs[3];
-    this.flatMethods = flatnessEnvs[4];
+    this.flatMethodApps = flatnessEnvs[2];
+    this.flatMethods = flatnessEnvs[3];
     this.redundantAnnChecks = redundantAnnChecks;
     // Pyret accesses these fields directly; a computed-none here would be a
     // field-not-found error there too.
