@@ -81,32 +81,38 @@ Four promise-backend-only changes on top of the weakening re-architecture below
    stack-safe; **zero codegen change**.
 
 Ship table (`run-bench-table.sh 5`, median LOOP-seconds, `node22`, isolated). `p/c` =
-promise/cont. All output-identical. **9/11 meet-or-beat cont.**
+promise/cont. All output-identical. **8/12 meet-or-beat cont**; the rest within ~7%
+except untyped boids-compute.
 
 | benchmark | result | cont | prom | p/c | parity |
 |---|---|---|---|---|---|
-| car-compute     | 14829840 | 2.88 | 2.18 | **0.76** | OK |
-| spell           | 73       | 3.11 | 2.52 | **0.81** | OK |
-| vec-methods     | 250590   | 2.61 | 2.19 | **0.84** | OK |
-| matrix          | 640615   | 3.17 | 2.82 | **0.89** | OK |
-| car-render      | 400000   | 2.92 | 2.70 | 0.92 | OK |
-| orbital-render  | 180000   | 3.04 | 2.87 | 0.94 | OK |
-| orbital-compute | 2959     | 2.46 | 2.42 | 0.98 | OK |
-| lander          | 4800000  | 2.60 | 2.66 | 1.02 | OK |
-| orbital-ems     | 390000   | 1.68 | 1.75 | 1.04 | OK |
-| boids-raster    | 250      | 2.71 | 3.00 | 1.11 | OK |
-| boids-compute   | 236561   | 2.58 | 3.14 | 1.22 | OK |
+| vec-methods         | 250590   | 2.75 | 2.02 | **0.73** | OK |
+| spell               | 73       | 3.15 | 2.47 | **0.78** | OK |
+| car-compute         | 14829840 | 2.82 | 2.20 | **0.78** | OK |
+| matrix              | 640615   | 3.22 | 3.06 | **0.95** | OK |
+| orbital-ems         | 390000   | 1.71 | 1.70 | 0.99 | OK |
+| lander              | 4800000  | 2.72 | 2.70 | 0.99 | OK |
+| orbital-render      | 180000   | 3.05 | 3.03 | 0.99 | OK |
+| car-render          | 400000   | 2.70 | 2.71 | 1.00 | OK |
+| orbital-compute     | 2959     | 2.37 | 2.41 | 1.02 | OK |
+| boids-compute-data  | 236561   | 2.84 | 2.93 | **1.03** | OK |
+| boids-raster        | 250      | 2.71 | 2.90 | 1.07 | OK |
+| boids-compute       | 236561   | 2.69 | 3.25 | 1.21 | OK |
 
-The CPS combinators move every list-traversing bench (boids-compute 1.26→1.22,
-boids-raster 1.15→1.11, orbital-compute 1.00→0.98) by removing the **innermost**
+The two boids rows are the punchline: **boids-compute-data (fully typed, do_avg flat) at
+1.03 vs untyped boids-compute at 1.21** — same physics, identical output (236561), the
+gap is entirely whether the bird state is provably Number. The CPS combinators move every
+list-traversing bench (boids-compute 1.26→1.21, boids-raster 1.15→1.07, orbital-compute
+1.00→1.02 within noise) by removing the **innermost**
 combinator boundary await. The residual on boids is the **outer** async wrappers
 (`each → fold` Pyret wrappers, `.map(update)`, `run-frames` recursion) the runtime CPS
 can't reach — closing them needs cross-module inlining or a maybe-promise *forwarding*
 rule, deferred as not worth the complexity.
 
-**`data Bird` experiment** (`bench-boids-compute-data.arr`): fully typing boids (`data
-Bird`/`World`/`Coord` + `uniform -> Number` + `==` weakening) makes `do_avg` statically
-flat. p/c: untyped **1.20** → typed **1.12** → typed + CPS **1.05**. Differential
+**`data Bird` experiment** (`bench-boids-compute-data.arr`, now a permanent table row):
+fully typing boids (`data Bird`/`World`/`Coord` + `uniform -> Number` + `==` weakening)
+makes `do_avg` statically flat. Across the session's steps p/c went untyped **1.20** →
+typed **1.12** → typed + CPS **~1.03-1.05**. Differential
 profile: the typed-promise *non-async* JS is already cheaper than cont (weakened flat
 ops); the residual async tax just barely tips it. Lesson: typing `do_avg` flat removed
 26/27 polymorphic ops yet barely moved wall-clock — the tax was never the callback's
