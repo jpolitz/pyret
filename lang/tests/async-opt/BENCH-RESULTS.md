@@ -53,6 +53,61 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-06-30 — typed operator weakening + structural flatness re-architecture)
+
+Replaced the numeric-flatness *seam* in `flatness.ts` with a cleanly-separated design
+(`type-flow` upper-bound types → **typed operator weakening** → purely-structural
+flatness). Weakening (`type-flow.ts weakenOperators`, ANF→ANF, promise-only) rewrites
+a polymorphic dispatching op into its monomorphic, known-flat global when the operand
+types are proven: `_plus`→`_plus_nums` (+ minus/times/divide + comparisons),
+`_plus`→`_plus_strings` + string comparisons, `tostring`/`torepr` on a primitive →
+`tostring_num`/…, and `raise`→`raise_flat`. Flatness then picks these up structurally
+(no numeric special-casing). Plus: method flatness made a **fixpoint** (resolves
+intra-type deps like `get` using `self.length()`), method-return-type tracking,
+refinement-alias resolution (`type Nat = Number%(Nat)`), and honoring prim-app
+`needsStep` (a long-standing under-approximation that marked every `if`/`cases`
+function non-flat — the async codegen already emitted these no-await). All promise-only;
+**cont byte-parity 16/16** and **promise suite 12896/12896** ("shipshape"); bit-identical
+cross-backend. `matrices.arr` `Vector.get` **and** `Matrix.get` both flip flat.
+
+Ship table (`run-bench-table.sh 7`, median LOOP-seconds, `node22`, isolated). `p/c` =
+promise(opts on)/cont. All output-identical cont≡promise. **8/10 meet-or-beat cont.**
+
+| benchmark | result | cont | prom | p/c | parity |
+|---|---|---|---|---|---|
+| vec-methods     | 250590   | 3.72 | 2.99 | **0.80** | OK |
+| spell           | 73       | 4.39 | 3.61 | **0.82** | OK |
+| car-compute     | 14829840 | 4.00 | 3.62 | **0.91** | OK |
+| orbital-render  | 180000   | 4.47 | 4.15 | **0.93** | OK |
+| car-render      | 400000   | 4.17 | 4.03 | 0.97 | OK |
+| lander          | 4800000  | 4.00 | 3.90 | 0.97 | OK |
+| orbital-ems     | 390000   | 2.56 | 2.53 | 0.99 | OK |
+| orbital-compute | 2959     | 3.60 | 3.59 | 1.00 | OK |
+| boids-raster    | 250      | 3.70 | 4.27 | 1.15 | OK |
+| boids-compute   | 236561   | 3.77 | 4.76 | 1.26 | OK |
+
+**Same-binary A/B** (opts on vs `-no-op-weakening -no-method-flatness`, clean cache each,
+min of 7) isolates *this* work's effect:
+
+| benchmark | cont | prom-noopt | prom-opt | opt/noopt | opt/cont |
+|---|---|---|---|---|---|
+| bench-matrix    | 4.61 | 5.70 (1.24×) | 4.04 | **0.71** | **0.88** |
+| vec-methods     | —    | (1.10×)      | —    | **0.71** | 0.78 |
+| boids-compute   | 3.58 | 4.70 (1.31×) | 4.53 | 0.96 | 1.27 |
+| boids-raster    | 3.58 | 4.00 (1.12×) | 4.13 | 1.03 | 1.15 |
+
+`bench-matrix` (annotation-dense `Matrix.get`/multiply; newly added to the suite here)
+goes from **1.24× cont → 0.88×** — a 29% gain from these opts, the cleanest payoff of
+the `Matrix.get` flip. vs the prior numeric-flatness baseline (car≈1.22, orbital≈1.20),
+`car-compute` and `orbital-compute` improved substantially.
+
+**boids is the irreducible floor, not a regression.** Its hot loops are
+`lists.each`/`map`/`fold` — O(n) recursive traversals that are genuinely non-flat, so
+they're emitted as async functions and flatness cannot touch them (the higher-order
+boundary also hides that the *body* is now flat). The A/B confirms the work isn't the
+cause: it *helps* boids-compute (1.31×→1.27×); boids-raster is within ~3% (noise).
+Closing boids needs a *different* lever — a flat-bodied fast-path for `each`/`map`/`fold`.
+
 ## Results (2026-06-29 — upper-bound type-flow: redundant annotation-check elimination)
 
 New optimization on branch `type-flow` (`lang/src/ts-compiler/src/type-flow.ts`): a
