@@ -398,16 +398,26 @@ ts-parity-promise-test: ts-compiler $(PHASEA)/pyret.jarr
 
 # Cross-backend run parity (within the TS compiler): TS-cont vs TS-promise on
 # tests/pyret/main2.arr (the independent semantic check for Promise-leak / flatness
-# bugs the byte oracle is blind to). Builds a promise-backend main2 and runs it.
-tests/pyret/main2-ts-promise.jarr: ts-compiler tests/pyret/main2.arr $(TEST_FILES)
+# bugs the byte oracle is blind to).
+#
+# All three promise test-suite jarrs (full main2, exec-only, compile-pipeline)
+# compile with identical flags; only the source .arr and the output name vary, so
+# one static pattern rule builds them all: `%` captures the basename (main2 /
+# main2-exec / main2-compile) and the prerequisite is tests/pyret/<basename>.arr.
+# `$@` is the target being built; `$<` is the first prerequisite (the .arr).
+TS_PROMISE_SUITE_JARRS = tests/pyret/main2-ts-promise.jarr \
+                         tests/pyret/main2-exec-ts-promise.jarr \
+                         tests/pyret/main2-compile-ts-promise.jarr
+
+$(TS_PROMISE_SUITE_JARRS): tests/pyret/%-ts-promise.jarr: tests/pyret/%.arr ts-compiler $(TEST_FILES)
 	$(TS_PYRET) \
 		  --builtin-js-dir src/js/trove/ \
 			--builtin-arr-dir src/arr/trove/ \
 			--require-config src/scripts/standalone-configA-async.json \
 			--compiled-dir tests/ts-compiled-promise/ \
 			--stack-backend promise \
-		--outfile tests/pyret/main2-ts-promise.jarr \
-		--build-runnable tests/pyret/main2.arr \
+		--outfile $@ \
+		--build-runnable $< \
 		-check-all
 
 # Like pyret-test-promise (the Pyret-promise reference oracle) but for the TS-promise
@@ -429,34 +439,13 @@ ts-promise-pyret-test: warm-promise-cache tests/pyret/main2-ts-promise.jarr
 # tests/pyret/main2-exec.arr / main2-compile.arr). main2-exec is the fast, clean
 # A/B oracle for runtime optimizations (no nested-compile noise, no flaky repl
 # stacktrace pins); main2-compile holds the carved-out full-pipeline tests.
-tests/pyret/main2-exec-ts-promise.jarr: ts-compiler tests/pyret/main2-exec.arr $(TEST_FILES)
-	$(TS_PYRET) \
-		  --builtin-js-dir src/js/trove/ \
-			--builtin-arr-dir src/arr/trove/ \
-			--require-config src/scripts/standalone-configA-async.json \
-			--compiled-dir tests/ts-compiled-promise/ \
-			--stack-backend promise \
-		--outfile tests/pyret/main2-exec-ts-promise.jarr \
-		--build-runnable tests/pyret/main2-exec.arr \
-		-check-all
-
+# (Both jarrs are built by the TS_PROMISE_SUITE_JARRS pattern rule above.)
 .PHONY : ts-promise-exec-test
 ts-promise-exec-test: warm-promise-cache tests/pyret/main2-exec-ts-promise.jarr
 	@echo "=== TS-promise EXECUTION suite (no nested-compile tests; expect: all tests pass) ==="
 	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-exec-ts-promise.jarr | tee /tmp/ts-promise-exec-result.txt; \
 	code=$${PIPESTATUS[0]}; \
 	test $$code -eq 0 && echo "TS-PROMISE EXEC SUITE OK" || { echo "TS-PROMISE EXEC SUITE: failures (exit $$code)"; exit 1; }
-
-tests/pyret/main2-compile-ts-promise.jarr: ts-compiler tests/pyret/main2-compile.arr $(TEST_FILES)
-	$(TS_PYRET) \
-		  --builtin-js-dir src/js/trove/ \
-			--builtin-arr-dir src/arr/trove/ \
-			--require-config src/scripts/standalone-configA-async.json \
-			--compiled-dir tests/ts-compiled-promise/ \
-			--stack-backend promise \
-		--outfile tests/pyret/main2-compile-ts-promise.jarr \
-		--build-runnable tests/pyret/main2-compile.arr \
-		-check-all
 
 .PHONY : ts-promise-compile-test
 ts-promise-compile-test: warm-promise-cache tests/pyret/main2-compile-ts-promise.jarr
