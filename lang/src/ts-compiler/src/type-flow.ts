@@ -173,6 +173,26 @@ interface Ctx {
   // e.g. `self.length() - 1` weaken (length returns Number) so a method using a
   // sibling's numeric result still flattens.
   methodRet: Map<string, AbsType>;
+  // ----- nested-var upper-bound inference (local-var ub fixpoint) ----------------
+  // Bind keys of mutable `var`s declared inside SOME function body (lambda/method),
+  // i.e. lexical depth > 0. Only these get a non-Any ub: a top-level var is REPL-
+  // mutable (open world -> its assignments aren't all visible), so it must stay Any; a
+  // nested var's declaration AND every `:=` are lexically within a body we fully
+  // analyze, so the join over its value sources is a sound flow-INSENSITIVE bound that
+  // holds at every read.
+  eligibleVars: Set<string>;
+  // Converged upper bound for each eligible var = join over its value sources (init +
+  // every assigned value), to a fixpoint (reads of a var consult this map, so a self-
+  // referential `j := j + 1` resolves). A var read yields this ub (Any if absent). This
+  // generalizes the old Any-always var rule to ANY type: a counter weakens its `+` to
+  // `_plus_nums`, a string accumulator's to `_plus_strings`, etc.
+  varUb: Map<string, AbsType>;
+  // True only during the seed pass: a var's declaration writes varUb(v) = ub(init) so
+  // the first real fixpoint pass has a starting type for self-references.
+  seedingVarUb: boolean;
+  // Non-null only during the fixpoint passes: var key -> joined ub of its value sources
+  // observed this pass (init + each `:=` value). Becomes the var's next varUb.
+  varSourceAccum: Map<string, AbsType> | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -344,6 +364,15 @@ function recordUb(ctx: Ctx, key: string, t: AbsType): void {
   ctx.env.set(key, t);
 }
 
+// During a numericVars fixpoint pass, fold one of var `key`'s value sources (its init
+// or an assigned value) into the per-pass accumulator. No-op outside the fixpoint
+// (varSourceAccum null) or for a non-eligible var (top-level / not a nested var).
+function contributeVarSource(ctx: Ctx, key: string, t: AbsType): void {
+  if (ctx.varSourceAccum === null || !ctx.eligibleVars.has(key)) { return; }
+  const prev = ctx.varSourceAccum.get(key);
+  ctx.varSourceAccum.set(key, prev === undefined ? t : join(prev, t));
+}
+
 // Resolve `v.field` when v's ub is a known in-module data type carrying the field.
 function fieldTypeOf(obj: AbsType, field: string, ctx: Ctx): AbsType | undefined {
   if (obj.k !== 'data') { return undefined; }
@@ -374,6 +403,17 @@ function absOfVal(v: N.AVal, ctx: Ctx): AbsType {
 // this lettable do" and "what type does it produce".
 function absOfLettable(e: N.ALettable, ctx: Ctx): AbsType {
   if (N.isAVal(e)) { return absOfVal(e.v, ctx); }
+  // Reading a mutable var yields its converged upper bound (Any for a top-level /
+  // un-inferred var). This is the sole consumer of the nested-var ub fixpoint.
+  if (N.isAIdVar(e)) {
+    return ctx.varUb.get(e.id.key()) ?? ANY;
+  }
+  // `var := value`: the assigned value is one of the var's sources -- fold its ub into
+  // the fixpoint accumulator (no-op outside the fixpoint passes).
+  if (N.isAAssign(e)) {
+    contributeVarSource(ctx, e.id.key(), absOfVal(e.value, ctx));
+    return ANY;                            // the assignment expression itself is not a value we track
+  }
   if (N.isALam(e) || N.isAMethod(e)) {
     // Seed params from their (post-check) annotations, then analyze the body.
     // The param's OWN check is the seed (untrusted caller -> ub starts at Any),
@@ -423,16 +463,19 @@ function absOfLettable(e: N.ALettable, ctx: Ctx): AbsType {
     }
     const name = globalOpName(f, ctx);
     if (name !== undefined) {
-      // Polymorphic arithmetic dispatchers: a Number result only when the
-      // operands prove it (their declared `-> Any` can't), so this must precede
-      // the declared-return fallback.
-      if (NUM_ARITH_OPS.has(name) && e.args.length === 2 && isNum(e.args[0], ctx) && isNum(e.args[1], ctx)) {
+      // Polymorphic arithmetic dispatchers (declared `-> Any`): the result type is
+      // determined by the LEFT operand, because `_plus`/`_minus`/`_times`/`_divide`
+      // dispatch on it. A Number LHS takes the numeric branch when the RHS is also a
+      // Number and otherwise RAISES (a Number is not an object carrying a user `_plus`,
+      // and `_plus`'s string branch needs a String LHS) -- so the result is
+      // Number-or-raises => sound ub Number, REGARDLESS of the RHS. (`random(x) + e` is
+      // Number even when `e` is untyped.) `_plus` with a String LHS is concat-or-raises
+      // => String. The RHS alone proves nothing: a non-prim LHS may dispatch to a user
+      // `_plus` returning anything. This must precede the declared-return fallback.
+      if (NUM_ARITH_OPS.has(name) && e.args.length === 2 && isNum(e.args[0], ctx)) {
         return prim('Number');
       }
-      // `_plus` on two Strings is concat -> String (the only string-typed operator;
-      // mirrors NUM_ARITH for Number). Needed so chained `a + b + c` string-building
-      // sees a String left operand at each step and the whole chain weakens.
-      if (name === '_plus' && e.args.length === 2 && isStr(e.args[0], ctx) && isStr(e.args[1], ctx)) {
+      if (name === '_plus' && e.args.length === 2 && isStr(e.args[0], ctx)) {
         return prim('String');
       }
       // Everything else (`_plus_nums`, `num-*`, `string-*`, `tostring`, `raise`,
@@ -502,10 +545,14 @@ function analyzeExpr(exprIn: N.AExpr, ctx: Ctx): AbsType {
         continue;
       }
       case 'a-var': {
-        // Mutable var: reads are conservatively Any (sound default; matches the
-        // numeric pass's var-stability discipline). No check is emitted for vars.
-        absOfLettable(expr.e, ctx);          // walk for effects; value discarded
-        ctx.env.set(expr.bind.id.key(), ANY);
+        // Mutable var: the INIT is a value source. During the seed pass it sets the
+        // var's starting ub; during fixpoint passes it joins into the accumulator.
+        // Reads are handled in absOfLettable's a-id-var case; the env entry is unused.
+        const key = expr.bind.id.key();
+        const initT = absOfLettable(expr.e, ctx);   // single walk: effects + init ub
+        if (ctx.seedingVarUb && ctx.eligibleVars.has(key)) { ctx.varUb.set(key, initT); }
+        contributeVarSource(ctx, key, initT);
+        ctx.env.set(key, ANY);
         expr = expr.body;
         continue;
       }
@@ -719,6 +766,39 @@ function collectLettable(e: N.ALettable, ctx: Ctx, dataObjs: Map<string, DataObj
   }
 }
 
+// Collect bind keys of mutable `var`s declared at lexical depth > 0 (inside some
+// lambda/method body) -- the only vars eligible for a non-Any upper bound. `depth` is
+// function-nesting depth: if/cases branches keep the same depth (they are not new
+// scopes for this purpose), only entering a lam/method body increments it. Mirrors the
+// recursion shape of collectLettable.
+function collectEligibleVars(exprIn: N.AExpr, ctx: Ctx, depth: number): void {
+  let expr: N.AExpr = exprIn;
+  for (;;) {
+    switch (expr.$name) {
+      case 'a-type-let': expr = expr.body; continue;
+      case 'a-let': collectEVLettable(expr.e, ctx, depth); expr = expr.body; continue;
+      case 'a-arr-let': collectEVLettable(expr.e, ctx, depth); expr = expr.body; continue;
+      case 'a-var':
+        if (depth > 0) { ctx.eligibleVars.add(expr.bind.id.key()); }
+        collectEVLettable(expr.e, ctx, depth);
+        expr = expr.body;
+        continue;
+      case 'a-seq': collectEVLettable(expr.e1, ctx, depth); expr = expr.e2; continue;
+      case 'a-lettable': collectEVLettable(expr.e, ctx, depth); return;
+      default: return;
+    }
+  }
+}
+
+function collectEVLettable(e: N.ALettable, ctx: Ctx, depth: number): void {
+  if (N.isALam(e) || N.isAMethod(e)) { collectEligibleVars(e.body, ctx, depth + 1); }
+  else if (N.isAIf(e)) { collectEligibleVars(e.t, ctx, depth); collectEligibleVars(e.e, ctx, depth); }
+  else if (N.isACases(e)) {
+    for (const b of e.branches) { collectEligibleVars(b.body, ctx, depth); }
+    collectEligibleVars(e._else, ctx, depth);
+  }
+}
+
 // Receiver info the flatness pass consumes for method-call flatness.
 export interface MethodInfo {
   // method-application node -> canonical id of its receiver's data type.
@@ -755,6 +835,10 @@ function newCtx(
     methodBindNodes: new Map(),
     fieldTypes: new Map(),
     methodRet: new Map(),
+    eligibleVars: new Set(),
+    varUb: new Map(),
+    seedingVarUb: false,
+    varSourceAccum: null,
   };
 }
 
@@ -769,6 +853,46 @@ function runTypeFlow(anfed: N.AProg, ctx: Ctx): void {
   for (const [key, n] of ctx.valueSources) {
     if (n > 1) { ctx.funRet.delete(key); ctx.ctors.delete(key); }
   }
+  // Nested-var upper-bound fixpoint: compute ub(v) = join over each var's value
+  // sources (init + assignments), with var reads consulting the in-progress ub so a
+  // self-referential `j := j + 1` resolves. Ascending Kleene iteration from a seed of
+  // each var's init type; F is monotone over the shallow AbsType lattice, so it
+  // converges (capped for safety -> fall back to all-Any, still sound).
+  collectEligibleVars(anfed.body, ctx, 0);
+  if (ctx.eligibleVars.size > 0) {
+    const savedCR = ctx.collectRedundant;
+    ctx.collectRedundant = false;          // suppress ann-elision work mid-fixpoint
+    ctx.seedingVarUb = true;
+    ctx.env = new Map();
+    analyzeExpr(anfed.body, ctx);          // seed varUb(v) = ub(init_v)
+    ctx.seedingVarUb = false;
+    const CAP = 12;
+    for (let iter = 0; ; iter++) {
+      ctx.varSourceAccum = new Map();
+      ctx.env = new Map();
+      analyzeExpr(anfed.body, ctx);
+      let changed = false;
+      for (const k of ctx.eligibleVars) {
+        const next = ctx.varSourceAccum.get(k) ?? ANY;
+        if (!absTypeEq(next, ctx.varUb.get(k) ?? ANY)) { ctx.varUb.set(k, next); changed = true; }
+      }
+      if (!changed) { break; }
+      if (iter >= CAP) {                    // non-convergence guard: widen all to Any
+        for (const k of ctx.eligibleVars) { ctx.varUb.set(k, ANY); }
+        break;
+      }
+    }
+    ctx.varSourceAccum = null;
+    ctx.collectRedundant = savedCR;
+  }
+  // Final pass: redundant-ann-check + method-receiver info, with converged varUb.
+  // All three outputs are rebuilt fresh here so any spurious entry recorded under an
+  // optimistic (pre-convergence) varUb during the seed/fixpoint passes is discarded --
+  // a var that widened data->Any across iterations could otherwise leave a stale
+  // method-receiver behind.
+  ctx.env = new Map();
+  ctx.redundant = new Set();
+  ctx.methodReceiver = new Map();
   analyzeExpr(anfed.body, ctx);
 }
 
@@ -858,6 +982,13 @@ const WEAKEN_STR_OPS: Map<string, string> = new Map([
   ['_lessthan', '_lessthan_strings'], ['_greaterthan', '_greaterthan_strings'],
   ['_lessequal', '_lessequal_strings'], ['_greaterequal', '_greaterequal_strings'],
 ]);
+// Equality that monomorphizes when BOTH operands are primitives (ANY prim, not
+// necessarily the same: `5 == "x"` is a flat NotEqual). Two primitives can't carry a
+// user `_equals`, so `equal-always` cannot dispatch or suspend. `<>` is `not(==)`, so
+// weakening the inner `equal-always` flattens it too.
+const WEAKEN_EQ_OPS: Map<string, string> = new Map([
+  ['equal-always', 'equal-always-prim'],
+]);
 // Unary tostring/torepr: pick the monomorphic flat helper by the operand's prim
 // type (no user `_output`/`_torepr` dispatch possible on a primitive).
 const WEAKEN_TOSTRING_OPS: Map<string, { Number: string; String: string; Boolean: string }> = new Map([
@@ -900,6 +1031,7 @@ function assertWeakenTableResolves(env: C.CompileEnvironment): void {
   const sources = new Set<string>([
     ...WEAKEN_NUM_OPS.keys(),
     ...WEAKEN_STR_OPS.keys(),
+    ...WEAKEN_EQ_OPS.keys(),
     ...WEAKEN_TOSTRING_OPS.keys(),
     ...WEAKEN_UNARY_OPS.keys(),
   ]);
@@ -916,6 +1048,7 @@ function assertWeakenTableResolves(env: C.CompileEnvironment): void {
   const targets: string[] = [
     ...WEAKEN_NUM_OPS.values(),
     ...WEAKEN_STR_OPS.values(),
+    ...WEAKEN_EQ_OPS.values(),
     ...WEAKEN_UNARY_OPS.values(),
     ...[...WEAKEN_TOSTRING_OPS.values()].flatMap((v) => [v.Number, v.String, v.Boolean]),
   ];
@@ -951,6 +1084,10 @@ class WeakenVisitor extends N.DefaultMapVisitor {
         let weak: string | undefined;
         if (p0 === 'Number' && p1 === 'Number') { weak = WEAKEN_NUM_OPS.get(name); }
         else if (p0 === 'String' && p1 === 'String') { weak = WEAKEN_STR_OPS.get(name); }
+        // Equality: any two primitives (need not match) -> the flat prim equality.
+        if (weak === undefined && p0 !== undefined && p1 !== undefined) {
+          weak = WEAKEN_EQ_OPS.get(name);
+        }
         if (weak !== undefined) { return this.weakenTo(node, weak); }
       }
       // Unary globals.
@@ -1001,7 +1138,13 @@ export function weakenOperators(
     const newBody = anfed.body.visit(new WeakenVisitor(ctx, count)) as N.AExpr;
     const out = new N.AProgram(anfed.l, anfed.provides, anfed.imports, newBody);
     if (process.env.PYRET_TF_DEBUG) {
-      process.stderr.write(`[op-weaken ${moduleUri}] weakened=${count.n}\n`);
+      process.stderr.write(`[op-weaken ${moduleUri}] weakened=${count.n} eligibleVars=${ctx.eligibleVars.size} funRet=${ctx.funRet.size}\n`);
+      if (process.env.PYRET_TF_DUMP) {
+        for (const k of ctx.eligibleVars) {
+          const t = ctx.varUb.get(k); if (t && t.k !== 'any') { process.stderr.write(`  varUb ${k} = ${JSON.stringify(t)}\n`); }
+        }
+        for (const [k, t] of ctx.funRet) { process.stderr.write(`  funRet ${k} = ${JSON.stringify(t)}\n`); }
+      }
     }
     return out;
   } catch (_e) {

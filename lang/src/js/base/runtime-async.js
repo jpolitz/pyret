@@ -4292,6 +4292,25 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     var tostring_bool = function(b) { return thisRuntime.makeString(String(b)); };
     var torepr_bool   = function(b) { return thisRuntime.makeString(String(b)); };
 
+    // Monomorphic equality, emitted by operator weakening when BOTH operands are proven
+    // primitives (Number/String/Boolean -- not necessarily the same one). Two primitives
+    // can never carry a user `_equals`, so `equal-always` cannot dispatch or suspend; this
+    // replicates its primitive semantics synchronously (flat). NOTE: it is NOT just
+    // `identical3` -- `identical3(1, ~1)` is NotEqual, but `equal-always` reaches its
+    // worklist number branch where ANY roughnum operand raises ("Roughnums"). So: two
+    // numbers => raise if either is rough, else `jsnums.equals`; any other prim pair =>
+    // `===` on the JS primitive (exact identity, no roughnum subtlety, no dispatch).
+    // UNSOUND for objects (=== is reference identity) -> only emit on proven prims.
+    var equal_always_prim = function(l, r) {
+      if (thisRuntime.isNumber(l) && thisRuntime.isNumber(r)) {
+        if (jsnums.isRoughnum(l) || jsnums.isRoughnum(r)) {
+          return equalityToBool(thisRuntime.ffi.unknown.app("Roughnums", l, r));
+        }
+        return thisRuntime.makeBoolean(jsnums.equals(l, r));
+      }
+      return thisRuntime.makeBoolean(l === r);
+    };
+
     var checkArrayIndex = function(methodName, arr, ix) {
       var throwErr = function(reason) {
         thisRuntime.ffi.throwInvalidArrayIndex(methodName, arr, ix, reason);
@@ -4543,20 +4562,34 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return newArray;
     };
 
-    var raw_list_map = async function(f, lst) {
-      if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-map"], 2, $a, false); }
-      thisRuntime.checkArgsInternal2("Lists", "raw-list-map",
-        f, thisRuntime.Function, lst, thisRuntime.List);
-      var currentAcc = [];
-      var currentLst = lst;
+    // CPS / maybe-promise raw-list-map (EXPERIMENT): a NON-async loop that returns the
+    // built List synchronously when nothing suspends, and a resumable Promise only when it
+    // pauses for fuel or the callback suspends. The loop's entire continuation is just
+    // (remaining list, accumulator), so a suspension returns `<thenable>.then(() =>
+    // resume(rest, acc))`. Removes the gratuitous always-Promise of an `async function` on
+    // the common (flat-callback, no-pause) path. Cooperative yield preserved exactly.
+    function raw_list_map_loop(f, currentLst, currentAcc) {
       while(thisRuntime.ffi.isLink(currentLst)) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        if(thisRuntime.needsPause()) {
+          var c0 = currentLst, a0 = currentAcc;
+          return thisRuntime.checkPause().then(function() { return raw_list_map_loop(f, c0, a0); });
+        }
         var currentFst = thisRuntime.getColonField(currentLst, "first");
         currentLst = thisRuntime.getColonField(currentLst, "rest");
         var res = f.app(currentFst);
-        currentAcc.push(isThenable(res) ? await res : res);
+        if (isThenable(res)) {
+          var c1 = currentLst, a1 = currentAcc;
+          return res.then(function(v) { a1.push(v); return raw_list_map_loop(f, c1, a1); });
+        }
+        currentAcc.push(res);
       }
       return thisRuntime.ffi.makeList(currentAcc);
+    }
+    var raw_list_map = function(f, lst) {
+      if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-map"], 2, $a, false); }
+      thisRuntime.checkArgsInternal2("Lists", "raw-list-map",
+        f, thisRuntime.Function, lst, thisRuntime.List);
+      return raw_list_map_loop(f, lst, []);
     };
 
 
@@ -4639,20 +4672,32 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return newArray;
     };
 
-    var raw_list_fold = async function(f, init, lst) {
-      if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-fold"], 3, $a, false); }
-      thisRuntime.checkArgsInternal3("Lists", "raw-list-fold",
-        f, thisRuntime.Function, init, thisRuntime.Any, lst, thisRuntime.List);
-      var currentAcc = init;
-      var currentLst = lst;
+    // CPS / maybe-promise raw-list-fold (EXPERIMENT; see raw_list_map_loop). The
+    // continuation is (acc, remaining list); fold's own (f, acc, lst) shape IS that
+    // continuation, so a suspension resumes by re-calling the loop. On a callback
+    // suspend the resolved value becomes the next accumulator.
+    function raw_list_fold_loop(f, currentAcc, currentLst) {
       while(thisRuntime.ffi.isLink(currentLst)) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        if(thisRuntime.needsPause()) {
+          var ac0 = currentAcc, c0 = currentLst;
+          return thisRuntime.checkPause().then(function() { return raw_list_fold_loop(f, ac0, c0); });
+        }
         var fst = thisRuntime.getColonField(currentLst, "first");
         currentLst = thisRuntime.getColonField(currentLst, "rest");
         var res = f.app(currentAcc, fst);
-        currentAcc = isThenable(res) ? await res : res;
+        if (isThenable(res)) {
+          var c1 = currentLst;
+          return res.then(function(v) { return raw_list_fold_loop(f, v, c1); });
+        }
+        currentAcc = res;
       }
       return currentAcc;
+    }
+    var raw_list_fold = function(f, init, lst) {
+      if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-fold"], 3, $a, false); }
+      thisRuntime.checkArgsInternal3("Lists", "raw-list-fold",
+        f, thisRuntime.Function, init, thisRuntime.Any, lst, thisRuntime.List);
+      return raw_list_fold_loop(f, init, lst);
     };
 
 
@@ -5739,6 +5784,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       'torepr_str': makeFunction(torepr_str, "torepr_str"),
       'tostring_bool': makeFunction(tostring_bool, "tostring_bool"),
       'torepr_bool': makeFunction(torepr_bool, "torepr_bool"),
+
+      'equal-always-prim': makeFunction(equal_always_prim, "equal-always-prim"),
 
       'num-random': makeFunction(num_random, "num-random"),
       'num-random-seed': makeFunction(num_random_seed, "num-random-seed"),

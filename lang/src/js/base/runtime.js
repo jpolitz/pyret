@@ -4182,6 +4182,20 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     var tostring_bool = function(b) { return thisRuntime.makeString(String(b)); };
     var torepr_bool   = function(b) { return thisRuntime.makeString(String(b)); };
 
+    // Monomorphic equality for two proven primitives (see runtime-async.js for the full
+    // rationale -- NOT just identical3: a roughnum operand must raise "Roughnums", matching
+    // equal-always's worklist). Flat. Emitted only by the promise-backend weakening pass;
+    // kept here so global.js stays consistent across runtimes.
+    var equal_always_prim = function(l, r) {
+      if (thisRuntime.isNumber(l) && thisRuntime.isNumber(r)) {
+        if (jsnums.isRoughnum(l) || jsnums.isRoughnum(r)) {
+          return equalityToBool(thisRuntime.ffi.unknown.app("Roughnums", l, r));
+        }
+        return thisRuntime.makeBoolean(jsnums.equals(l, r));
+      }
+      return thisRuntime.makeBoolean(l === r);
+    };
+
     var checkArrayIndex = function(methodName, arr, ix) {
       var throwErr = function(reason) {
         thisRuntime.ffi.throwInvalidArrayIndex(methodName, arr, ix, reason);
@@ -5994,6 +6008,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       'torepr_str': makeFunction(torepr_str, "torepr_str"),
       'tostring_bool': makeFunction(tostring_bool, "tostring_bool"),
       'torepr_bool': makeFunction(torepr_bool, "torepr_bool"),
+
+      'equal-always-prim': makeFunction(equal_always_prim, "equal-always-prim"),
 
       'num-random': makeFunction(num_random, "num-random"),
       'num-random-seed': makeFunction(num_random_seed, "num-random-seed"),

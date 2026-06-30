@@ -472,6 +472,15 @@
                   'name': '_greaterequal_nums',
                   'typ': ['arrow', ['Number', 'Number'], 'Boolean']},
 
+      // Monomorphic equality (flat: two primitives can't carry a user `_equals`, so no
+      // dispatch/suspend). Emitted by operator weakening when both operands are proven
+      // primitives. Typed Any,Any here (no "Prim" type); soundness rests on the pass
+      // only emitting it on proven prims, exactly like the `_nums` ops above.
+      "equal-always-prim": {'bind': 'fun',
+                  'flatness': 0,
+                  'name': 'equal-always-prim',
+                  'typ': ['arrow', ['Any', 'Any'], 'Boolean']},
+
       // Monomorphic String operators + primitive tostring/torepr (flat). Emitted by
       // operator weakening when the operand types are proven String/Number/Boolean.
       "_plus_strings": {'bind': 'fun', 'flatness': 0, 'name': '_plus_strings',
