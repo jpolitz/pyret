@@ -3133,12 +3133,30 @@ export function compileProvides(provides: CS.Provides): J.JExprT {
   const aliasFields = clMapSd((a: string) =>
     jField(a, compileProvidedType(mapGetValue(provides.aliases, a))) as J.JFieldT,
   provides.aliases);
-  return jObj(clist<J.JFieldT>(
+  // Cross-module method flatness: emit a `method-flatness` sibling section
+  // { dataName: { methodName: flatness } }, sorted for deterministic output, only
+  // for datatypes that carry any (promise backend; cont's compileProvides omits it,
+  // so cont provides bytes are unchanged). Consumed by importers' flatness pass.
+  const methodFlatnessFields: J.JFieldT[] = [];
+  for (const d of [...provides.dataDefinitions.keys()].sort()) {
+    const de = mapGetValue(provides.dataDefinitions, d);
+    if (CS.isDType(de) && de.methodFlatness.size > 0) {
+      const methFields = [...de.methodFlatness.keys()].sort().map((meth) =>
+        jField(meth, jNum(mapGetValue(de.methodFlatness, meth))) as J.JFieldT);
+      methodFlatnessFields.push(jField(d, jObj(CL.clist(...methFields))) as J.JFieldT);
+    }
+  }
+  const baseProvidesFields = clist<J.JFieldT>(
     jField('modules', jObj(moduleFields)),
     jField('values', jObj(valueFields)),
     jField('datatypes', jObj(dataFields)),
     jField('aliases', jObj(aliasFields))
-  ));
+  );
+  const allProvidesFields = methodFlatnessFields.length === 0
+    ? baseProvidesFields
+    : CL.clAppend(baseProvidesFields, CL.clist(
+      jField('method-flatness', jObj(CL.clist(...methodFlatnessFields))) as J.JFieldT));
+  return jObj(allProvidesFields);
 }
 
 // Pyret lists.sort-by (the non-stable variant used by compile-module):

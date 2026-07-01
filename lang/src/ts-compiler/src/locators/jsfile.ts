@@ -54,7 +54,8 @@ export function makeJsfileLocator(path: string): CL.Locator {
         modules: raw.getRawModuleProvides(),
         values: raw.getRawValueProvides(),
         aliases: raw.getRawAliasProvides(),
-        datatypes: raw.getRawDatatypeProvides()
+        datatypes: raw.getRawDatatypeProvides(),
+        'method-flatness': raw.getRawMethodFlatnessProvides()
       });
       return new CM.ModuleAsString(provs, CM.noBuiltins, CM.computedNone,
         CM.ok(new JSP.CCPFile(P.resolve(path + ".js"))));

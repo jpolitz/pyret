@@ -410,6 +410,13 @@ export abstract class CompileEnvironmentBase {
     return v;
   }
 
+  // Per-method flatness of a datatype (promise backend cross-module method flatness).
+  // Follows aliases like datatypeByUri. Empty map when the type carries none.
+  datatypeMethodFlatness(uri: string, name: string): Map<string, number> {
+    const dt = this.datatypeByUri(uri, name);
+    return (dt !== undefined && isDType(dt)) ? dt.methodFlatness : new Map();
+  }
+
   valueByOrigin(origin: BindOrigin): ValueExport | undefined {
     return this.valueByUri(origin.uriOfDefinition, origin.originalName.toname());
   }
@@ -713,7 +720,16 @@ export class DAlias extends DataExportBase {
 }
 export class DType extends DataExportBase {
   get $name(): 'd-type' { return 'd-type'; }
-  constructor(public origin: BindOrigin, public typ: T.DataType) { super(); }
+  // methodFlatness: per-method flatness (`methodName` -> flatness), for the promise
+  // backend's cross-module method-flatness analysis. Populated either from this
+  // module's own flatness fixpoint (getFlatProvides, for Pyret modules) or derived
+  // for native builtins; serialized in the promise provides and read back here.
+  // Empty for cont / when the feature is off.
+  constructor(
+    public origin: BindOrigin,
+    public typ: T.DataType,
+    public methodFlatness: Map<string, number> = new Map()
+  ) { super(); }
 }
 export type DataExport = DAlias | DType;
 export function isDAlias(x: any): x is DAlias { return x instanceof DAlias; }
@@ -930,6 +946,23 @@ export function providesFromRawProvides(uri: string, raw: any): Provides {
   for (const d of raw.datatypes) {
     ddict.set(d.name, datatypeFromRaw(uri, d.typ));
   }
+  // Cross-module method flatness (promise backend): a sibling `method-flatness`
+  // section mapping dataName -> { methodName: flatness }. Attach it to the parsed
+  // DType so importers can flatten its native/proven-flat methods. Absent for cont
+  // provides and JSON builtins that don't declare it (then the map stays empty).
+  const rawMethodFlatness = raw['method-flatness'] ?? raw.methodFlatness;
+  if (rawMethodFlatness !== undefined && rawMethodFlatness !== false) {
+    for (const dataName of Object.keys(rawMethodFlatness)) {
+      const de = ddict.get(dataName);
+      if (de !== undefined && isDType(de)) {
+        const perMethod = rawMethodFlatness[dataName];
+        for (const meth of Object.keys(perMethod)) {
+          const f = perMethod[meth];
+          if (typeof f === 'number') { de.methodFlatness.set(meth, f); }
+        }
+      }
+    }
+  }
   return new Provides(uri, mdict, vdict, adict, ddict);
 }
 
@@ -1098,6 +1131,18 @@ export interface CompileOptions {
   // self-disables unless runtimeAnnotations && userAnnotations. Independent of
   // `optimize`.
   methodFlatness: boolean;
+  // Cross-module method flatness (promise backend only; a sub-feature of
+  // methodFlatness, so also disabled by it). On by default; -no-imported-method-flat
+  // disables it for A/B measurement. Lets a call to an IMPORTED type's flat method
+  // skip the conditional-await wrapper. Two sources, both keyed off the receiver's
+  // runtime-checked/constructed type: (a) Pyret modules serialize each datatype's
+  // computed method flatness in their provides (getFlatProvides -> the
+  // `method-flatness` section), consumed here; (b) native JS-builtin dict methods,
+  // which have no Pyret body, are derived flat from their declared type (no callback
+  // arg => native + synchronous). Sound on the same basis as in-module method
+  // flatness: the receiver rests on an annotation/constructor check, and the type's
+  // brand guarantees the analyzed/native method implementations.
+  importedMethodFlat: boolean;
   // Typed operator weakening (type-flow.ts; promise backend only). On by default;
   // -no-op-weakening disables it for A/B measurement. Rewrites a polymorphic,
   // dispatching operator app (`_plus` ...) into its monomorphic, non-dispatching,
@@ -1154,6 +1199,7 @@ export const defaultCompileOptions: CompileOptions = {
   directCases: true,
   annElision: true,
   methodFlatness: true,
+  importedMethodFlat: true,
   opWeakening: true,
   stackBackend: compiledStackBackend,
   inlineCaseBodyLimit: 5,

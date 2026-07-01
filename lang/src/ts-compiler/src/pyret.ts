@@ -94,6 +94,8 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Disable redundant annotation-check elimination (promise backend; keep every _checkAnn the type-flow analysis proved dead, for A/B measurement)')],
     ['no-method-flatness',
       C.flag(C.once, 'Disable method-call flatness (promise backend; keep all method calls/methods async, for A/B measurement)')],
+    ['no-imported-method-flat',
+      C.flag(C.once, 'Disable cross-module method flatness (promise backend; keep the conditional-await wrapper on calls to an imported flat method -- both a Pyret module method proven flat and a native builtin dict method -- for A/B measurement)')],
     ['no-op-weakening',
       C.flag(C.once, 'Disable typed operator weakening (promise backend; keep polymorphic _plus etc. instead of monomorphic _plus_nums, for A/B measurement)')],
     ['collect-times',
@@ -145,6 +147,7 @@ export function main(args: string[]): number {
     const directCases = !r.has('no-direct-cases');
     const annElision = !r.has('no-ann-elision');
     const methodFlatness = !r.has('no-method-flatness');
+    const importedMethodFlat = !r.has('no-imported-method-flat');
     const opWeakening = !r.has('no-op-weakening');
     const compiledDir = r.get('compiled-dir');
     const standaloneFile = r.get('standalone-file');
@@ -228,6 +231,7 @@ export function main(args: string[]): number {
           directCases: directCases,
           annElision: annElision,
           methodFlatness: methodFlatness,
+          importedMethodFlat: importedMethodFlat,
           opWeakening: opWeakening,
           stackBackend: stackBackend,
           compiledCache: compiledDir,
@@ -271,6 +275,7 @@ export function main(args: string[]): number {
         directCases: directCases,
         annElision: annElision,
         methodFlatness: methodFlatness,
+        importedMethodFlat: importedMethodFlat,
         opWeakening: opWeakening,
         stackBackend: stackBackend,
         compileModule: false,

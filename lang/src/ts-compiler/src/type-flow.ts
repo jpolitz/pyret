@@ -934,7 +934,7 @@ export function makeProgMethodInfo(
   moduleUri: string,
 ): MethodInfo {
   // flatnessEnv is unused when collectRedundant is false; pass an empty one.
-  const dummyFlat: FL.FlatnessEnv = [new Map(), new Map(), new Set(), new Set()];
+  const dummyFlat: FL.FlatnessEnv = [new Map(), new Map(), new Set(), new Set(), new Map()];
   const ctx = newCtx(postEnv, env, dummyFlat, moduleUri, false);
   try {
     runTypeFlow(anfed, ctx);
@@ -1127,7 +1127,7 @@ export function weakenOperators(
   // inside the fail-safe try, where it would be swallowed into a silent no-op.
   assertWeakenTableResolves(env);
   // flatnessEnv is unused when collectRedundant is false; pass an empty one.
-  const dummyFlat: FL.FlatnessEnv = [new Map(), new Map(), new Set(), new Set()];
+  const dummyFlat: FL.FlatnessEnv = [new Map(), new Map(), new Set(), new Set(), new Map()];
   const ctx = newCtx(postEnv, env, dummyFlat, moduleUri, false);
   try {
     runTypeFlow(anfed, ctx);

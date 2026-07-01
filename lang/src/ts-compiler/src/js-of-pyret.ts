@@ -152,7 +152,7 @@ export function traceMakeCompiledPyret(
       : undefined;
   // Numeric-flatness is enabled only for the promise backend (the cont backend's
   // codegen + byte-parity oracle stay untouched).
-  const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env, methodInfo));
+  const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env, methodInfo, options.importedMethodFlat));
   const flatProvides = addPhase('Get flat-provides', FL.getFlatProvides(provides, env, postEnv, flatnessEnv, anfed));
   // Upper-bound type-flow: bind keys whose `:: T` annotation check is provably
   // redundant. Promise backend only (cont codegen stays frozen for the byte-parity
