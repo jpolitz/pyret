@@ -1,0 +1,5 @@
+{
+  "pyret-parley.hover.serverUrl": "wss://pyret-dev.exe.xyz:3000/pyret-hover",
+  "pyret-parley.hover.diskRoot": "/home/exedev/pyret/browser-test/vscode/demo-workspace",
+  "workbench.editorAssociations": { "*.arr": "default" }
+}

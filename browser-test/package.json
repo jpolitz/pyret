@@ -1,0 +1,18 @@
+{
+  "name": "pyret-browser-hover-test",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Headless proof that the Pyret VS Code *web* extension serves hover (signature + docstring) via a companion pyret.jarr server over WebSocket. Adapted from jpolitz/pyret-lang@drydock browser-test.",
+  "scripts": {
+    "hover": "node --test --test-force-exit --test-reporter=spec tests/hover.test.js",
+    "serve": "node serve-3000.js"
+  },
+  "devDependencies": {
+    "@vscode/test-web": "^0.0.65",
+    "playwright": "^1.49.1",
+    "ws": "^8.18.0"
+  },
+  "dependencies": {
+    "http-proxy": "^1.18.1"
+  }
+}

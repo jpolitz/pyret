@@ -1,0 +1,5 @@
+{
+  "pyret-parley.hover.serverUrl": "ws://localhost:5555",
+  "pyret-parley.hover.diskRoot": "/home/exedev/pyret/browser-test/vscode/fixture-workspace",
+  "workbench.editorAssociations": { "*.arr": "default" }
+}

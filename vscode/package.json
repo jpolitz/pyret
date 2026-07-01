@@ -13,7 +13,9 @@
 	"categories": [
 		"Other"
 	],
-	"activationEvents": [],
+	"activationEvents": [
+		"onLanguage:pyret"
+	],
 	"repository": "https://github.com/jpolitz/pyret-parley-vscode",
 	"files": [
 		"dist/web/**/*",
@@ -92,7 +94,8 @@
 					{
 						"filenamePattern": "*.arr"
 					}
-				]
+				],
+				"priority": "option"
 			}
 		],
 		"configuration": {
@@ -126,6 +129,24 @@
           "default": "verbose",
           "scope": "resource",
           "description": "Traces logs of the communication between VS Code and the language server."
+        },
+        "pyret-parley.hover.serverUrl": {
+          "type": "string",
+          "default": "ws://localhost:5555",
+          "scope": "resource",
+          "description": "WebSocket URL of the companion `pyret.jarr -serve` process that answers hover queries in the browser extension."
+        },
+        "pyret-parley.hover.diskRoot": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Absolute directory on the hover server's host that holds the .arr files. The browser extension maps each open document to `<diskRoot>/<basename>` when querying hover (needed because the Web workspace is virtual). Leave empty to use the document's own path."
+        },
+        "pyret-parley.hover.debug": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "Surface browser-hover diagnostics (fired/result/error) as notifications. For test/debugging only."
         }
 			}
 		}
