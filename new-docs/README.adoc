@@ -57,15 +57,61 @@ other outputs. Since Bootstrap seems to be HTML only, we'll
 restrict ourselves to HTML. However, our source is in `poly`
 format, so we could go to other output formats if needed.
 
-We will use the general Pollen enhancement files from
-https://github.com/ds26gte/pollenboots to allow a more flexible
-input style, viz., with blank lines signifying paragraph separation,
-automatic conversion to smart quotes and dashes, automatic
-creation of external title. (Very likely others as we learn more.)
-
-Pollen enhancements that are peculiar to the Pyret docs are
+Pollen macros and source files for the Pyret docs are
 included alongside the source for the docs, i.e., in the new-docs
 subdirectory.
 
 The file index.ptree is a _page tree_ of the various document
-files, in the preferred order.
+files (using the .html extension!), in the preferred order. The
+source files for this .html's are the *.poly.pm files, placed in
+the appropriate (sub)directories.
+
+The file template.html.p provides the boilerplate for the
+generated .html.
+
+The Pollen rendering is guided by the file pollen.rkt, which
+defines directives that can be used in the .poly.pm, but can also
+provide a `root` procedure that allows a full-source
+transformation of the per-file Pollen intermediate format. This
+allows non-local transformations like adding a table of contents,
+glossary, and cross references -- i.e., things that cannot be done
+simply by defining locally transforming directive procedures
+(although a local directive may still need to auto-include the
+anchor points).
+
+Luckily, these global Pollen additions are sufficiently general --
+i.e., not specific to Pyret doc -- that we can develop them
+in a dedicated repo,
+https://github.com/ds26gte/pollenboots[Pollenboots]. This
+repo contains a pollen.rkt with a definition for `root` that does the
+ToC and xrefs, and in our Pyret docs directory, we will have our
+pollen.rkt slurp in the pollenboots' pollen.rkt. While our
+pollen.rkt will define local directives (using subfiles as
+needed), it will use the pollenboots' `root` directly, as that
+already takes care of all the global transformations we need. (We
+don't need a separate wrapper `root`.)
+
+In addition, the pollenboots' pollen.rkt allows a more author-convenient
+input style, viz., with blank lines signifying paragraph separation,
+automatic conversion to smart quotes and dashes, automatic
+creation of external title.
+
+Please look at the pollenboots doc for specifics on its
+pollen.rkt. Now we will briefly describe the kinds of directives that the
+pyret-docs' pollen.rkt provides:
+
+- The first are a series of code-display directives, such as
+◊pyret, ◊pyret-id, ◊examples, etc. These are exactly modeled on
+the similarly named @-functions in the Scribble version.
+
+- Then we have some abbreviations for type annotations (`A` for
+`Any`, `B` for `Boolean`, etc). Again these match the convention
+set by Scribble.
+
+- Finally we have some larger paragraph-formatting directives such
+as ◊form, ◊type-spec, etc.
+
+Although these are seemingly local directives, they do use some of
+the utilities from the pollenboots' pollen.rkt in order to
+automatically insert anchort points for the cross-references,
+glossary entries, and ToC entries.
