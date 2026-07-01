@@ -142,6 +142,15 @@ interface Ctx {
   // shared method, the known variant's own method, or a method every variant has.
   variantMethodNames: Map<string, Map<string, Set<string>>>;
   sharedMethodNames: Map<string, Set<string>>;
+  // Cross-module direct dispatch: `uri#name#method` keys for every method an
+  // IMPORTED type declares in its serialized method-flatness table (the same
+  // provides channel cross-module method-flatness rides). A method in this table
+  // is genuine, present, and flat by construction -- so `obj.dict[m].full_meth`
+  // is safe (this also excludes function-valued fields, which never enter the
+  // flatness table). Lets `sd.get-value(k)` / imported List.map etc. dispatch
+  // directly even though their data-exprs aren't in this module's ANF. Empty
+  // unless the caller enabled importedMethodFlat.
+  importedMethods: Set<string>;
   // in-module type aliases: `type X = ann` binding key -> ann. Followed when
   // resolving an annotation so e.g. `type NonZeroNat = Number%(p)` resolves to
   // its base Number for the upper bound (while still never eliding its own
@@ -862,6 +871,7 @@ function newCtx(
     variantFieldNames: new Map(),
     variantMethodNames: new Map(),
     sharedMethodNames: new Map(),
+    importedMethods: new Set(),
     typeAliases: new Map(),
     typeBindings: pe.typeBindings,
     moduleBindings: pe.moduleBindings,
@@ -1189,6 +1199,9 @@ function directFieldOk(obj: AbsType, field: string, ctx: Ctx): boolean {
 function directMethodOk(obj: AbsType, meth: string, ctx: Ctx): boolean {
   if (obj.k !== 'data') { return false; }
   if (ctx.sharedMethodNames.get(obj.id)?.has(meth)) { return true; }
+  // Imported / native type (no in-module data-expr): fall back to its serialized
+  // flat-method table. `obj.id` is already `uri#name`.
+  if (ctx.importedMethods.has(obj.id + '#' + meth)) { return true; }
   const vm = ctx.variantMethodNames.get(obj.id);
   if (vm === undefined || vm.size === 0) { return false; }
   if (obj.variant !== undefined) {
@@ -1225,9 +1238,21 @@ export function tagDirectFields(
   postEnv: C.ComputedEnvironment,
   env: C.CompileEnvironment,
   moduleUri: string,
+  importedMethodFlat: boolean,
 ): N.AProg {
   const dummyFlat: FL.FlatnessEnv = [new Map(), new Map(), new Set(), new Set(), new Map()];
   const ctx = newCtx(postEnv, env, dummyFlat, moduleUri, false);
+  // Seed cross-module direct-dispatchable methods from every imported type's
+  // serialized flat-method table (same source as buildImportedFlatMethods).
+  if (importedMethodFlat) {
+    for (const [uri, loadable] of env.allModules) {
+      for (const [name, de] of loadable.provides.dataDefinitions) {
+        if (C.isDType(de)) {
+          for (const [meth] of de.methodFlatness) { ctx.importedMethods.add(uri + '#' + name + '#' + meth); }
+        }
+      }
+    }
+  }
   try {
     runTypeFlow(anfed, ctx);
     const count = { n: 0 };

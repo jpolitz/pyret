@@ -154,7 +154,7 @@ export function traceMakeCompiledPyret(
     || (options.runtimeAnnotations && options.userAnnotations);
   const anfed =
     (optForBackend && options.directFields && valueIsTyped)
-      ? addPhase('Direct field tagging', TF.tagDirectFields(anfedWeak, postEnv, env, provides.fromUri))
+      ? addPhase('Direct field tagging', TF.tagDirectFields(anfedWeak, postEnv, env, provides.fromUri, options.importedMethodFlat))
       : anfedWeak;
   if (process.env.PYRET_DUMP_ANF) {
     process.stderr.write('===ANF[' + (programAst.l && (programAst.l as any).source) + ']===\n');
