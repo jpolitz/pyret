@@ -705,7 +705,15 @@ export class ADot extends ALettableBase {
   // iterations -- the promise-backend codegen emits `cacheVar ??= getField(...)`
   // (see optimize-anf.ts LICM and anf-loop-compiler-async.ts aDot). It is never
   // set by anfProgram itself; only the ANF optimizer introduces it.
-  constructor(public l: Loc, public obj: AVal, public field: string, public cacheVar?: A.Name) { super(); }
+  //
+  // `directField`, when true, marks this read as a plain data field whose
+  // receiver is statically known to be a data type carrying `field` on every
+  // variant (resolved by type-flow's tagDirectFields). Codegen then emits the
+  // direct `obj.dict["field"]` instead of the reflective `getField(obj,...)`
+  // call -- skipping the method-curry / missing-field / non-object dispatch and,
+  // crucially, de-funnelling: each read becomes its own low-polymorphism access
+  // site instead of routing through the one megamorphic getField `dict[field]`.
+  constructor(public l: Loc, public obj: AVal, public field: string, public cacheVar?: A.Name, public directField?: boolean) { super(); }
   visit(visitor: any): any { return visitor.aDot(this); }
   label(): string { return 'a-dot'; }
   tosource(): PP.PPrintDoc { return PP.infix(INDENT, 0, strPeriod, this.obj.tosource(), PP.str(this.field)); }
@@ -1160,7 +1168,7 @@ export class DefaultMapVisitor {
     return new AExtend(node.l, node.supe.visit(this), node.fields.map((f) => f.visit(this)));
   }
   aDot(node: ADot): ALettable {
-    return new ADot(node.l, node.obj.visit(this), node.field, node.cacheVar);
+    return new ADot(node.l, node.obj.visit(this), node.field, node.cacheVar, node.directField);
   }
   aColon(node: AColon): ALettable {
     return new AColon(node.l, node.obj.visit(this), node.field);

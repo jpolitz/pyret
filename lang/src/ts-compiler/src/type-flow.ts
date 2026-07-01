@@ -1116,6 +1116,54 @@ class WeakenVisitor extends N.DefaultMapVisitor {
   }
 }
 
+// Tags each `obj.field` read whose receiver's upper-bound type resolves to a
+// data type carrying `field` as a plain data field on EVERY variant (exactly the
+// `fieldTypes` intersection collectBind already computes -- so this excludes
+// methods and partial fields). Such a read is guaranteed present and non-method,
+// so codegen can emit `obj.dict["field"]` directly instead of routing through the
+// one megamorphic `getField`. Mirrors directCases: sound because the receiver is
+// proven of that type by the type checker OR its runtime `_checkAnn` (the caller
+// gates on valueIsTyped). For `.`-access, a ref field is returned as-is by
+// getField, and the direct dict read returns the same box -- so no derefField.
+class TagDotVisitor extends N.DefaultMapVisitor {
+  constructor(private ctx: Ctx, private count: { n: number }) { super(); }
+  aDot(node: N.ADot): N.ALettable {
+    const newObj = node.obj.visit(this) as N.AVal;
+    const ft = fieldTypeOf(absOfVal(node.obj, this.ctx), node.field, this.ctx);
+    if (ft !== undefined) {
+      this.count.n += 1;
+      return new N.ADot(node.l, newObj, node.field, node.cacheVar, true);
+    }
+    return new N.ADot(node.l, newObj, node.field, node.cacheVar, node.directField);
+  }
+}
+
+export function tagDirectFields(
+  anfed: N.AProg,
+  postEnv: C.ComputedEnvironment,
+  env: C.CompileEnvironment,
+  moduleUri: string,
+): N.AProg {
+  const dummyFlat: FL.FlatnessEnv = [new Map(), new Map(), new Set(), new Set(), new Map()];
+  const ctx = newCtx(postEnv, env, dummyFlat, moduleUri, false);
+  try {
+    runTypeFlow(anfed, ctx);
+    const count = { n: 0 };
+    const newBody = anfed.body.visit(new TagDotVisitor(ctx, count)) as N.AExpr;
+    const out = new N.AProgram(anfed.l, anfed.provides, anfed.imports, newBody);
+    if (process.env.PYRET_TF_DEBUG) {
+      process.stderr.write(`[direct-fields ${moduleUri}] tagged=${count.n}\n`);
+    }
+    return out;
+  } catch (_e) {
+    // Optimization only: fail safe to "tag nothing".
+    if (process.env.PYRET_TF_DEBUG) {
+      process.stderr.write(`[direct-fields ${moduleUri}] FAILED: ${(_e as any)?.stack ?? _e}\n`);
+    }
+    return anfed;
+  }
+}
+
 export function weakenOperators(
   anfed: N.AProg,
   postEnv: C.ComputedEnvironment,

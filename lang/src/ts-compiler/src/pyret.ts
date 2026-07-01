@@ -90,6 +90,8 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Disable function-local var box elimination (promise backend; keep all vars boxed, for A/B measurement)')],
     ['no-direct-cases',
       C.flag(C.once, 'Disable static field access for cases (promise backend; use the reflective $fieldNames/$mut_fields_mask chain, for A/B measurement)')],
+    ['no-direct-fields',
+      C.flag(C.once, 'Disable static field access for obj.field reads (both backends when the receiver type is known; use the reflective getField call, for A/B measurement)')],
     ['no-ann-elision',
       C.flag(C.once, 'Disable redundant annotation-check elimination (promise backend; keep every _checkAnn the type-flow analysis proved dead, for A/B measurement)')],
     ['no-method-flatness',
@@ -147,6 +149,7 @@ export function main(args: string[]): number {
     const inlineComments = r.has('inline-comments');
     const unboxVars = !r.has('no-unbox-vars');
     const directCases = !r.has('no-direct-cases');
+    const directFields = !r.has('no-direct-fields');
     const annElision = !r.has('no-ann-elision');
     const methodFlatness = !r.has('no-method-flatness');
     const importedMethodFlat = !r.has('no-imported-method-flat');
@@ -232,6 +235,7 @@ export function main(args: string[]): number {
           inlineComments: inlineComments,
           unboxVars: unboxVars,
           directCases: directCases,
+          directFields: directFields,
           annElision: annElision,
           methodFlatness: methodFlatness,
           importedMethodFlat: importedMethodFlat,
@@ -277,6 +281,7 @@ export function main(args: string[]): number {
         inlineComments: inlineComments,
         unboxVars: unboxVars,
         directCases: directCases,
+        directFields: directFields,
         annElision: annElision,
         methodFlatness: methodFlatness,
         importedMethodFlat: importedMethodFlat,

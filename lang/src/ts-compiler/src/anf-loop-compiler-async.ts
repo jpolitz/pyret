@@ -2576,7 +2576,13 @@ export class CompilerVisitor {
 
   aDot(node: N.ADot): DAG.CExp {
     const visitObj: DAG.CExp = node.obj.visit(this);
-    const baseRead = getFieldSafe(node.l, visitObj.exp, jStr(node.field), this.getLoc(node.l));
+    // A type-flow-proven plain data field (`directField`) reads straight from the
+    // dict -- no getField call, method-curry check, or missing/non-object guard,
+    // and each site is its own low-polymorphism access instead of the megamorphic
+    // getField funnel. Same soundness basis as directCases.
+    const baseRead = node.directField
+      ? getDictField(visitObj.exp, jStr(node.field))
+      : getFieldSafe(node.l, visitObj.exp, jStr(node.field), this.getLoc(node.l));
     const stmts = clSnoc(visitObj.otherStmts, jExpr(jAssign(this.curApploc, this.getLoc(node.l))) as J.JStmt);
     if (node.cacheVar !== undefined) {
       // Cross-iteration write-once memoization of a loop-invariant immutable

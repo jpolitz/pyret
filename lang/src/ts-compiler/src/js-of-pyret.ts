@@ -139,11 +139,23 @@ export function traceMakeCompiledPyret(
   // flattens the arithmetic (no numeric special-casing in flatness.ts). Runs BEFORE
   // the method-receiver pre-pass so that pass keys method-app node identity off the
   // weakened ANF. Gated like ann elision: the ub facts rest on the runtime ann checks.
-  const anfed =
+  const anfedWeak =
     (optForBackend && options.opWeakening
       && options.runtimeAnnotations && options.userAnnotations)
       ? addPhase('Operator weakening', TF.weakenOperators(anfedOpt, postEnv, env, provides.fromUri))
       : anfedOpt;
+  // Direct static field access: tag each `obj.field` whose receiver's upper-bound
+  // type resolves to a data type carrying `field` on every variant, so codegen
+  // emits `obj.dict["field"]` instead of the reflective/megamorphic getField call.
+  // Both backends benefit (cont only under -cont-optimize). Gated like directCases:
+  // the type facts rest on the runtime `_checkAnn` (or the static type proof), so
+  // self-disable unless annotations are intact or type-checking is on.
+  const valueIsTyped = options.typeCheck
+    || (options.runtimeAnnotations && options.userAnnotations);
+  const anfed =
+    (optForBackend && options.directFields && valueIsTyped)
+      ? addPhase('Direct field tagging', TF.tagDirectFields(anfedWeak, postEnv, env, provides.fromUri))
+      : anfedWeak;
   if (process.env.PYRET_DUMP_ANF) {
     process.stderr.write('===ANF[' + (programAst.l && (programAst.l as any).source) + ']===\n');
     process.stderr.write((anfed as any).tosource().pretty(100).join('\n') + '\n===END ANF===\n');
