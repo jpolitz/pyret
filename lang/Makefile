@@ -398,16 +398,26 @@ ts-parity-promise-test: ts-compiler $(PHASEA)/pyret.jarr
 
 # Cross-backend run parity (within the TS compiler): TS-cont vs TS-promise on
 # tests/pyret/main2.arr (the independent semantic check for Promise-leak / flatness
-# bugs the byte oracle is blind to). Builds a promise-backend main2 and runs it.
-tests/pyret/main2-ts-promise.jarr: ts-compiler tests/pyret/main2.arr $(TEST_FILES)
+# bugs the byte oracle is blind to).
+#
+# All three promise test-suite jarrs (full main2, exec-only, compile-pipeline)
+# compile with identical flags; only the source .arr and the output name vary, so
+# one static pattern rule builds them all: `%` captures the basename (main2 /
+# main2-exec / main2-compile) and the prerequisite is tests/pyret/<basename>.arr.
+# `$@` is the target being built; `$<` is the first prerequisite (the .arr).
+TS_PROMISE_SUITE_JARRS = tests/pyret/main2-ts-promise.jarr \
+                         tests/pyret/main2-exec-ts-promise.jarr \
+                         tests/pyret/main2-compile-ts-promise.jarr
+
+$(TS_PROMISE_SUITE_JARRS): tests/pyret/%-ts-promise.jarr: tests/pyret/%.arr ts-compiler $(TEST_FILES)
 	$(TS_PYRET) \
 		  --builtin-js-dir src/js/trove/ \
 			--builtin-arr-dir src/arr/trove/ \
 			--require-config src/scripts/standalone-configA-async.json \
 			--compiled-dir tests/ts-compiled-promise/ \
 			--stack-backend promise \
-		--outfile tests/pyret/main2-ts-promise.jarr \
-		--build-runnable tests/pyret/main2.arr \
+		--outfile $@ \
+		--build-runnable $< \
 		-check-all
 
 # Like pyret-test-promise (the Pyret-promise reference oracle) but for the TS-promise
@@ -415,12 +425,34 @@ tests/pyret/main2-ts-promise.jarr: ts-compiler tests/pyret/main2.arr $(TEST_FILE
 # ./compiled-promise; COLD, each recompiles builtins in-process with the slow async
 # compiler and the run appears to hang. So PRE-WARM ./compiled-promise first (same as
 # pyret-test-promise). Run from $(CURDIR) under node22 with NODE_PATH (chart tests pull
-# in vega = ESM). Gate on "Ended in Error: 0" + the expected ~8 test-repl failures
-# (documented async stack-trace-shape pins), NOT a zero-failure total.
+# in vega = ESM). Gate on the suite's exit code (mirrors pyret-test-promise /
+# all-pyret-test): the stack-trace-shape pins that used to fail are now cont-only
+# (test-repl.arr gates them on CS.is-cont), so the promise suite is fully green.
 .PHONY : ts-promise-pyret-test
 ts-promise-pyret-test: warm-promise-cache tests/pyret/main2-ts-promise.jarr
-	@echo "=== TS-promise suite (expect: Errored 0; ~8 test-repl stacktrace-pin failures) ==="
-	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-ts-promise.jarr | tee /tmp/ts-promise-suite-result.txt; grep -q "Ended in Error: 0" /tmp/ts-promise-suite-result.txt && echo "TS-PROMISE SUITE OK (0 errors)" || { echo "TS-PROMISE SUITE: errors present"; exit 1; }
+	@echo "=== TS-promise suite (expect: all tests pass) ==="
+	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-ts-promise.jarr | tee /tmp/ts-promise-suite-result.txt; \
+	code=$${PIPESTATUS[0]}; \
+	test $$code -eq 0 && echo "TS-PROMISE SUITE OK" || { echo "TS-PROMISE SUITE: failures (exit $$code)"; exit 1; }
+
+# Execution-only and compile-pipeline splits of the promise suite (see
+# tests/pyret/main2-exec.arr / main2-compile.arr). main2-exec is the fast, clean
+# A/B oracle for runtime optimizations (no nested-compile noise, no flaky repl
+# stacktrace pins); main2-compile holds the carved-out full-pipeline tests.
+# (Both jarrs are built by the TS_PROMISE_SUITE_JARRS pattern rule above.)
+.PHONY : ts-promise-exec-test
+ts-promise-exec-test: warm-promise-cache tests/pyret/main2-exec-ts-promise.jarr
+	@echo "=== TS-promise EXECUTION suite (no nested-compile tests; expect: all tests pass) ==="
+	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-exec-ts-promise.jarr | tee /tmp/ts-promise-exec-result.txt; \
+	code=$${PIPESTATUS[0]}; \
+	test $$code -eq 0 && echo "TS-PROMISE EXEC SUITE OK" || { echo "TS-PROMISE EXEC SUITE: failures (exit $$code)"; exit 1; }
+
+.PHONY : ts-promise-compile-test
+ts-promise-compile-test: warm-promise-cache tests/pyret/main2-compile-ts-promise.jarr
+	@echo "=== TS-promise COMPILE-pipeline suite (expect: all tests pass) ==="
+	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-compile-ts-promise.jarr | tee /tmp/ts-promise-compile-result.txt; \
+	code=$${PIPESTATUS[0]}; \
+	test $$code -eq 0 && echo "TS-PROMISE COMPILE SUITE OK" || { echo "TS-PROMISE COMPILE SUITE: failures (exit $$code)"; exit 1; }
 
 .PHONY : ts-promise-test
 ts-promise-test: ts-parity-promise-test ts-promise-pyret-test
@@ -452,6 +484,15 @@ ts-test: ts-unit-test ts-parity-test ts-repl-test ts-pyret-test ts-type-check-te
 .PHONY : ts-effect-tail-test
 ts-effect-tail-test: ts-compiler
 	NODE22="$(NODE22)" bash tests/async-opt/tc/run-corner-tests.sh
+
+# Fast soundness oracle for cross-module method flatness (promise backend): each
+# mf-*.arr calls every flat-tagged builtin method in a leak-observable way and is
+# compiled opt-promise / -no-imported-method-flat / cont; the three outputs must be
+# identical (a wrongly-flat method leaks a Promise) and flattening must fire. ~18s vs
+# the ~10-min full promise suite. Exits non-zero on any failure.
+.PHONY : ts-mf-test
+ts-mf-test: ts-compiler
+	NODE22="$(NODE22)" bash tests/async-opt/mf/run-mf-tests.sh
 
 .PHONY : ts-clean
 ts-clean:

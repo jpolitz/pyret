@@ -434,17 +434,31 @@ function ext<T extends object>(obj: T, fields: Record<string, any>): T {
 // `var`-binding initialized to `undefined` plus an `s-assign` of the value (so
 // `fun f` becomes `var f = undefined; f := <lam>`). Its DECLARATION is therefore
 // an `AVar` -- indistinguishable here from a genuine `var` -- but its REFERENCES
-// are `AIdLetrec`/`AIdSafeLetrec`, which read `.$var` (the forward-ref /
-// uninitialized-on-read guard) rather than `AIdVar`. Unboxing only the decl
-// would leave those reads dereferencing a non-box -> `undefined`. So we collect
-// the ids referenced as letrec and SUBTRACT them: only genuine vars (referenced
-// solely via `AIdVar`/`AIdVarModref`) are unboxed. LETREC stays fully boxed.
+// are `AIdLetrec`/`AIdSafeLetrec`, which read `.$var` rather than `AIdVar`.
+//
+// A letrec binding is ALSO unboxable, with one extra condition. The box's only
+// letrec-specific job is the uninitialized-on-read guard for FORWARD references
+// (a read that executes during letrec init, before the binding is assigned):
+// `AIdLetrec` with `safe === false` reads `x.$var === undefined ? raise : x.$var`.
+// A reference marked SAFE (`AIdSafeLetrec`, or `AIdLetrec safe === true`) is
+// provably reached only AFTER initialization, so the box buys it nothing -- a
+// plain JS binding (captured by closures the same way, so mutual recursion still
+// works) is equivalent. So we unbox a nested letrec binding iff ALL its
+// references are safe; a single `AIdLetrec safe===false` reference forces it to
+// stay boxed. (The decl/assign already unbox via the shared `unboxedVars` set;
+// the safe `aId*Letrec` read sites are updated to read `x` instead of `x.$var`.)
+//
+// We therefore collect candidate decls (nested AVars: genuine vars AND letrec
+// decls) and SUBTRACT only the ids that have an unsafe-letrec reference. Genuine
+// vars (referenced via AIdVar) are never subtracted; safe-only letrec ids survive.
+// Top-level decls (depth 0) are never candidates: they escape via provides/REPL,
+// and a provided `VbLetrec` reads `x.$var` by value -- unboxing would break it.
 //
 // Post-ANF binding atoms are globally unique (`SAtom.key()` includes a serial),
-// so membership-by-key is unambiguous across the three sites.
+// so membership-by-key is unambiguous across the read/decl/assign sites.
 function collectUnboxableVarKeys(body: N.AExpr): Set<string> {
   const candidates = new Set<string>();
-  const letrecRefs = new Set<string>();
+  const unsafeLetrecRefs = new Set<string>();
   let depth = 0;
   const visitor: any = ext(N.defaultMapVisitor as any, {
     aVar(node: N.AVar): any {
@@ -454,11 +468,9 @@ function collectUnboxableVarKeys(body: N.AExpr): Set<string> {
       return node;
     },
     aIdLetrec(node: N.AIdLetrec): any {
-      letrecRefs.add(node.id.key());
-      return node;
-    },
-    aIdSafeLetrec(node: N.AIdSafeLetrec): any {
-      letrecRefs.add(node.id.key());
+      // Only the unsafe (uninitialized-guard) reads force the binding to stay
+      // boxed; safe reads are fine unboxed.
+      if (!node.safe) { unsafeLetrecRefs.add(node.id.key()); }
       return node;
     },
     aLam(node: N.ALam): any {
@@ -475,7 +487,7 @@ function collectUnboxableVarKeys(body: N.AExpr): Set<string> {
     },
   });
   body.visit(visitor);
-  for (const k of letrecRefs) { candidates.delete(k); }
+  for (const k of unsafeLetrecRefs) { candidates.delete(k); }
   return candidates;
 }
 
@@ -873,7 +885,10 @@ export function annCheckStmts(compiler: CompilerVisitor, b: N.ABind): CList<J.JS
   // annotation's _checkAnn is synchronous. This gate must agree with the flatness
   // analysis (which folds ann-flatness into the enclosing function's flatness),
   // or we get `await` in a sync function (JS syntax error) or an unawaited Promise.
-  if (A.isABlank(b.ann) || A.isAAny(b.ann)) {
+  if (A.isABlank(b.ann) || A.isAAny(b.ann) || compiler.redundantAnnChecks.has(b.id.key())) {
+    // Blank/any, or the type-flow analysis proved the value is already `⊑ T`:
+    // no check to emit. The value is already bound to b.id (the elided check
+    // would only have re-bound the identical, brand-verified value).
     return clEmpty;
   } else if (A.isATuple(b.ann) && (b.ann as A.ATuple).fields.every((a) => A.isABlank(a) || A.isAAny(a))) {
     // A tuple-destructuring bind with no field annotations: just check the tuple
@@ -901,20 +916,20 @@ export function argsOtherStmts(argCes: DAG.CExp[]): CList<J.JStmt> {
 
 export function compileAppAsync(compiler: CompilerVisitor, l: Loc, f: N.AVal, args: N.AVal[], appInfo: A.AppInfo, node?: N.AApp): CList<J.JStmt> {
   const isSafeId = N.isAId(f) || N.isAIdSafeLetrec(f);
-  // A numeric-flat operator app (proven by flatness.ts to be on Number operands)
-  // never dispatches/suspends, so it is flat and is a known function (skip the
-  // isFunction check too).
-  const numFlat = node !== undefined && compiler.numericFlatApps.has(node);
   // is-flat must agree with the flatness analysis (flatness.ts), which decides
   // whether the enclosing function is emitted sync (j-fun) or async (j-async-fun).
   // If they disagree we either emit `await` inside a sync function (a JS syntax
-  // error) or fail to await a Promise. For module-ref calls, the analysis uses
-  // get-flatness-for-module-call, so we mirror it here.
-  const isFlat = numFlat ? true :
-    isSafeId ? isFunctionFlat(compiler.flatnessEnv, (f as any).id.key())
-      : N.isAIdModref(f) ? isFlatEnough(FL.getFlatnessForModuleCall((f as any).id, (f as any).name, compiler.moduleBindings, compiler.env))
-        : false;
-  const isFn = numFlat || (isSafeId && isIdFnName(compiler.flatnessEnv, (f as any).id.key()));
+  // error) or fail to await a Promise. Resolve via the SAME helper the analysis
+  // uses (getAppFunFlatness) so they can never disagree. This subsumes the
+  // module-ref path and the s-global env fallback for weakened operators
+  // (`_plus_nums`), which are flat globals not bound in sd.
+  const isFlat = (isSafeId || N.isAIdModref(f))
+    ? isFlatEnough(FL.getAppFunFlatness(f, compiler.flatnessEnv, compiler.moduleBindings, compiler.env))
+    : false;
+  // A flat global (incl. a weakened `_plus_nums`) is known to be a function, so the
+  // dynamic isFunction guard can be skipped along with the await.
+  const isFn = isSafeId && (isIdFnName(compiler.flatnessEnv, (f as any).id.key())
+    || (!compiler.flatnessEnv.has((f as any).id.key()) && A.isSGlobal((f as any).id) && isFlat));
   const fCe = f.visit(compiler) as DAG.CExp;
   const argCes = args.map((a) => a.visit(compiler) as DAG.CExp);
   const compiledArgs = CL.map_list(getExp, argCes);
@@ -966,7 +981,7 @@ export function compileAppAsync(compiler: CompilerVisitor, l: Loc, f: N.AVal, ar
   }
 }
 
-export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.AVal, methname: string, args: N.AVal[]): CList<J.JStmt> {
+export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.AVal, methname: string, args: N.AVal[], node?: N.AMethodApp): CList<J.JStmt> {
   const objCe = obj.visit(compiler) as DAG.CExp;
   const argCes = args.map((a) => a.visit(compiler) as DAG.CExp);
   const compiledArgs = CL.map_list(getExp, argCes);
@@ -974,6 +989,26 @@ export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.
   const argcount = compiledArgs.length();
   const helperName = argcount <= 7 ? 'maybeMethodCall' + String(argcount) : 'maybeMethodCall';
   const compiledObj = objCe.exp;
+  // A method call proven flat dispatches to a synchronous method, so it returns a
+  // value directly (never a thenable). Emit a direct call with NO conditional await
+  // -- required for correctness when this sits in a now-synchronous function (a sync
+  // function cannot `await`), and it also avoids the isThenable check and never mints
+  // a tail token (the call is bounded). maybeMethodCall still does the dynamic
+  // dispatch; only the await is elided.
+  const isFlatMeth = node !== undefined && compiler.flatMethodApps.has(node);
+  if (isFlatMeth) {
+    let objExpr = compiledObj;
+    let preDecls: CList<J.JStmt> = clEmpty;
+    if (!J.isJId(compiledObj)) {
+      const objId = freshId(compilerName('obj'));
+      preDecls = clSing<J.JStmt>(jVar(objId, compiledObj));
+      objExpr = jId(objId);
+    }
+    const call = wrapWithSrcnode(l,
+      rtMethod(helperName,
+        clAppend(clist<J.JExprT>(objExpr, jStr(methname), compiler.getLoc(l)), compiledArgs)));
+    return clAppend(pre, clAppend(preDecls, compiler.complete(call)));
+  }
   if (compiler.mintsTokens && compiler.tailPos) {
     // Safe-for-space tail call THROUGH a method: mint a token instead of driving.
     // maybeMethodTail resolves obj.methname (obj evaluated once, as a single arg)
@@ -1028,23 +1063,114 @@ export function compileUpdateAsync(compiler: CompilerVisitor, l: Loc, obj: N.AVa
   return clAppend(pre, compiler.complete(jAwait(call)));
 }
 
-export function compileCasesBranchAsync(compiler: CompilerVisitor, valId: A.Name, branch: N.ACasesBranch, casesLoc: Loc): CList<J.JStmt> {
-  const preamble = casesPreamble(compiler, jId(valId), branch, casesLoc);
+// Direct-cases optimization: resolve a cases `typ` annotation to the scrutinee's
+// data type so the matched branch can read fields by their statically-known names.
+// Returns undefined (=> fall back to the reflective codegen) for anything we can't
+// resolve to concrete in-scope variant metadata. Wrapped in a try/catch so a
+// resolution miss can never break compilation -- it just disables the opt locally.
+function resolveCasesDataType(compiler: CompilerVisitor, typ: A.Ann): T.DataType | undefined {
+  try {
+    // The field LAYOUT is invariant under parametric instantiation and predicate
+    // refinement, so peel those wrappers off to reach the underlying type name.
+    let ann: A.Ann = typ;
+    while (true) {
+      if (A.isAApp(ann)) { ann = ann.ann; continue; }
+      if (A.isAPred(ann)) { ann = ann.ann; continue; }
+      break;
+    }
+    let uri: string | undefined;
+    let origName: string | undefined;
+    if (A.isAName(ann)) {
+      const tb = compiler.typeBindings.get(ann.id.key());
+      if (tb !== undefined) {
+        uri = tb.origin.uriOfDefinition;
+        origName = tb.origin.originalName.toname();
+      } else {
+        // Global (built-in) type names (e.g. List, Option) may not have a
+        // type-binding in untyped programs; consult the global type origins.
+        const o = compiler.env.originByTypeName(ann.id.toname());
+        if (o !== undefined) { uri = o.uriOfDefinition; origName = o.originalName.toname(); }
+      }
+    } else if (A.isADot(ann)) {
+      const mb = compiler.moduleBindings.get(ann.obj.key());
+      if (mb !== undefined) { uri = mb.uri; origName = ann.field; }
+    }
+    if (uri === undefined || origName === undefined) { return undefined; }
+    return lookupDataTypeByUri(compiler, uri, origName);
+  } catch (_e) {
+    return undefined;
+  }
+}
+
+function lookupDataTypeByUri(compiler: CompilerVisitor, uri: string, name: string): T.DataType | undefined {
+  // The module currently being compiled is not in env.allModules yet, so its own
+  // data types must be looked up in the local provides.
+  const de: CS.DataExport | undefined =
+    uri === compiler.uri ? compiler.localDataDefs.get(name) : compiler.env.datatypeByUri(uri, name);
+  if (de === undefined) { return undefined; }
+  if (CS.isDAlias(de)) {
+    if (de.origin.uriOfDefinition === uri) { return undefined; }
+    return lookupDataTypeByUri(compiler, de.origin.uriOfDefinition, de.name);
+  }
+  return (de as CS.DType).typ;
+}
+
+export function compileCasesBranchAsync(compiler: CompilerVisitor, valId: A.Name, branch: N.ACasesBranch, casesLoc: Loc, dataType?: T.DataType): CList<J.JStmt> {
+  // When the scrutinee's data type is statically known, find this branch's variant
+  // and (for a normal branch) confirm its arity matches the pattern. If so we can
+  // read fields directly by name and skip the runtime arity check (the $name switch
+  // already committed to this variant, and the scrutinee is proven to be of the
+  // cases type, so $arity always equals branch.args.length here).
+  let directVariant: T.TVariant | undefined;
+  let elideArity = false;
+  if (dataType !== undefined) {
+    const v = dataType.getVariant(branch.name);
+    if (N.isACasesBranch(branch)) {
+      if (v !== undefined && v.$name === 't-variant' && v.fields.length === branch.args.length) {
+        directVariant = v;
+        elideArity = true;
+      }
+    } else if (v !== undefined && v.$name === 't-singleton-variant') {
+      // Singleton branch on a statically-known singleton variant: $arity is always
+      // -1, so the singleton arity check never fires.
+      elideArity = true;
+    }
+  }
+  const preamble = casesPreamble(compiler, jId(valId), branch, casesLoc, elideArity);
   let bodyStmts: CList<J.JStmt>;
   if (N.isACasesBranch(branch)) {
-    const fieldNames = freshId(compilerName('fn'));
-    const getFieldNames = jVar(fieldNames, jDot(jDot(jId(valId), '$constructor'), '$fieldNames'));
-    const derefFields = CL.map_list_n((i: number, arg: N.ACasesBind) => {
-      const mask = jBracket(jDot(jId(valId), '$mut_fields_mask'), jNum(i));
-      const field = getDictField(jId(valId), jBracket(jId(fieldNames), jNum(i)));
-      return jVar(jsIdOf(arg.bind.id),
-        rtMethod('derefField', clist(field, mask, jBool(A.isSCasesBindRef(arg.fieldType))))) as J.JStmt;
-    }, 0, (branch as N.ACasesBranch$).args);
+    let fieldStmts: CList<J.JStmt>;
+    if (directVariant !== undefined) {
+      // Static field access: cases_val.dict["name"] with a statically-known field
+      // name + mutability, dropping the $constructor.$fieldNames / $mut_fields_mask
+      // reflection. derefField is elided entirely for plain immutable, non-ref
+      // fields (where it is a no-op); kept (with static flags) for ref/mutable.
+      fieldStmts = CL.map_list_n((i: number, arg: N.ACasesBind) => {
+        const [fname, ftype] = directVariant!.fields[i];
+        const isRefField = ftype.$name === 't-ref';
+        const lookupIsRef = A.isSCasesBindRef(arg.fieldType);
+        const field = getDictField(jId(valId), jStr(fname));
+        const rhs = (!isRefField && !lookupIsRef)
+          ? field
+          : rtMethod('derefField', clist(field, jBool(isRefField), jBool(lookupIsRef)));
+        return jVar(jsIdOf(arg.bind.id), rhs) as J.JStmt;
+      }, 0, (branch as N.ACasesBranch$).args);
+    } else {
+      const fieldNames = freshId(compilerName('fn'));
+      const getFieldNames = jVar(fieldNames, jDot(jDot(jId(valId), '$constructor'), '$fieldNames'));
+      const derefFields = CL.map_list_n((i: number, arg: N.ACasesBind) => {
+        const mask = jBracket(jDot(jId(valId), '$mut_fields_mask'), jNum(i));
+        const field = getDictField(jId(valId), jBracket(jId(fieldNames), jNum(i)));
+        return jVar(jsIdOf(arg.bind.id),
+          rtMethod('derefField', clist(field, mask, jBool(A.isSCasesBindRef(arg.fieldType))))) as J.JStmt;
+      }, 0, (branch as N.ACasesBranch$).args);
+      fieldStmts = clCons(getFieldNames as J.JStmt, derefFields);
+    }
     let annStmts: CList<J.JStmt> = clEmpty;
     for (const arg of (branch as N.ACasesBranch$).args) {
       annStmts = clAppend(annStmts, annCheckStmts(compiler, arg.bind));
     }
-    bodyStmts = clAppend(clCons(getFieldNames as J.JStmt, derefFields),
+    bodyStmts = clAppend(fieldStmts,
       clAppend(annStmts, compileAexprAsync(compiler, branch.body)));
   } else {
     bodyStmts = compileAexprAsync(compiler, branch.body);
@@ -1052,12 +1178,26 @@ export function compileCasesBranchAsync(compiler: CompilerVisitor, valId: A.Name
   return clAppend(preamble, bodyStmts);
 }
 
-export function compileCasesAsync(compiler: CompilerVisitor, casesLoc: Loc, _typ: A.Ann, val: N.AVal, branches: N.ACasesBranch[], _else: N.AExpr): CList<J.JStmt> {
+export function compileCasesAsync(compiler: CompilerVisitor, casesLoc: Loc, typ: A.Ann, val: N.AVal, branches: N.ACasesBranch[], _else: N.AExpr): CList<J.JStmt> {
   const valCe = val.visit(compiler) as DAG.CExp;
   const valId = freshId(compilerName('cases_val'));
+  // Resolve the cases type to concrete variant metadata for direct field access
+  // (promise backend; -no-direct-cases turns it off). undefined => reflective path.
+  //
+  // Soundness rests on the scrutinee being guaranteed of type `typ` at the matched
+  // branch, so that `typ`'s static field names match the value's own. That guarantee
+  // comes from EITHER the type checker (static proof) OR the scrutinee's runtime
+  // _checkAnn. The latter is defeated by -no-runtime-annotations (makes _checkAnn a
+  // no-op) and -no-user-annotations (strips the ann entirely), so require type-check
+  // or both annotation mechanisms intact. Otherwise fall back to the reflective path
+  // (which reads the value's OWN $fieldNames and so is correct regardless).
+  const valueIsTyped = compiler.options.typeCheck ||
+    (compiler.options.runtimeAnnotations && compiler.options.userAnnotations);
+  const dataType = (compiler.options.directCases && valueIsTyped)
+    ? resolveCasesDataType(compiler, typ) : undefined;
   const branchCases = CL.map_list((branch: N.ACasesBranch) =>
     jCase(jStr(branch.name),
-      jBlock(clSnoc(compileCasesBranchAsync(compiler, valId, branch, casesLoc), jBreak))) as J.JCaseT, branches);
+      jBlock(clSnoc(compileCasesBranchAsync(compiler, valId, branch, casesLoc, dataType), jBreak))) as J.JCaseT, branches);
   const elseCase = jDefault(jBlock(clSnoc(compileAexprAsync(compiler, _else), jBreak)));
   const theSwitch = jSwitch(jDot(jId(valId), '$name'), clSnoc(branchCases, elseCase as unknown as J.JCaseT));
   return clAppend(valCe.otherStmts,
@@ -1075,7 +1215,7 @@ export function compileLettableAsync(compiler: CompilerVisitor, e: N.ALettable):
     case 'a-app':
       return compileAppAsync(compiler, e.l, e._fun, e.args, e.appInfo, e);
     case 'a-method-app':
-      return compileMethodAppAsync(compiler, e.l, e.obj, e.meth, e.args);
+      return compileMethodAppAsync(compiler, e.l, e.obj, e.meth, e.args, e);
     case 'a-prim-app': {
       const argCes = e.args.map((a) => a.visit(compiler) as DAG.CExp);
       const call = wrapWithSrcnode(e.l, rtMethod(e.f, CL.map_list(getExp, argCes)));
@@ -1248,8 +1388,9 @@ export function compileAnns(
   let curTarget = entryLabel;
   let newCases: CList<J.JCaseT> = clEmpty;
   for (const b of binds) {
-    if (A.isABlank(b.ann) || A.isAAny(b.ann)) {
-      // acc unchanged
+    if (A.isABlank(b.ann) || A.isAAny(b.ann) || visitor.redundantAnnChecks.has(b.id.key())) {
+      // acc unchanged: blank/any, or the type-flow analysis proved `ub ⊑ T`, so
+      // no _checkAnn case is added and curTarget (the entry label) is preserved.
     } else if (A.isATuple(b.ann) && b.ann.fields.every((a) => A.isABlank(a) || A.isAAny(a))) {
       const newLabel = visitor.makeLabel();
       const newCase =
@@ -1314,7 +1455,10 @@ export function compileAnnotatedLet(
     return raise('Unknown ' + (b as any).value.label() + ' in compile-annotated-let');
   }
   const bind = b.value;
-  if (A.isABlank(bind.ann) || A.isAAny(bind.ann)) {
+  if (A.isABlank(bind.ann) || A.isAAny(bind.ann) || visitor.redundantAnnChecks.has(bind.id.key())) {
+    // Blank/any, or the type-flow analysis proved the value is already `⊑ T`:
+    // bind the value and continue inline with no _checkAnn (and no extra
+    // state-machine label). This is the same shape as a blank annotation.
     return cBlock(
       jBlock(
         clAppend(
@@ -1720,8 +1864,12 @@ export function casesPreamble(
   compiler: CompilerVisitor,
   compiledVal: J.JExprT,
   branch: N.ACasesBranch,
-  casesLoc: Loc
+  casesLoc: Loc,
+  elideArity: boolean = false
 ): CList<J.JStmt> {
+  // The direct-cases optimization elides this runtime arity check when the variant
+  // and its arity are statically known to match (the check provably never fires).
+  if (elideArity) { return clEmpty; }
   const constructorLoc = jDot(compiledVal, '$loc');
   switch (branch.$name) {
     case 'a-cases-branch': {
@@ -2178,15 +2326,29 @@ export class CompilerVisitor {
   // key() set of function-local vars to compile without the {$var} box; see
   // collectUnboxableVarKeys. Populated in aProgram (empty when -no-unbox-vars).
   unboxedVars: Set<string> = new Set();
-  // Operator a-apps proven flat by the numeric pass (flatness.ts); emitted with
-  // no conditional await. See compileAppAsync.
-  numericFlatApps!: Set<N.AApp>;
+  // Method-application nodes proven flat (the receiver's data type resolves and
+  // its method is flat); emitted as a direct call with NO conditional await. And
+  // `a-method` nodes proven flat; emitted as a synchronous function (makeMethod,
+  // not makeTailMethod). Empty unless method flatness is enabled. See aMethod,
+  // compileMethodAppAsync, compileSplitMethodApp.
+  flatMethodApps!: Set<N.AMethodApp>;
+  flatMethods!: Set<N.AMethod>;
+  // Bind keys whose `:: T` annotation check is provably redundant (the value is
+  // already known to be `⊑ T`), per the upper-bound type-flow analysis
+  // (type-flow.ts). The async backend skips emitting `_checkAnn` for these,
+  // treating them like a blank annotation. Empty unless ann-elision is enabled.
+  // See annCheckStmts / compileAnns / compileAnnotatedLet.
+  redundantAnnChecks: Set<string> = new Set();
   bindings!: Map<string, CS.ValueBind>;
   typeBindings!: Map<string, CS.TypeBind>;
   moduleBindings!: Map<string, CS.ModuleBind>;
   env!: CS.CompileEnvironment;
   // fields installed by compile-module
   progProvides!: A.ProvideBlock;
+  // Current module's own data definitions (provides.dataDefinitions), used by the
+  // direct-cases optimization to resolve in-module variant metadata (the current
+  // module is not in env.allModules during its own compilation). See compileCasesAsync.
+  localDataDefs!: Map<string, CS.DataExport>;
   getLoc!: (l: Loc) => J.JExprT;
   getLocId!: (l: Loc) => number;
   curApploc!: A.Name;
@@ -2443,17 +2605,22 @@ export class CompilerVisitor {
     const step = freshId(compilerName('step'));
     const tempFull = freshId(compilerName('temp_full'));
     const len = node.args.length;
-    // Methods participate in safe-for-space bouncing: a tail call inside the body
-    // (to a function OR another method) mints a token, and the body is wrapped with
-    // makeTailMethod (a driving full_meth) when it does. The token-cell records it,
-    // exactly like compile-a-lam; methods are non-flat, so mints-tokens = can-mint.
+    // A method proven flat (its body is bounded and never suspends) is emitted as a
+    // SYNCHRONOUS function -- no Promise alloc per call, and callers can skip the
+    // conditional await (see compileMethodAppAsync). Mirrors compile-a-lam's flat
+    // path. Otherwise the method participates in safe-for-space bouncing: a tail
+    // call inside the body mints a token and the body is wrapped with makeTailMethod.
+    const isFlat = this.flatMethods.has(node);
     const tokenCell: Map<string, boolean> = new Map();
+    const fullInner =
+      compileFunBody(node.l, step, tempFull, ext(this, { allowTco: true, tokenCell: tokenCell }), node.args, len, node.body, true, isFlat, true, true);
+    const funArgs = CL.map_list((a: N.ABind) => formalShadowName(a.id), node.args);
     const fullVar =
-      jVar(tempFull,
-        jAsyncFun(J.nextJFunId(), makeFunName(this, node.l),
-          CL.map_list((a: N.ABind) => formalShadowName(a.id), node.args),
-          compileFunBody(node.l, step, tempFull, ext(this, { allowTco: true, tokenCell: tokenCell }), node.args, len, node.body, true, false, true, true)
-        ));
+      jVar(tempFull, isFlat
+        ? jFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, fullInner)
+        : jAsyncFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, fullInner));
+    // A flat method never mints a token (isFlat forces mintsTokens=false), so
+    // makeMethod is always correct for it.
     const maker = tokenCell.has('minted') ? 'makeTailMethod' : 'makeMethod';
     const methodExpr = len < 9
       ? rtMethod(maker + String(len - 1), clist<J.JExprT>(jId(tempFull), jStr(node.name)))
@@ -2549,19 +2716,26 @@ export class CompilerVisitor {
 
   aIdSafeLetrec(node: N.AIdSafeLetrec): DAG.CExp {
     const s = jId(jsIdOf(node.id));
-    return cExp(jDot(s, '$var'), clEmpty);
+    // Unboxed safe-letrec: read the bare JS binding (see collectUnboxableVarKeys).
+    const read = this.unboxedVars.has(node.id.key()) ? s : jDot(s, '$var');
+    return cExp(read, clEmpty);
   }
 
   aIdLetrec(node: N.AIdLetrec): DAG.CExp {
     const s = jId(jsIdOf(node.id));
+    // An unboxed letrec id has only safe references (collectUnboxableVarKeys
+    // excludes any id with an unsafe ref), so the `read` is the bare binding; the
+    // unsafe branch below only fires for still-boxed ids. Written generally so
+    // both branches stay correct regardless.
+    const read = this.unboxedVars.has(node.id.key()) ? s : jDot(s, '$var');
     if (node.safe) {
-      return cExp(jDot(s, '$var'), clEmpty);
+      return cExp(read, clEmpty);
     } else {
       return cExp(
         jTernary(
-          jBinop(jDot(s, '$var'), jEq, UNDEFINED),
+          jBinop(read, jEq, UNDEFINED),
           raiseIdExn(this.getLoc(node.l), node.id.toname()),
-          jDot(s, '$var')),
+          read),
         clEmpty);
     }
   }
@@ -2959,12 +3133,30 @@ export function compileProvides(provides: CS.Provides): J.JExprT {
   const aliasFields = clMapSd((a: string) =>
     jField(a, compileProvidedType(mapGetValue(provides.aliases, a))) as J.JFieldT,
   provides.aliases);
-  return jObj(clist<J.JFieldT>(
+  // Cross-module method flatness: emit a `method-flatness` sibling section
+  // { dataName: { methodName: flatness } }, sorted for deterministic output, only
+  // for datatypes that carry any (promise backend; cont's compileProvides omits it,
+  // so cont provides bytes are unchanged). Consumed by importers' flatness pass.
+  const methodFlatnessFields: J.JFieldT[] = [];
+  for (const d of [...provides.dataDefinitions.keys()].sort()) {
+    const de = mapGetValue(provides.dataDefinitions, d);
+    if (CS.isDType(de) && de.methodFlatness.size > 0) {
+      const methFields = [...de.methodFlatness.keys()].sort().map((meth) =>
+        jField(meth, jNum(mapGetValue(de.methodFlatness, meth))) as J.JFieldT);
+      methodFlatnessFields.push(jField(d, jObj(CL.clist(...methFields))) as J.JFieldT);
+    }
+  }
+  const baseProvidesFields = clist<J.JFieldT>(
     jField('modules', jObj(moduleFields)),
     jField('values', jObj(valueFields)),
     jField('datatypes', jObj(dataFields)),
     jField('aliases', jObj(aliasFields))
-  ));
+  );
+  const allProvidesFields = methodFlatnessFields.length === 0
+    ? baseProvidesFields
+    : CL.clAppend(baseProvidesFields, CL.clist(
+      jField('method-flatness', jObj(CL.clist(...methodFlatnessFields))) as J.JFieldT));
+  return jObj(allProvidesFields);
 }
 
 // Pyret lists.sort-by (the non-stable variant used by compile-module):
@@ -3219,6 +3411,7 @@ export function compileModule(
     resumer: resumer,
     allowTco: false,
     dispatches: casesDispatches,
+    localDataDefs: provides.dataDefinitions,
   });
   // The toplevel module fn is called directly (`await bodyName()`) and its result
   // is the module value, not driven through a `.app` wrapper, so it must NEVER mint
@@ -3253,7 +3446,8 @@ export class SplittingCompiler extends CompilerVisitor {
     flatnessEnvs: FL.FlatnessEnv,
     provides: CS.Provides,
     postEnv: CS.ComputedEnvironment,
-    options: SplitCompileOptions
+    options: SplitCompileOptions,
+    redundantAnnChecks: Set<string> = new Set()
   ) {
     super();
     this.uri = provides.fromUri;
@@ -3261,7 +3455,9 @@ export class SplittingCompiler extends CompilerVisitor {
     this.options = options;
     this.flatnessEnv = flatnessEnvs[0];
     this.typeFlatnessEnv = flatnessEnvs[1];
-    this.numericFlatApps = flatnessEnvs[2];
+    this.flatMethodApps = flatnessEnvs[2];
+    this.flatMethods = flatnessEnvs[3];
+    this.redundantAnnChecks = redundantAnnChecks;
     // Pyret accesses these fields directly; a computed-none here would be a
     // field-not-found error there too.
     this.bindings = (postEnv as CS.ComputedEnv).bindings;
@@ -3294,7 +3490,8 @@ export function splittingCompiler(
   flatnessEnvs: FL.FlatnessEnv,
   provides: CS.Provides,
   postEnv: CS.ComputedEnvironment,
-  options: SplitCompileOptions
+  options: SplitCompileOptions,
+  redundantAnnChecks: Set<string> = new Set()
 ): SplittingCompiler {
-  return new SplittingCompiler(env, addPhase, flatnessEnvs, provides, postEnv, options);
+  return new SplittingCompiler(env, addPhase, flatnessEnvs, provides, postEnv, options, redundantAnnChecks);
 }

@@ -50,6 +50,10 @@ export interface RawBuiltinLocator {
   getRawModuleProvides(): any[];
   getRawAliasProvides(): any[];
   getRawValueProvides(): any[];
+  // Cross-module method flatness sibling section (promise backend): the raw
+  // { dataName: { methodName: flatness } } object, passed through verbatim (plain
+  // numbers, no type expansion). {} when the module carries none.
+  getRawMethodFlatnessProvides(): any;
   getRawCompiled(): string;
 }
 
@@ -165,6 +169,10 @@ export function builtinRawLocatorFromModule(
         }
       }
       return [];
+    },
+    getRawMethodFlatnessProvides(): any {
+      const m = getData();
+      return (m.provides && m.provides["method-flatness"]) || {};
     },
     getRawCompiled(): string {
       return getCompiled();

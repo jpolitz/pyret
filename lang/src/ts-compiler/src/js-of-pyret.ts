@@ -14,6 +14,7 @@ import * as C from './compile-structs';
 import * as CL from './concat-lists';
 import * as FL from './flatness';
 import * as OPT from './optimize-anf';
+import * as TF from './type-flow';
 import * as J from './js-ast';
 import * as PP from './pprint';
 
@@ -122,22 +123,52 @@ export function traceMakeCompiledPyret(
   // ANF-to-ANF optimization middle-end (inliner/LICM/...). Promise backend
   // only: it mints fresh atoms, which the cont backend's byte-parity oracle
   // would notice, and the cont codegen stays frozen by design.
-  const anfed = C.isPromise(options.stackBackend) && options.optimize
+  const anfedOpt = C.isPromise(options.stackBackend) && options.optimize
     ? addPhase('Optimized ANF', OPT.optimizeProgram(anfedRaw, options.inlineComments, options.licm))
     : anfedRaw;
+  // Typed operator weakening (promise backend only): rewrite polymorphic operator
+  // apps (`_plus` ...) into monomorphic, known-flat globals (`_plus_nums` ...) where
+  // upper-bound type-flow proves the operand types, so ORDINARY structural flatness
+  // flattens the arithmetic (no numeric special-casing in flatness.ts). Runs BEFORE
+  // the method-receiver pre-pass so that pass keys method-app node identity off the
+  // weakened ANF. Gated like ann elision: the ub facts rest on the runtime ann checks.
+  const anfed =
+    (C.isPromise(options.stackBackend) && options.opWeakening
+      && options.runtimeAnnotations && options.userAnnotations)
+      ? addPhase('Operator weakening', TF.weakenOperators(anfedOpt, postEnv, env, provides.fromUri))
+      : anfedOpt;
   if (process.env.PYRET_DUMP_ANF) {
     process.stderr.write('===ANF[' + (programAst.l && (programAst.l as any).source) + ']===\n');
     process.stderr.write((anfed as any).tosource().pretty(100).join('\n') + '\n===END ANF===\n');
   }
+  // Method-call flatness (promise backend only): a receiver-type pre-pass resolves
+  // each method call's receiver to a concrete in-module data type and feeds the
+  // flatness pass so it can analyze that type's methods. Gated like the type-flow
+  // ann elision (the ub facts rest on the annotation/constructor checks that run).
+  const methodInfo =
+    (C.isPromise(options.stackBackend) && options.methodFlatness
+      && options.runtimeAnnotations && options.userAnnotations)
+      ? addPhase('Method receiver info', TF.makeProgMethodInfo(anfed, postEnv, env, provides.fromUri))
+      : undefined;
   // Numeric-flatness is enabled only for the promise backend (the cont backend's
   // codegen + byte-parity oracle stay untouched).
-  const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env, C.isPromise(options.stackBackend)));
+  const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env, methodInfo, options.importedMethodFlat));
   const flatProvides = addPhase('Get flat-provides', FL.getFlatProvides(provides, env, postEnv, flatnessEnv, anfed));
+  // Upper-bound type-flow: bind keys whose `:: T` annotation check is provably
+  // redundant. Promise backend only (cont codegen stays frozen for the byte-parity
+  // oracle, and this set is never consulted there). Self-disables unless runtime
+  // annotations are intact -- the ub facts rest on the checks that actually run.
+  const redundantAnnChecks =
+    (C.isPromise(options.stackBackend) && options.annElision
+      && options.runtimeAnnotations && options.userAnnotations)
+      ? addPhase('Type-flow ann elision',
+        TF.makeProgTypeFlowEnv(anfed, postEnv, env, flatnessEnv, flatProvides.fromUri))
+      : new Set<string>();
   // Dispatch to the requested control-flow backend. `auto` is resolved to a
   // concrete promise|cont before reaching here (see compile-structs / the CLI),
   // but is defended to cont in case a caller passes it through.
   const compiled = C.isPromise(options.stackBackend)
-    ? anfed.visit(AAL.splittingCompiler(env, addPhase, flatnessEnv, flatProvides, postEnv, options))
+    ? anfed.visit(AAL.splittingCompiler(env, addPhase, flatnessEnv, flatProvides, postEnv, options, redundantAnnChecks))
     : anfed.visit(AL.splittingCompiler(env, addPhase, flatnessEnv, flatProvides, postEnv, options));
   return [flatProvides, addPhase('Generated JS', C.ok(new CCPDict(compiled)))];
 }

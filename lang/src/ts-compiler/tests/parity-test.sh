@@ -20,6 +20,9 @@ COMMON_OPTS=(--builtin-js-dir src/js/trove/
              --deps-file build/phaseA/bundled-node-compile-deps.js
              -no-display-progress)
 
+# Start from a clean work dir so stale diffs from a previous (or interrupted)
+# run can't masquerade as current failures (mirrors parity-promise-test.sh).
+rm -rf "$WORK"
 mkdir -p "$WORK"
 pass=0
 fail=0

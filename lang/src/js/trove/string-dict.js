@@ -99,6 +99,23 @@
         "freeze": ["arrow", [], "sdOfA"],
         "seal": ["arrow", [], "msdOfA"]
       }],
+    },
+    // Cross-module method flatness (promise backend): native methods that never
+    // suspend, so a caller can skip the conditional-await wrapper (dataName ->
+    // { methodName: flatness }). DELIBERATELY OMITTED (they re-enter Pyret / suspend):
+    // keys / keys-now build a tree-set via Pyret AVL insertion; map-keys / fold-keys /
+    // each-key (+ -now) call a Pyret callback; merge / merge-now iterate via `.app`;
+    // _equals awaits an element comparator; _output calls a renderer callback.
+    "method-flatness": {
+      "StringDict": {
+        "get": 0, "get-value": 0, "set": 0, "remove": 0,
+        "count": 0, "has-key": 0, "keys-list": 0, "unfreeze": 0
+      },
+      "MutableStringDict": {
+        "get-now": 0, "get-value-now": 0, "set-now": 0, "remove-now": 0,
+        "count-now": 0, "has-key-now": 0, "keys-list-now": 0,
+        "freeze": 0, "seal": 0, "clone-now": 0
+      }
     }
   },
   theModule: function(runtime, namespace, uri, VSlib){

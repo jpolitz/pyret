@@ -713,7 +713,16 @@ export class DAlias extends DataExportBase {
 }
 export class DType extends DataExportBase {
   get $name(): 'd-type' { return 'd-type'; }
-  constructor(public origin: BindOrigin, public typ: T.DataType) { super(); }
+  // methodFlatness: per-method flatness (`methodName` -> flatness), for the promise
+  // backend's cross-module method-flatness analysis. Populated either from this
+  // module's own flatness fixpoint (getFlatProvides, for Pyret modules) or derived
+  // for native builtins; serialized in the promise provides and read back here.
+  // Empty for cont / when the feature is off.
+  constructor(
+    public origin: BindOrigin,
+    public typ: T.DataType,
+    public methodFlatness: Map<string, number> = new Map()
+  ) { super(); }
 }
 export type DataExport = DAlias | DType;
 export function isDAlias(x: any): x is DAlias { return x instanceof DAlias; }
@@ -930,6 +939,23 @@ export function providesFromRawProvides(uri: string, raw: any): Provides {
   for (const d of raw.datatypes) {
     ddict.set(d.name, datatypeFromRaw(uri, d.typ));
   }
+  // Cross-module method flatness (promise backend): a sibling `method-flatness`
+  // section mapping dataName -> { methodName: flatness }. Attach it to the parsed
+  // DType so importers can flatten its native/proven-flat methods. Absent for cont
+  // provides and JSON builtins that don't declare it (then the map stays empty).
+  const rawMethodFlatness = raw['method-flatness'];
+  if (rawMethodFlatness !== undefined && rawMethodFlatness !== false) {
+    for (const dataName of Object.keys(rawMethodFlatness)) {
+      const de = ddict.get(dataName);
+      if (de !== undefined && isDType(de)) {
+        const perMethod = rawMethodFlatness[dataName];
+        for (const meth of Object.keys(perMethod)) {
+          const f = perMethod[meth];
+          if (typeof f === 'number') { de.methodFlatness.set(meth, f); }
+        }
+      }
+    }
+  }
   return new Provides(uri, mdict, vdict, adict, ddict);
 }
 
@@ -1067,6 +1093,58 @@ export interface CompileOptions {
   // It's a codegen-repr choice in the async backend, not an ANF pass, so it's
   // independent of `optimize`.
   unboxVars: boolean;
+  // Direct (static) field access for `cases` (promise backend only). On by
+  // default; -no-direct-cases disables it for A/B measurement. When the cases
+  // scrutinee's type resolves to concrete variant metadata, the matched branch
+  // reads `cases_val.dict.<name>` with statically-known field names / mutability
+  // mask instead of the reflective `$constructor.$fieldNames[i]` + dynamic
+  // `dict[name]` + `$mut_fields_mask[i]` chain (and drops `derefField` entirely
+  // for plain immutable, non-ref fields). The scrutinee's runtime _checkAnn (or
+  // the static type proof under -type-check) guarantees the value is of the type,
+  // making the static names sound. It's a codegen choice in the async backend,
+  // independent of `optimize`.
+  directCases: boolean;
+  // Redundant annotation-check elimination driven by the upper-bound type-flow
+  // analysis (type-flow.ts; promise backend only). On by default; -no-ann-elision
+  // disables it for A/B measurement. When the analysis proves an `:: T` bind's
+  // value is already `⊑ T` (and T is a flat, non-refinement ann), the runtime
+  // `_checkAnn` brand check is skipped. Sound only when runtime annotations are
+  // intact (the ub facts rest on the checks that DO run), so it self-disables
+  // unless runtimeAnnotations && userAnnotations. Independent of `optimize`.
+  annElision: boolean;
+  // Method-call flatness (flatness.ts + type-flow.ts; promise backend only). On
+  // by default; -no-method-flatness disables it for A/B measurement. The
+  // upper-bound type-flow resolves a method call's receiver to a concrete
+  // in-module data type; the flatness pass analyzes that type's methods and, when
+  // the resolved method is flat, marks the call flat (so the enclosing function
+  // can stay synchronous and the call elides its conditional await) and emits the
+  // method itself as a synchronous function. Sound on the same basis as
+  // direct-cases: a value satisfying `:: T` has T's original (analyzed) methods
+  // -- functional extend that overrides a method strips the brand -- so it
+  // self-disables unless runtimeAnnotations && userAnnotations. Independent of
+  // `optimize`.
+  methodFlatness: boolean;
+  // Cross-module method flatness (promise backend only; a sub-feature of
+  // methodFlatness, so also disabled by it). On by default; -no-imported-method-flat
+  // disables it for A/B measurement. Lets a call to an IMPORTED type's flat method
+  // skip the conditional-await wrapper. Two sources, both keyed off the receiver's
+  // runtime-checked/constructed type: (a) Pyret modules serialize each datatype's
+  // computed method flatness in their provides (getFlatProvides -> the
+  // `method-flatness` section), consumed here; (b) native JS-builtin dict methods,
+  // which have no Pyret body, are derived flat from their declared type (no callback
+  // arg => native + synchronous). Sound on the same basis as in-module method
+  // flatness: the receiver rests on an annotation/constructor check, and the type's
+  // brand guarantees the analyzed/native method implementations.
+  importedMethodFlat: boolean;
+  // Typed operator weakening (type-flow.ts; promise backend only). On by default;
+  // -no-op-weakening disables it for A/B measurement. Rewrites a polymorphic,
+  // dispatching operator app (`_plus` ...) into its monomorphic, non-dispatching,
+  // known-flat global (`_plus_nums` ...) where upper-bound type-flow proves both
+  // operands are Number, so ordinary structural flatness flattens the arithmetic
+  // and the runtime skips the per-op type re-check. Sound on the same basis as ann
+  // elision (the ub facts rest on the runtime annotation checks), so it self-
+  // disables unless runtimeAnnotations && userAnnotations. Independent of `optimize`.
+  opWeakening: boolean;
   stackBackend: StackBackend;
   inlineCaseBodyLimit: number;
   moduleEval: boolean;
@@ -1111,6 +1189,11 @@ export const defaultCompileOptions: CompileOptions = {
   licm: true,
   inlineComments: false,
   unboxVars: true,
+  directCases: true,
+  annElision: true,
+  methodFlatness: true,
+  importedMethodFlat: true,
+  opWeakening: true,
   stackBackend: compiledStackBackend,
   inlineCaseBodyLimit: 5,
   moduleEval: true,
@@ -1232,6 +1315,30 @@ export const runtimeProvides: Provides = new Provides("builtin://global",
     ["_lessequal", tTop],
     ["_greaterthan", tTop],
     ["_greaterequal", tTop],
+    // Monomorphic numeric operators emitted by the operator-weakening pass
+    // (typed tTop here exactly like the polymorphic originals above; the real
+    // arrow types/flatness come from the global module provides, global.js).
+    ["_plus_nums", tTop],
+    ["_minus_nums", tTop],
+    ["_times_nums", tTop],
+    ["_divide_nums", tTop],
+    ["_lessthan_nums", tTop],
+    ["_lessequal_nums", tTop],
+    ["_greaterthan_nums", tTop],
+    ["_greaterequal_nums", tTop],
+    ["equal-always-prim", tTop],
+    ["_plus_strings", tTop],
+    ["_lessthan_strings", tTop],
+    ["_greaterthan_strings", tTop],
+    ["_lessequal_strings", tTop],
+    ["_greaterequal_strings", tTop],
+    ["tostring_num", tTop],
+    ["torepr_num", tTop],
+    ["tostring_str", tTop],
+    ["torepr_str", tTop],
+    ["tostring_bool", tTop],
+    ["torepr_bool", tTop],
+    ["raise_flat", tTop],
     ["string-equal", tTop],
     ["string-contains", tTop],
     ["string-starts-with", tTop],
