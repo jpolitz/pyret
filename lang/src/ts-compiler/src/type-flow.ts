@@ -1181,13 +1181,38 @@ class WeakenVisitor extends N.DefaultMapVisitor {
 // its fields is present -- or, failing a known variant, (b) in the cross-variant
 // intersection (present on every variant). Excludes methods either way (neither
 // map records method members).
+// Does an imported/native type's serialized DataType carry `field` where the
+// receiver guarantees it? Mirrors directCases' resolver (env.datatypeByUri gives
+// the full variant structure cross-module): on the known variant, or -- variant
+// unknown -- on EVERY variant (so it is present on any value of the type). A `.`
+// read returns a ref field's box as-is, matching getField, so no ref handling.
+function importedFieldOk(obj: AbsType, field: string, ctx: Ctx): boolean {
+  if (obj.k !== 'data') { return false; }
+  const hash = obj.id.lastIndexOf('#');
+  if (hash < 0) { return false; }
+  const uri = obj.id.slice(0, hash), name = obj.id.slice(hash + 1);
+  if (!ctx.compileEnv.allModules.has(uri)) { return false; }
+  let de: C.DataExport | undefined;
+  try { de = ctx.compileEnv.datatypeByUri(uri, name); } catch (_e) { return false; }
+  if (de === undefined || !C.isDType(de)) { return false; }
+  const dt = de.typ;
+  if (dt === undefined) { return false; }
+  const hasField = (v: T.TypeVariant): boolean => T.variantFieldGet(v.fields, field) !== undefined;
+  if (obj.variant !== undefined) {
+    const v = dt.getVariant(obj.variant);
+    return v !== undefined && hasField(v);
+  }
+  return dt.variants.length > 0 && dt.variants.every(hasField);
+}
+
 function directFieldOk(obj: AbsType, field: string, ctx: Ctx): boolean {
   if (obj.k !== 'data') { return false; }
   if (obj.variant !== undefined) {
     const vf = ctx.variantFieldNames.get(obj.id)?.get(obj.variant);
     if (vf !== undefined && vf.has(field)) { return true; }
   }
-  return fieldTypeOf(obj, field, ctx) !== undefined;
+  if (fieldTypeOf(obj, field, ctx) !== undefined) { return true; }
+  return importedFieldOk(obj, field, ctx);
 }
 
 // Is `obj.meth(...)` a safe direct method dispatch? Yes when the receiver resolves
