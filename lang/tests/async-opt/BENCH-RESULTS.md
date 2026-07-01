@@ -57,6 +57,62 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-01 — cross-module method flatness)
+
+Method flatness now crosses module boundaries (commit `cadcd0ade`): a call to an
+imported type's flat method skips the conditional-await wrapper. Pyret modules serialize
+their computed per-method flatness in provides (a `method-flatness` section); native JS
+builtins declare it (`string-dict.js`). Validation: **cont byte-parity 16/16; promise
+exec suite 13343/13343 shipshape**; all bench output-parity OK. Flag
+`-no-imported-method-flat`.
+
+Full table, `run-bench-table.sh 5` (median LOOP-seconds, `node22`, isolated). `p/c` =
+promise/cont.
+
+| benchmark | result | cont | prom | p/c | parity |
+|---|---|---|---|---|---|
+| vec-methods         | 250590    | 2.83 | 2.03 | 0.72 | OK |
+| car-compute         | 14829840  | 2.83 | 2.17 | 0.77 | OK |
+| spell               | 73        | 3.12 | 2.52 | 0.81 | OK |
+| matrix              | 640615    | 3.33 | 2.94 | 0.88 | OK |
+| car-render          | 400000    | 2.94 | 2.71 | 0.92 | OK |
+| orbital-render      | 180000    | 3.09 | 2.93 | 0.95 | OK |
+| kmeans              | 40568     | 1.81 | 1.73 | 0.96 | OK |
+| orbital-ems         | 390000    | 1.72 | 1.70 | 0.99 | OK |
+| seam                | 478707    | 2.19 | 2.16 | 0.99 | OK |
+| lander              | 4800000   | 2.68 | 2.67 | 1.00 | OK |
+| orbital-compute     | 2959      | 2.33 | 2.38 | 1.02 | OK |
+| dtree               | 829       | 1.20 | 1.24 | 1.03 | OK |
+| boids-compute-data  | 236561    | 2.77 | 2.92 | 1.05 | OK |
+| boids-raster        | 250       | 2.58 | 2.92 | 1.13 | OK |
+| boids-compute       | 236561    | 2.63 | 3.17 | 1.21 | OK |
+| plagiarism          | 583869000 | 1.36 | 2.01 | 1.48 | OK |
+
+**Cross-module method flatness is perf-neutral.** It flattens the method-call awaits
+(matrices' `Matrix.get` 14→12 guards; string-dict methods in plagiarism 189→129), but
+those awaits are cheap — wall-clock is unchanged within noise vs the section below. It's
+a codegen-cleanliness win (deletes await scaffolding) and, more importantly, the general
+mechanism that now auto-picks-up *any* typed flat method across modules (the next
+JS-native candidate to mark is `table.js`'s accessors — `length`/`row-n`/`get-column`/
+`column-names`, all `makeList`-based hence safe, unlike `keys-now` which builds a
+tree-set and can suspend).
+
+**plagiarism deep dive — why it stays 1.48.** Profiled cont vs promise: promise runs
+1.46× the JS ticks, from ~8% async plumbing (microtasks / await / promise-resolve) + ~3%
+extra GC + **the async-function call overhead itself** — V8 allocates a promise +
+resumable frame on every loop-body call, even when nothing suspends. A/B: annotating the
+erased `StringDict<Number>` values `:: Number` (a sound runtime check, output identical)
+weakens 35/37 polymorphic ops yet buys only **4%** (promise 1978→1897 ms, 11-run
+interleaved). So the op-awaits are cheap; the structural async cost dominates. The CPS
+list combinators (`raw_list_fold_loop`) fast-path a loop only when the body returns a
+non-thenable (fully flat); one non-flat op makes the body an `async function` → a
+per-element `.then` microtask. plagiarism's bodies can't be made fully flat soundly
+(erased dict values + roughnum division), so it's an honest async-execution-model floor
+for untyped-collection hot loops — same class as boids-compute (1.21) vs the fully-typed
+boids-compute-data (1.05). The structural lever is lowering `for each`/`for fold` to
+native inline `while` loops (a codegen pattern on the `for` forms, not a flatness tweak,
+and it dodges cross-module inlining entirely).
+
 ## Results (2026-07-01 — +4 bootstrap benches: dtree / kmeans / plagiarism / seam)
 
 Added four new real-workload benches extracted from bootstrapworld/starter-files
