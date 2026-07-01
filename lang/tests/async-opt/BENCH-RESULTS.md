@@ -57,6 +57,76 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-01 — generator machinery: gen-functions + tail-flat; promise beats frozen cont)
+
+The two machinery levers that finally moved the backend gap itself (not the static opts):
+
+1. **gen-functions** (`-no-gen-functions`): every non-flat function/method compiles as a
+   `function*` body (awaits → yields) plus a plain synchronous wrapper that drives it. A call
+   that never actually suspends returns its value FLAT — no Promise allocation, no microtask
+   hop — and since callers already `R.iT`-guard, whole call chains stay synchronous. A genuine
+   suspension converts each frame's suspended generator into a Promise (`R.driveGen`),
+   preserving the Awaitable ABI, fuel-based stack unwinding, interruptibility, and await error
+   semantics (rejections are `gen.throw`n into the body). Measured machinery cost per
+   non-suspending call: async-fn shape ~48ns → generator shape ~24ns → sync ~3.7ns.
+2. **tail-flat** (`-no-tail-flat`): a non-flat function whose only suspension points sit in
+   tail position skips the generator entirely — plain sync function, tail calls return the
+   callee's result (value OR thenable) directly, fuel check becomes
+   `if (needsPause()) return checkPause().then(re-enter)`. Zero hot-path allocation; a
+   suspended sync tail chain collapses to O(1) heap (every frame returns the same promise).
+   Verified by construction: compile in tail-flat mode, scan for leftover awaits, fall back
+   to the generator form if any remain.
+
+**Criterion 1 — curated bench table (N=5 medians, node22, all 16 outputs parity-OK):**
+
+| benchmark | result | cont | prom | p/c |
+|---|---|---|---|---|
+| vec-methods         | 250590    | 2.67 | 1.37 | **0.51** |
+| boids-compute-data  | 236561    | 2.77 | 1.85 | **0.67** |
+| car-compute         | 14829840  | 2.69 | 2.05 | **0.76** |
+| spell               | 73        | 3.09 | 2.73 | **0.88** |
+| matrix              | 640615    | 3.29 | 3.01 | **0.91** |
+| boids-compute       | 236561    | 2.63 | 2.42 | **0.92** |
+| kmeans              | 40568     | 1.68 | 1.60 | 0.95 |
+| dtree               | 829       | 1.15 | 1.13 | 0.98 |
+| car-render          | 400000    | 2.66 | 2.68 | 1.01 |
+| lander              | 4800000   | 2.63 | 2.66 | 1.01 |
+| boids-raster        | 250       | 2.59 | 2.62 | 1.01 |
+| orbital-render      | 180000    | 2.88 | 3.02 | 1.05 |
+| seam                | 478707    | 2.06 | 2.16 | 1.05 |
+| orbital-ems         | 390000    | 1.67 | 1.77 | 1.06 |
+| orbital-compute     | 2959      | 2.29 | 2.45 | 1.07 |
+| plagiarism          | 583869000 | 1.29 | 1.76 | **1.36** |
+
+**Geomean p/c = 0.93** — the promise backend is now FASTER than frozen cont overall,
+including **boids-compute at 0.92** (the headline bench that sat at 1.15–1.22 all effort).
+The orbital/render 1.01–1.07 cluster swings ±0.05 run-to-run (boids-raster measured 0.97 and
+1.01 in back-to-back tables). **plagiarism 1.36 is the one genuine outlier**: its hot
+callbacks (`old-value + 1` on dict values, `n + (get * get)`) carry mid-body polymorphic ops
+on `Any`-typed dict values — REPL-unsound to weaken statically — so they stay
+generator-compiled, and the per-word/per-key generator+IteratorResult allocation shows as
+~17.5% GC (vs cont's 7.6%).
+
+**Criterion 2 — whole-suite wall-clock (main2-exec, 12914 tests, interleaved N=3):**
+cont median 227.7s vs promise median 255.2s → **p/c ≈ 1.12** (was ~1.18 before the levers).
+Both all-pass. The residual is spread across the runtime's own async helpers (checker /
+equality machinery) and gen-alloc on tiny calls — the next lever if pursued.
+
+**Criterion 3 — full promise main2 suite: 13346/13346 shipshape** on all-fresh codegen.
+
+**Two operational lessons (cost: several hours):**
+- The suite jarrs build from `tests/ts-compiled-promise/`, NOT `compiled-ts-promise/` —
+  clean BOTH after codegen changes, or the suite validates stale codegen (the first
+  "shipshape" runs after gen-functions had rebuilt only a handful of modules).
+- Generator resume frames (`at NAME.next (<anonymous>)`) crashed the error renderer's
+  parseFrame (no line/col); fixed in exn-stack-parser.js by dropping location-less frames.
+  ALSO: `ext()` inherits `tailFlatMode` — a nested lambda's generator falling back inside a
+  tail-flat attempt got the tail-flat fuel check, whose self-re-enter called the generator
+  function directly and leaked a raw generator as a Pyret value (caught by bench-matrix).
+
+Reproduce: `*.ts.jarr` (frozen cont) vs `*.ts.p.jarr` (promise, defaults = both levers on);
+rm -rf compiled-ts-promise/* tests/ts-compiled-promise/* after any codegen change.
+
 ## Results (2026-07-01 — three-backend table: frozen cont vs cont-opt vs promise-opt, with direct-access)
 
 The state after the direct-access work (static `obj.dict["field"]` reads + `obj.dict["m"].full_meth`
