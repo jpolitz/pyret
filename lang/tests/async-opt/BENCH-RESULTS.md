@@ -57,6 +57,129 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-01 — cont-optimized experiment: un-gate the promise-only opts for cont)
+
+**The flip side.** All the optimization work in this repo was gated to the **promise**
+backend, because the point was to claw back promise's async overhead and *match cont*.
+But flatness/weakening were originally cont ideas — flatness lets cont skip state-machine
+steps and `isCont()` checks, and monomorphic operator weakening (`_plus`→`_plus_nums`)
+is a fast path in both runtimes. So: what if we un-gate them for cont and let cont be
+*optimized* too? How fast does cont go?
+
+**What's un-gated** (new `-cont-optimize` flag → `contOptimize` option; separate
+`compiled-ts-co/` cache; `*.ts.co.jarr` build target). Three ANF-level passes that were
+`isPromise`-only in `js-of-pyret.ts` now also run on cont:
+- **optimizer middle-end** (`optimize-anf.ts`: inliner + CSE + LICM field-read caching),
+- **typed operator weakening** (`type-flow.ts weakenOperators`: monomorphic `_*_nums`/
+  `_*_strings`/`raise_flat` — these globals already exist in `runtime.js`, not just
+  `runtime-async.js`), which then feeds
+- the **method-flatness pre-pass** into the shared flatness env that **cont already
+  consumes** (`compileFlatApp` vs `compileSplitApp`, gas-check + `isCont` elision).
+
+The LICM `cacheVar` codegen (`cacheVar ?? (cacheVar = getField(...))`) was promise-only;
+ported the identical form into cont's `aDot` (`anf-loop-compiler.ts`). The cache cell is
+declared at the ANF level (backend-agnostic), so it's a JS closure var reset per
+loop-invocation — exception-order sound, same as promise. NOT un-gated: redundant-ann
+elision (its `redundantAnnChecks` set is only threaded to the promise splitting compiler;
+cont would need codegen work to consume it) — a candidate for a follow-up.
+
+This **deliberately breaks the cont byte-parity oracle** (fresh atoms + weakened ops), so
+it lives on its own compiled cache and jarr suffix.
+
+Full table, `run-bench-table-co.sh 5` (median LOOP-seconds, `node22`, isolated).
+`cont` = frozen baseline, `co` = cont-optimized, `prom` = promise.
+`co/c` = optimized-vs-frozen cont, `p/c` = promise-vs-cont, `co/p` = optimized-cont-vs-promise.
+
+| benchmark | result | cont | co | prom | co/c | p/c | co/p | parity |
+|---|---|---|---|---|---|---|---|---|
+| matrix              | 640615    | 3.02 | 2.39 | 2.85 | **0.79** | 0.94 | 0.84 | OK |
+| boids-compute-data  | 236561    | 2.85 | 2.21 | 2.95 | **0.78** | 1.04 | 0.75 | OK |
+| car-compute         | 14829840  | 2.76 | 2.35 | 2.20 | **0.85** | 0.80 | 1.07 | OK |
+| boids-compute       | 236561    | 2.63 | 2.27 | 3.19 | **0.86** | 1.21 | 0.71 | OK |
+| vec-methods         | 250590    | 2.57 | 2.27 | 2.06 | **0.88** | 0.80 | 1.10 | OK |
+| boids-raster        | 250       | 2.56 | 2.37 | 2.76 | **0.93** | 1.08 | 0.86 | OK |
+| orbital-compute     | 2959      | 2.25 | 2.18 | 2.29 | 0.97 | 1.02 | 0.95 | OK |
+| seam                | 478707    | 2.22 | 2.16 | 2.15 | 0.97 | 0.97 | 1.00 | OK |
+| spell               | 73        | 3.22 | 3.18 | 2.49 | 0.99 | 0.77 | 1.28 | OK |
+| kmeans              | 40568     | 1.69 | 1.68 | 1.75 | 0.99 | 1.04 | 0.96 | OK |
+| orbital-ems         | 390000    | 1.66 | 1.65 | 1.72 | 0.99 | 1.04 | 0.96 | OK |
+| orbital-render      | 180000    | 2.94 | 2.92 | 2.98 | 0.99 | 1.01 | 0.98 | OK |
+| lander              | 4800000   | 2.58 | 2.59 | 2.61 | 1.00 | 1.01 | 0.99 | OK |
+| car-render          | 400000    | 2.85 | 2.84 | 2.59 | 1.00 | 0.91 | 1.10 | OK |
+| dtree               | 829       | 1.16 | 1.22 | 1.13 | 1.05 | 0.97 | 1.08 | OK |
+| plagiarism          | 583869000 | 1.36 | 1.45 | 2.01 | 1.07 | 1.48 | 0.72 | OK |
+
+**Geomean: co/c = 0.940, p/c = 0.993, co/p = 0.947.** All 16 outputs parity-OK
+(frozen-cont ≡ cont-optimized ≡ promise).
+
+**Takeaways.**
+1. **Optimized cont is the fastest backend on this suite** (co/p 0.947 geomean): the
+   very ANF passes built to help promise help cont *more in aggregate*, because cont has
+   no async floor to pay back. Un-gating claws ~6% geomean over frozen cont.
+2. **Wins concentrate exactly where promise's did** — arithmetic/method-bound hot loops:
+   matrix 0.79, boids-compute-data 0.78, car-compute 0.85, boids-compute 0.86,
+   vec-methods 0.88. Weakening turns polymorphic dispatch into monomorphic fast-path
+   calls that cont then flat-compiles (skips state-machine splitting); LICM caches the
+   loop-invariant field reads.
+3. **The boids reversal is the headline pair.** `boids-compute` co/p **0.71** and
+   `boids-compute-data` co/p **0.75**: the benches promise *never cracked* (its async
+   list-combinator floor), optimized cont just wins — no awaits to amortize, and it still
+   gets the weakening. The long-standing "boids is an honest async floor" story is a
+   promise-only story; cont-optimized sidesteps it.
+4. **Two minor regressions** — dtree 1.05, plagiarism 1.07 — are `StringDict`/`Table`
+   -heavy with little arithmetic to weaken, so only the inliner's **size bloat**
+   (~11% bigger jarr, e.g. car-compute 9.73→10.79 MB) shows and no flat-op payoff offsets
+   it. Same shape as the promise finding that inlining is net-positive on numeric loops,
+   invisible-to-slightly-negative on dict/heterogeneous code.
+5. Render/physics-integrator benches (lander, car-render, orbital-*, seam, spell, kmeans)
+   are ~neutral: already call-/render-bound, not arithmetic-bound, so neither weakening
+   nor LICM has a hot target.
+
+### Soundness: the broad suite un-gates a latent cont-codegen bug
+
+The 16-bench table is **all-parity-OK** (frozen-cont ≡ cont-optimized ≡ promise), but the
+broad oracle isn't clean. `make ts-pyret-test-co` (main2, ~13.3k tests, `-cont-optimize`,
+run under **node22** — `$(NODE)`=node18 can't `require()` the now-ESM `vega`, unrelated to
+this experiment) gives **13344 passed / 9 failed / 1 error** vs frozen cont's **13354 / 0 /
+0**. All 9 failures are AVL-tree set operations:
+`Expected AVLTree ... but got: <a small Number>` at `sets.arr` `rebalance`/`leaf.insert` —
+a `branch(value, h::Number, left, right)` construction yielding its Number height instead
+of the object.
+
+Bisected (each `-no-*` flag with the rest on, repro = `test-sets.arr` standalone,
+deterministic 6/170):
+- `-no-optimize` (inliner/CSE/LICM off): **still fails** → not the optimizer middle-end.
+- `-no-licm`, `-no-imported-method-flat`: still fail → not those.
+- **`-no-op-weakening`: passes.  `-no-method-flatness`: passes.** → it needs **both**
+  operator weakening **and** the method-flatness pre-pass on. The trigger is
+  `mkbranch = branch(val, num-max(left.height(), right.height()) + 1, left, right)`: flat
+  `.height()` method calls (method-flatness) inside a weakened `+1` (weakening) as a data
+  constructor argument.
+
+**This is a cont-codegen gap, not an ANF-pass bug.** Promise compiles the same enriched
+flatness for `sets.arr` correctly (its suite passes 13343). Method-flatness was *only ever
+fed to the promise backend* before this experiment, so cont's flat-method-call codegen
+path was never exercised with these facts — the interaction with weakened arithmetic in a
+constructor argument is the untested corner. A minimal in-module `data Tree` mimic did
+*not* reproduce (needs `sets.arr`'s recursive imported-data-method shape), so root-causing
+the exact cont codegen site is follow-up work.
+
+**Sound subset — `-cont-optimize -no-method-flatness`.** Because `-no-op-weakening` and
+`-no-method-flatness` *each* fix the bug, dropping method-flatness gives a sound
+cont-optimize that keeps weakening + optimizer/LICM. **Validated: full main2 suite
+13354/13354, 0 failed / 0 errored** (identical to frozen cont). The **arithmetic-bound wins
+survive nearly intact** — car-compute 0.84 (vs 0.83 aggressive), boids-compute 0.89 (vs
+0.91), vec-methods 0.85 (vs 0.89) — because those come from weakening + LICM, not
+method-flatness. The one bench that *loses* is **matrix: 0.93 sound vs 0.76 aggressive** —
+its big win *was* method-flatness flattening `Matrix.get`, i.e. exactly the buggy pass. So:
+ship the sound config (loses only method-dispatch-bound wins); the aggressive all-passes
+table above is fastest but **not sound as-is** — safe only for the compute benches, which
+don't hit the flat-method-in-constructor pattern.
+
+Reproduce: `make tests/async-opt/<bench>.ts.co.jarr` then
+`tests/async-opt/run-bench-table-co.sh 5`. Broad soundness oracle:
+`make ts-pyret-test-co` (main2 exec suite compiled `-cont-optimize`; runs under node22).
+
 ## Results (2026-07-01 — cross-module method flatness)
 
 Method flatness now crosses module boundaries (commit `cadcd0ade`): a call to an

@@ -1145,6 +1145,14 @@ export interface CompileOptions {
   // elision (the ub facts rest on the runtime annotation checks), so it self-
   // disables unless runtimeAnnotations && userAnnotations. Independent of `optimize`.
   opWeakening: boolean;
+  // EXPERIMENT (-cont-optimize): run the normally promise-only ANF-level
+  // optimizations (optimizer middle-end, operator weakening, method-flatness
+  // pre-pass feeding the shared flatness env) on the CONT backend too. These
+  // enrich the flatness facts cont uses to skip state-machine steps / isCont
+  // checks and let it call monomorphic fast-path globals. Off by default; when
+  // on it breaks the cont byte-parity oracle by design, so it lives on its own
+  // compiled cache. See js-of-pyret.ts.
+  contOptimize: boolean;
   stackBackend: StackBackend;
   inlineCaseBodyLimit: number;
   moduleEval: boolean;
@@ -1194,6 +1202,7 @@ export const defaultCompileOptions: CompileOptions = {
   methodFlatness: true,
   importedMethodFlat: true,
   opWeakening: true,
+  contOptimize: false,
   stackBackend: compiledStackBackend,
   inlineCaseBodyLimit: 5,
   moduleEval: true,

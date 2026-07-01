@@ -119,6 +119,7 @@ const jInstanceof = J.jInstanceof;
 const jTernary = (test: J.JExprT, consq: J.JExprT, altern: J.JExprT): J.JTernary => new J.JTernary(test, consq, altern);
 const jNull = J.jNull;
 const jParens = (exp: J.JExprT): J.JParens => new J.JParens(exp);
+const jNullish = J.jNullish;
 const jSwitch = (exp: J.JExprT, branches: CList<J.JCaseT>): J.JSwitch => new J.JSwitch(exp, branches);
 const jCase = (exp: J.JExprT, body: J.JBlockT): J.JCase => new J.JCase(exp, body);
 const jDefault = (body: J.JBlockT): J.JDefault => new J.JDefault(body);
@@ -2063,8 +2064,20 @@ export class CompilerVisitor {
 
   aDot(node: N.ADot): DAG.CExp {
     const visitObj: DAG.CExp = node.obj.visit(this);
-    return cExp(getFieldSafe(node.l, visitObj.exp, jStr(node.field), this.getLoc(node.l)),
-      clSnoc(visitObj.otherStmts, jExpr(jAssign(this.curApploc, this.getLoc(node.l))) as J.JStmt));
+    const baseRead = getFieldSafe(node.l, visitObj.exp, jStr(node.field), this.getLoc(node.l));
+    const stmts = clSnoc(visitObj.otherStmts, jExpr(jAssign(this.curApploc, this.getLoc(node.l))) as J.JStmt);
+    if (node.cacheVar !== undefined) {
+      // Cross-iteration write-once memoization of a loop-invariant immutable
+      // field read (ANF optimizer LICM). Mirrors the promise backend's aDot:
+      // `cacheVar ?? (cacheVar = getField(...))` -- the read stays at its
+      // original program point (exception-order sound) but is evaluated once
+      // and reused thereafter. Only tagged when the cont-optimize experiment
+      // runs the optimizer on the cont backend.
+      const cv = jId(jsIdOf(node.cacheVar));
+      const cached = jParens(jBinop(cv, jNullish, jParens(jAssign(jsIdOf(node.cacheVar), baseRead))));
+      return cExp(cached, stmts);
+    }
+    return cExp(baseRead, stmts);
   }
 
   aColon(node: N.AColon): DAG.CExp {

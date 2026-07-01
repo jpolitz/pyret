@@ -98,6 +98,8 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Disable cross-module method flatness (promise backend; keep the conditional-await wrapper on calls to an imported flat method -- both a Pyret module method proven flat and a native builtin dict method -- for A/B measurement)')],
     ['no-op-weakening',
       C.flag(C.once, 'Disable typed operator weakening (promise backend; keep polymorphic _plus etc. instead of monomorphic _plus_nums, for A/B measurement)')],
+    ['cont-optimize',
+      C.flag(C.once, 'EXPERIMENT: run the normally promise-only ANF optimizations (optimizer middle-end, operator weakening, method-flatness pre-pass) on the CONT backend too, to measure how fast optimized cont goes. Breaks the cont byte-parity oracle by design; use a separate compiled cache.')],
     ['collect-times',
       C.flag(C.once, 'Collect timing information about compilation')],
     ['type-check',
@@ -149,6 +151,7 @@ export function main(args: string[]): number {
     const methodFlatness = !r.has('no-method-flatness');
     const importedMethodFlat = !r.has('no-imported-method-flat');
     const opWeakening = !r.has('no-op-weakening');
+    const contOptimize = r.has('cont-optimize');
     const compiledDir = r.get('compiled-dir');
     const standaloneFile = r.get('standalone-file');
     const addProfiling = r.has('profile');
@@ -233,6 +236,7 @@ export function main(args: string[]): number {
           methodFlatness: methodFlatness,
           importedMethodFlat: importedMethodFlat,
           opWeakening: opWeakening,
+          contOptimize: contOptimize,
           stackBackend: stackBackend,
           compiledCache: compiledDir,
           compiledReadOnly: r.has('compiled-read-only-dir') ? r.get('compiled-read-only-dir') : [],
@@ -277,6 +281,7 @@ export function main(args: string[]): number {
         methodFlatness: methodFlatness,
         importedMethodFlat: importedMethodFlat,
         opWeakening: opWeakening,
+        contOptimize: contOptimize,
         stackBackend: stackBackend,
         compileModule: false,
         displayProgress: displayProgress
