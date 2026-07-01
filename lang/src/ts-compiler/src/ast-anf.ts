@@ -610,7 +610,14 @@ export class AApp extends ALettableBase {
 
 export class AMethodApp extends ALettableBase {
   get $name(): 'a-method-app' { return 'a-method-app'; }
-  constructor(public l: Loc, public obj: AVal, public meth: string, public args: AVal[]) { super(); }
+  // `directMethod`, when true, marks this call's receiver as statically known to
+  // be a data type on which `meth` is a genuine method present on the runtime
+  // variant (resolved by type-flow's tagDirectMethods). Codegen then dispatches
+  // via `obj.dict["meth"].full_meth(obj, args)` instead of the reflective
+  // `maybeMethodCall(obj, "meth", ...)` runtime helper -- skipping the
+  // getColonFieldLoc / isMethod / isFunction funnel and, crucially, de-funnelling
+  // into a per-site constant-key access V8 can build a call IC for.
+  constructor(public l: Loc, public obj: AVal, public meth: string, public args: AVal[], public directMethod?: boolean) { super(); }
   visit(visitor: any): any { return visitor.aMethodApp(this); }
   label(): string { return 'a-app'; }
   tosource(): PP.PPrintDoc {
@@ -1144,7 +1151,7 @@ export class DefaultMapVisitor {
     return new AApp(node.l, node._fun.visit(this), node.args.map((a) => a.visit(this)), node.appInfo);
   }
   aMethodApp(node: AMethodApp): ALettable {
-    return new AMethodApp(node.l, node.obj.visit(this), node.meth, node.args.map((a) => a.visit(this)));
+    return new AMethodApp(node.l, node.obj.visit(this), node.meth, node.args.map((a) => a.visit(this)), node.directMethod);
   }
   aPrimApp(node: APrimApp): ALettable {
     return new APrimApp(node.l, node.f, node.args.map((a) => a.visit(this)), node.appInfo);

@@ -306,6 +306,14 @@ export function getDictField(obj: J.JExprT, field: J.JExprT): J.JExprT {
   return jBracket(jDot(obj, 'dict'), field);
 }
 
+// Direct method dispatch: `obj.dict["m"].full_meth(obj, ...args)`. Sound only when
+// type-flow proved `m` is a genuine method in obj's dict (directMethod tag). obj
+// must be a JId (evaluated once). Same result maybeMethodCall's isMethod branch
+// produces (a value or a continuation), without the runtime-helper funnel.
+function directMethodDispatch(obj: J.JExprT, methname: string, args: CList<J.JExprT>): J.JExprT {
+  return jApp(jDot(getDictField(obj, jStr(methname)), 'full_meth'), clCons(obj, args));
+}
+
 // Use when we're sure the field will exist
 export function getFieldUnsafe(obj: J.JExprT, field: J.JExprT, locExpr: J.JExprT): J.JExprT {
   return jApp(getFieldLoc, clist(obj, field, locExpr));
@@ -1101,7 +1109,8 @@ export function* compileSplitMethodApp(
   obj: N.AVal,
   methname: string,
   args: N.AVal[],
-  optBody: N.AExpr | undefined
+  optBody: N.AExpr | undefined,
+  directMethod?: boolean
 ): ChainGen<DAG.CBlock> {
   const ans = compiler.curAns;
   const step = compiler.curStep;
@@ -1113,12 +1122,18 @@ export function* compileSplitMethodApp(
   const helperName = argcount <= 7 ? 'maybeMethodCall' + String(argcount) : 'maybeMethodCall';
 
   if (J.isJId(compiledObj)) {
-    const call = wrapWithSrcnode(l,
-      rtMethod(helperName,
-        clAppend(clist<J.JExprT>(compiledObj,
-          jStr(methname),
-          compiler.getLoc(l)),
-        compiledArgs)));
+    // Direct dispatch when type-flow proved `methname` is a genuine method of the
+    // (statically-known) receiver: obj.dict["m"].full_meth(obj, args), skipping the
+    // maybeMethodCall/getColonFieldLoc/isMethod funnel and giving V8 a per-site
+    // constant-key call. Result is a value or a continuation, same as the helper.
+    const call = directMethod
+      ? wrapWithSrcnode(l, directMethodDispatch(compiledObj, methname, compiledArgs))
+      : wrapWithSrcnode(l,
+        rtMethod(helperName,
+          clAppend(clist<J.JExprT>(compiledObj,
+            jStr(methname),
+            compiler.getLoc(l)),
+          compiledArgs)));
     const [newCases, afterAppLabel] = yield* getNewCases(compiler, optDest, optBody, ans);
     return cBlock(jBlock(clist<J.JStmt>(
       jExpr(jAssign(step, afterAppLabel)),
@@ -1131,6 +1146,15 @@ export function* compileSplitMethodApp(
     const colonFieldId = jId(freshId(compilerName('field')));
     const checkMethod = rtMethod('isMethod', clist<J.JExprT>(colonFieldId));
     const [newCases, afterAppLabel] = yield* getNewCases(compiler, optDest, optBody, ans);
+    if (directMethod) {
+      // Bind obj once, then dispatch directly (see the JId branch above).
+      return cBlock(jBlock(clist<J.JStmt>(
+        jExpr(jAssign(step, afterAppLabel)),
+        jExpr(jAssign(compiler.curApploc, compiler.getLoc(l))),
+        jVar(objId.id, compiledObj),
+        jExpr(jAssign(ans, wrapWithSrcnode(l, directMethodDispatch(objId, methname, compiledArgs)))),
+        jBreak)), newCases);
+    }
     return cBlock(
       jBlock(clist<J.JStmt>(
         // Update step before the call, so that if it runs out of gas, the resumer goes to the right step
@@ -1697,7 +1721,7 @@ export function* compileLettable(
     case 'a-app':
       return yield* compileAApp(e.l, e._fun, e.args, compiler, b, optBody, e.appInfo);
     case 'a-method-app':
-      return yield* compileSplitMethodApp(e.l, compiler, b, e.obj, e.meth, e.args, optBody);
+      return yield* compileSplitMethodApp(e.l, compiler, b, e.obj, e.meth, e.args, optBody, e.directMethod);
     case 'a-if':
       return yield* compileSplitIf(compiler, b, e.c, e.t, e.e, optBody);
     case 'a-cases':
