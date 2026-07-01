@@ -975,7 +975,12 @@ export function compileAppAsync(compiler: CompilerVisitor, l: Loc, f: N.AVal, ar
       compiler.tokenCell.set('minted', true);
       const token = rtMethod('tailCall', clist<J.JExprT>(fCe.exp, jList(false, compiledArgs)));
       return clAppend(pre, clAppend(fnCheck, clSing(jReturn(token))));
-    } else if (isFlat) {
+    } else if (isFlat || (compiler.tailFlatMode === true && compiler.tailPos)) {
+      // Flat callee: direct call, no await. Tail-flat mode, tail position: the
+      // callee's result (flat value or thenable) is returned DIRECTLY -- the
+      // Awaitable ABI permits both, the caller's conditional await handles
+      // either, and every intermediate tail frame returns the SAME promise, so
+      // a synchronous tail chain collapses to O(1) heap when it suspends.
       const callBase = app(l, fCe.exp, compiledArgs);
       return clAppend(pre, clAppend(fnCheck, compiler.complete(callBase)));
     } else {
@@ -1020,13 +1025,15 @@ export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.
       objExpr = jId(objId);
     }
     const call = wrapWithSrcnode(l, directMethodDispatch(objExpr, methname, compiledArgs));
-    if (isFlatMeth) {
+    if (isFlatMeth || (compiler.tailFlatMode === true && compiler.tailPos)) {
+      // Flat method: no await. Tail-flat tail position: return the result
+      // (value or thenable) directly -- see the compile-app-async analogue.
       return clAppend(pre, clAppend(preDecls, compiler.complete(call)));
     }
     const t = freshId(compilerName('mans'));
     return clAppend(pre, clAppend(preDecls, clAppend(callAndMaybeAwait(t, call), compiler.complete(jId(t)))));
   }
-  if (isFlatMeth) {
+  if (isFlatMeth || (compiler.tailFlatMode === true && compiler.tailPos)) {
     let objExpr = compiledObj;
     let preDecls: CList<J.JStmt> = clEmpty;
     if (!J.isJId(compiledObj)) {
@@ -1394,10 +1401,27 @@ export function compileFunBody(
       ? clSing<J.JStmt>(jExpr(rtMethod('profileEnter', clist(localCompiler.getLoc(l)))))
       : clEmpty;
   // The fast-path fuel check: only await (and unwind the JS stack) when needed.
+  // In tail-flat mode the function is synchronous, so instead of awaiting it
+  // RETURNS checkPause().then(re-enter): the whole sync tail chain unwinds by
+  // returning the same promise through every frame (O(1) heap for the bounce),
+  // and the .then re-enters this function with the CURRENT argument values
+  // (the real arg vars, which the explicit TCO loop may have reassigned).
+  // Re-entry re-runs the (idempotent) arity/ann checks; needsPause() consumed
+  // the fuel, so the re-entered call proceeds.
+  const tailFlatMode = compiler.tailFlatMode === true && !isFlat;
+  const reEnterArgs: CList<J.JExprT> = noRealArgs
+    ? CL.map_list((fa: N.ABind) => jId(fa.id) as J.JExprT, formalArgs)
+    : CL.from_list(args.map((a) => jId(jsIdOf(a.id)) as J.JExprT));
   const fuelCheck: CList<J.JStmt> =
     isFlat ? clEmpty
-      : clSing<J.JStmt>(jIf1(rtMethod('needsPause', clEmpty),
-        jBlock1(jExpr(jAwait(rtMethod('checkPause', clEmpty))))));
+      : tailFlatMode
+        ? clSing<J.JStmt>(jIf1(rtMethod('needsPause', clEmpty),
+          jBlock1(jReturn(jMethod(rtMethod('checkPause', clEmpty), 'then',
+            clSing<J.JExprT>(jFun(J.nextJFunId(), '',
+              clEmpty as CList<A.Name>,
+              jBlock1(jReturn(jApp(jId(constId(makeFunName(compiler, l))), reEnterArgs))))))))))
+        : clSing<J.JStmt>(jIf1(rtMethod('needsPause', clEmpty),
+          jBlock1(jExpr(jAwait(rtMethod('checkPause', clEmpty))))));
   // Argument annotation contracts. Emitted at the top of the loop body so they run
   // on initial entry AND on every explicit-loop TCO re-entry — the cont backend
   // resets step to 0 on a tail self-call, so it re-checks args too (parity). A flat
@@ -1881,7 +1905,7 @@ export function* compileCasesBranch(
       : jList(false, clEmpty);
     const compiledBranchFun =
       compileFunBody(branch.body.l, step, tempBranch,
-        ext(compiler, { allowTco: false, options: { ...compiler.options, shouldProfile: false } }),
+        ext(compiler, { allowTco: false, tailFlatMode: false, options: { ...compiler.options, shouldProfile: false } }),
         branchArgs, undefined, branch.body, true, false, false, false);
     const preamble = casesPreamble(compiler, compiledVal, branch, casesLoc);
     const derefFields = jExpr(jAssign(compiler.curAns, jMethod(compiledVal, '$app_fields', clist<J.JExprT>(jId(tempBranch), refBindsMask))));
@@ -2123,6 +2147,28 @@ export function awaitsToYields(body: J.JBlockT): J.JBlockT {
   return body.visit(awaitToYieldVisitor);
 }
 
+// Scan a compiled function body for any remaining JAwait. Used by the
+// tail-flat attempt: a body that compiled with zero awaits is a legal plain
+// synchronous function. Skips nested JAsyncFun/JGenFun (awaits/yields are
+// legal there) but DOES descend into nested sync JFun exprs -- an await inside
+// one is a would-be SyntaxError, and finding it forces the safe fallback.
+let awaitScanFound = false;
+const awaitScanVisitor: any = ext(J.defaultMapVisitor as any, {
+  jAwait(node: J.JAwait): J.JExprT { awaitScanFound = true; return node; },
+  jAsyncFun(node: J.JAsyncFun): J.JExprT { return node; },
+  jGenFun(node: J.JGenFun): J.JExprT { return node; },
+  jSourcenode(node: J.JSourcenode): J.JExprT { node.expr.visit(this); return node; },
+  jRawCode(node: J.JRawCode): J.JExprT { return node; },
+  jLabel(node: J.JLabel): J.JExprT { return node; },
+  jBlock1(node: J.JBlock1): J.JBlockT { node.stmt.visit(this); return node; },
+});
+
+export function hasAwaits(body: J.JBlockT): boolean {
+  awaitScanFound = false;
+  body.visit(awaitScanVisitor);
+  return awaitScanFound;
+}
+
 // Build the generator + sync-wrapper pair for a non-flat function body.
 // Returns the statements declaring both (the wrapper is bound to `temp`, which
 // is what gets wrapped by makeFunction/makeMethod etc.). Shape:
@@ -2187,11 +2233,38 @@ export function compileALam(
   // A fresh cell records whether this body actually minted a bounce token at some
   // tail position; if so the function value needs the driving `.app` wrapper
   // (makeTailFunction), otherwise it keeps app === appBody for zero overhead.
+  const funArgs = CL.map_list((arg: N.ABind) => formalShadowName(arg.id), effectiveArgs);
+  // Tail-flat attempt: compile with tail calls returning the callee's result
+  // directly and a .then-re-entering fuel check; if NO awaits remain (mid-body
+  // suspension points), the function is a legal plain synchronous function --
+  // no generator, no wrapper, zero hot-path allocation. Sound by construction:
+  // any body this can't express keeps an await and falls through to the
+  // generator compilation. canMintTokens=false (a sync body never mints; the
+  // returned-promise pass-through IS the O(1) bounce). Fail-safe on any
+  // internal error.
+  if (!isFlat && compiler.options.genFunctions && compiler.options.tailFlat) {
+    try {
+      const tfBody = compileFunBody(l, freshId(compilerName('step')), temp,
+        ext(compiler, { allowTco: true, tokenCell: new Map(), tailFlatMode: true }),
+        effectiveArgs, len, body, true, false, false, false);
+      if (!hasAwaits(tfBody)) {
+        const theFun = jFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, tfBody);
+        return cExp(
+          rtMethod('makeFunction', clist<J.JExprT>(jId(temp), jStr(name))),
+          clist<J.JStmt>(jVar(temp, theFun)));
+      }
+    } catch (e) {
+      // fall through to the generator compilation
+    }
+  }
   const tokenCell: Map<string, boolean> = new Map();
   const useGen = !isFlat && compiler.options.genFunctions;
   const arityOut = useGen ? { stmts: clEmpty as CList<J.JStmt> } : undefined;
-  const funBody = compileFunBody(l, newStep, temp, ext(compiler, { allowTco: true, tokenCell: tokenCell }), effectiveArgs, len, body, true, isFlat, false, true, arityOut);
-  const funArgs = CL.map_list((arg: N.ABind) => formalShadowName(arg.id), effectiveArgs);
+  // NOTE: tailFlatMode is explicitly cleared -- ext() would otherwise inherit
+  // it from an enclosing tail-flat ATTEMPT, giving this (generator) body the
+  // tail-flat fuel check, whose self-re-enter would call the generator
+  // function directly and leak a raw generator object as a Pyret value.
+  const funBody = compileFunBody(l, newStep, temp, ext(compiler, { allowTco: true, tokenCell: tokenCell, tailFlatMode: false }), effectiveArgs, len, body, true, isFlat, false, true, arityOut);
   // Flat functions stay synchronous; everything else compiles to a generator body
   // plus a synchronous driving wrapper (see genFunStmts) so a non-suspending call
   // returns its value flat -- or, with -no-gen-functions, to an async function.
@@ -2495,6 +2568,11 @@ export class CompilerVisitor {
   mintsTokens!: boolean;
   tokenCell!: Map<string, boolean>;
   curLetBind!: BindType | undefined;
+  // Tail-flat compilation attempt (see compile-a-lam): tail calls return the
+  // callee's result directly and the fuel check re-enters via .then, so the
+  // function can be a plain sync function IF no awaits remain (verified by
+  // hasAwaits after compilation; fall back to the generator compilation else).
+  tailFlatMode?: boolean;
 
   aModule(node: N.AModule): DAG.CExp {
     const l = node.l;
@@ -2743,12 +2821,29 @@ export class CompilerVisitor {
     // path. Otherwise the method participates in safe-for-space bouncing: a tail
     // call inside the body mints a token and the body is wrapped with makeTailMethod.
     const isFlat = this.flatMethods.has(node);
+    const funArgs = CL.map_list((a: N.ABind) => formalShadowName(a.id), node.args);
+    // Tail-flat attempt for methods -- same scheme as compile-a-lam.
+    if (!isFlat && this.options.genFunctions && this.options.tailFlat) {
+      try {
+        const tfInner = compileFunBody(node.l, freshId(compilerName('step')), tempFull,
+          ext(this, { allowTco: true, tokenCell: new Map(), tailFlatMode: true }),
+          node.args, len, node.body, true, false, true, false);
+        if (!hasAwaits(tfInner)) {
+          const fullVar = jVar(tempFull, jFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, tfInner));
+          const methodExpr = len < 9
+            ? rtMethod('makeMethod' + String(len - 1), clist<J.JExprT>(jId(tempFull), jStr(node.name)))
+            : rtMethod('makeMethodN', clist<J.JExprT>(jId(tempFull), jStr(node.name)));
+          return cExp(methodExpr, clist<J.JStmt>(fullVar));
+        }
+      } catch (e) {
+        // fall through to the generator compilation
+      }
+    }
     const tokenCell: Map<string, boolean> = new Map();
     const useGen = !isFlat && this.options.genFunctions;
     const arityOut = useGen ? { stmts: clEmpty as CList<J.JStmt> } : undefined;
     const fullInner =
-      compileFunBody(node.l, step, tempFull, ext(this, { allowTco: true, tokenCell: tokenCell }), node.args, len, node.body, true, isFlat, true, true, arityOut);
-    const funArgs = CL.map_list((a: N.ABind) => formalShadowName(a.id), node.args);
+      compileFunBody(node.l, step, tempFull, ext(this, { allowTco: true, tokenCell: tokenCell, tailFlatMode: false }), node.args, len, node.body, true, isFlat, true, true, arityOut);
     // Non-flat methods get the same generator + sync-wrapper compilation as
     // lambdas (see genFunStmts); flat methods stay plain synchronous functions.
     const fullStmts: CList<J.JStmt> = useGen
