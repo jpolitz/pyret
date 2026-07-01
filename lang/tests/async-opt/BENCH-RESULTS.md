@@ -57,6 +57,62 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-01 — three-backend table: frozen cont vs cont-opt vs promise-opt, with direct-access)
+
+The state after the direct-access work (static `obj.dict["field"]` reads + `obj.dict["m"].full_meth`
+method dispatch, in-module AND cross-module — see the direct-fields commits). Three columns, each
+the **best _sound_ config** for its backend:
+- **cont** — frozen baseline (`*.ts.jarr`).
+- **cont-opt** — `-cont-optimize -no-method-flatness` (the sound cont config: method-flatness × weakening
+  is the AVL-set soundness bug on cont, so it's dropped).
+- **prom** — default promise (`*.ts.p.jarr`); **method-flatness is ON** here (it's sound on promise).
+
+N=5 median LOOP-seconds, `node22`, isolated, all outputs parity-OK across all three.
+`co/c` = cont-opt/frozen-cont, `p/c` = promise/cont, `co/p` = cont-opt/promise.
+
+| benchmark | result | cont | cont-opt | prom | co/c | p/c | co/p |
+|---|---|---|---|---|---|---|---|
+| vec-methods         | 250590    | 2.77 | 1.97 | 1.70 | **0.71** | 0.61 | 1.16 |
+| car-compute         | 14829840  | 2.85 | 2.19 | 2.15 | **0.77** | 0.75 | 1.02 |
+| boids-compute-data  | 236561    | 2.82 | 2.26 | 2.90 | **0.80** | 1.03 | 0.78 |
+| boids-compute       | 236561    | 2.70 | 2.40 | 3.29 | **0.89** | 1.22 | **0.73** |
+| orbital-compute     | 2959      | 2.33 | 2.16 | 2.41 | 0.93 | 1.03 | 0.90 |
+| lander              | 4800000   | 2.79 | 2.69 | 2.68 | 0.96 | 0.96 | 1.00 |
+| boids-raster        | 250       | 2.60 | 2.53 | 2.93 | 0.97 | 1.13 | 0.86 |
+| car-render          | 400000    | 2.84 | 2.79 | 2.84 | 0.98 | 1.00 | 0.98 |
+| orbital-render      | 180000    | 3.05 | 3.00 | 3.02 | 0.98 | 0.99 | 0.99 |
+| matrix              | 640615    | 3.10 | 3.05 | 2.95 | 0.98 | 0.95 | 1.03 |
+| seam                | 478707    | 2.27 | 2.23 | 2.21 | 0.98 | 0.97 | 1.01 |
+| spell               | 73        | 3.17 | 3.18 | 2.52 | 1.00 | 0.79 | 1.26 |
+| kmeans              | 40568     | 1.75 | 1.75 | 1.67 | 1.00 | 0.95 | 1.05 |
+| plagiarism          | 583869000 | 1.39 | 1.41 | 1.96 | 1.01 | 1.41 | 0.72 |
+| dtree               | 829       | 1.22 | 1.27 | 1.21 | 1.04 | 0.99 | 1.05 |
+| orbital-ems         | 390000    | 1.69 | 1.78 | 1.74 | 1.05 | 1.03 | 1.02 |
+
+**Geomeans: co/c = 0.935, p/c = 0.972, co/p = 0.962.**
+
+**Takeaways.**
+1. **Cont-opt is the fastest backend overall** (co/p 0.96 geomean) and ~6.5% over frozen cont, fully
+   sound (promise suite 13346, cont-opt-safe suite 13354, all parity-OK).
+2. **The boids reversal** — cont-opt beats *promise* 22–27% on both boids variants (co/p 0.73/0.78),
+   the benches promise never cracked; direct method dispatch de-funnels the list/closure calls so it
+   beats frozen cont there too.
+3. **Big singles**: vec-methods 0.71, car-compute 0.77 (arithmetic weakening/LICM + in-module typed
+   field/method dispatch stacking).
+4. **plagiarism ~parity with frozen cont (co/c 1.01)** — cross-module StringDict dispatch cancels the
+   inlining bloat; promise stays 1.41 behind (async floor on native-dict work). Compiler still can't
+   beat the HAMT — the data structure is the cost.
+5. Neutral on render / physics-integrator / dict benches (no hot arithmetic or typed field/method access).
+
+**CAVEAT — the columns don't share the method-flatness pass.** promise has method-flatness ON (sound
+there); cont-opt has it OFF (the AVL bug on cont). So it's each backend's best *shippable* config, not a
+controlled single-lever comparison. The main place it shows is **matrix**: promise flattens `Matrix.get`
+(p/c 0.95) while cont-opt relies on direct dispatch instead (co/c 0.98). For an apples-to-apples "what
+does the optimizer machinery buy" comparison, re-time promise with `-no-method-flatness` too.
+
+Reproduce: build `*.ts.jarr` (cont), `-cont-optimize -no-method-flatness` (cont-opt), `*.ts.p.jarr`
+(promise); N=5 median LOOP-seconds.
+
 ## Results (2026-07-01 — cont-optimized experiment: un-gate the promise-only opts for cont)
 
 **The flip side.** All the optimization work in this repo was gated to the **promise**
