@@ -410,13 +410,6 @@ export abstract class CompileEnvironmentBase {
     return v;
   }
 
-  // Per-method flatness of a datatype (promise backend cross-module method flatness).
-  // Follows aliases like datatypeByUri. Empty map when the type carries none.
-  datatypeMethodFlatness(uri: string, name: string): Map<string, number> {
-    const dt = this.datatypeByUri(uri, name);
-    return (dt !== undefined && isDType(dt)) ? dt.methodFlatness : new Map();
-  }
-
   valueByOrigin(origin: BindOrigin): ValueExport | undefined {
     return this.valueByUri(origin.uriOfDefinition, origin.originalName.toname());
   }
@@ -950,7 +943,7 @@ export function providesFromRawProvides(uri: string, raw: any): Provides {
   // section mapping dataName -> { methodName: flatness }. Attach it to the parsed
   // DType so importers can flatten its native/proven-flat methods. Absent for cont
   // provides and JSON builtins that don't declare it (then the map stays empty).
-  const rawMethodFlatness = raw['method-flatness'] ?? raw.methodFlatness;
+  const rawMethodFlatness = raw['method-flatness'];
   if (rawMethodFlatness !== undefined && rawMethodFlatness !== false) {
     for (const dataName of Object.keys(rawMethodFlatness)) {
       const de = ddict.get(dataName);

@@ -69,9 +69,7 @@ function methodFlatEnough(f: Flatness): boolean { return f !== undefined && f <=
 function buildImportedFlatMethods(env: C.CompileEnvironment): Map<string, Flatness> {
   const m = new Map<string, Flatness>();
   for (const [uri, loadable] of env.allModules) {
-    const provs = (loadable as any).provides as C.Provides | undefined;
-    if (provs === undefined) { continue; }
-    for (const [name, de] of provs.dataDefinitions) {
+    for (const [name, de] of loadable.provides.dataDefinitions) {
       if (C.isDType(de)) {
         for (const [meth, f] of de.methodFlatness) {
           m.set(uri + '#' + name + '#' + meth, f);
@@ -85,9 +83,10 @@ function buildImportedFlatMethods(env: C.CompileEnvironment): Map<string, Flatne
 // ---------------------------------------------------------------------------
 // Method-flatness analysis (structural; promise backend only).
 //
-// A method call `obj.m(args)` is flat iff `obj`'s receiver resolves to an
-// in-module data type whose `m` (across all variants) is itself flat. There is
-// NO numeric special-casing here: arithmetic flatness is handled upstream by the
+// A method call `obj.m(args)` is flat iff `obj`'s receiver resolves to a data type
+// whose `m` (across all variants) is itself flat -- either an in-module type (from
+// the fixpoint below) or an imported one (buildImportedFlatMethods, cross-module).
+// There is NO numeric special-casing here: arithmetic flatness is handled upstream by the
 // typed-operator-weakening pass (type-flow.ts), which rewrites `_plus(a,b)` on
 // Number operands into the flat global `_plus_nums(a,b)`, so ordinary structural
 // function-flatness (getAppFunFlatness) picks it up like any other flat call.
@@ -114,8 +113,9 @@ interface MethodCtx {
   // The PREVIOUS pass's complete table, consulted to resolve `self.m()` calls
   // (complete because the prior pass saw every variant). Empty on the first pass.
   methodTablePrev: Map<string, Flatness>;
-  // Persistent fallback for builtin native dict methods (derived from their declared
-  // specs; empty when -no-imported-method-flat). Survives the per-pass table swap.
+  // Persistent fallback: flat methods of IMPORTED types, from their provides'
+  // method-flatness (empty when -no-imported-method-flat). Survives the per-pass
+  // replacement of methodTablePrev (which only ever holds in-module methods).
   importedFlatMethods: Map<string, Flatness>;
   // outputs consumed by codegen (rebuilt each pass; the final pass's are returned).
   flatMethodApps: Set<AA.AMethodApp>;
@@ -613,8 +613,8 @@ export function makeLettableFlatnessEnv(
     }
 
     case 'a-method-app': {
-      // Method calls are infinite flatness UNLESS the receiver resolves to a known
-      // in-module data type whose method (across all its variants) is itself flat.
+      // Method calls are infinite flatness UNLESS the receiver resolves to a data type
+      // (in-module OR imported) whose method (across all its variants) is itself flat.
       // Sound because a value of type T has T's original methods (functional extend
       // that overrides a method strips the brand, so it can't satisfy `:: T`), and
       // the receiver type rests on that same annotation/constructor basis.
@@ -622,10 +622,10 @@ export function makeLettableFlatnessEnv(
         const dataId = nc.methodReceiver.get(lettable);
         if (dataId !== undefined) {
           const key = dataId + '#' + lettable.meth;
-          // Consult the previous pass's COMPLETE table (the fixpoint; see MethodCtx),
-          // then fall back to the persistent builtin native-method table (which the
-          // per-module fixpoint never populates, and which survives the per-pass table
-          // replacement; empty when -no-imported-method-flat).
+          // Consult the previous pass's COMPLETE table (the fixpoint; see MethodCtx)
+          // for in-module methods, then fall back to the persistent imported-method
+          // table (cross-module flatness; empty when -no-imported-method-flat). The
+          // fallback survives the per-pass replacement of methodTablePrev.
           const f = nc.methodTablePrev.get(key) ?? nc.importedFlatMethods.get(key);
           if (methodFlatEnough(f)) {
             nc.flatMethodApps.add(lettable);
