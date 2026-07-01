@@ -485,6 +485,15 @@ ts-test: ts-unit-test ts-parity-test ts-repl-test ts-pyret-test ts-type-check-te
 ts-effect-tail-test: ts-compiler
 	NODE22="$(NODE22)" bash tests/async-opt/tc/run-corner-tests.sh
 
+# Fast soundness oracle for cross-module method flatness (promise backend): each
+# mf-*.arr calls every flat-tagged builtin method in a leak-observable way and is
+# compiled opt-promise / -no-imported-method-flat / cont; the three outputs must be
+# identical (a wrongly-flat method leaks a Promise) and flattening must fire. ~18s vs
+# the ~10-min full promise suite. Exits non-zero on any failure.
+.PHONY : ts-mf-test
+ts-mf-test: ts-compiler
+	NODE22="$(NODE22)" bash tests/async-opt/mf/run-mf-tests.sh
+
 .PHONY : ts-clean
 ts-clean:
 	$(call RMDIR,$(TS_COMP_OUT))
