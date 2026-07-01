@@ -840,17 +840,48 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     // entries. The TailCall (function) branch is checked first — it is the hot path
     // (function-only mutual recursion never produces a method token), and when it
     // matches the second `instanceof` is short-circuited away.
-    async function drive(r) {
+    // Maybe-promise: the loop runs SYNCHRONOUSLY while each appBody returns a
+    // flat token/value (the common case now that non-flat bodies are generator
+    // compiled and return flat results when nothing suspends); a thenable step
+    // re-enters the same loop from its .then, so a mixed sync/async chain still
+    // pumps in O(1) heap. Returns a flat value when the whole chain was
+    // synchronous, else a Promise.
+    function drive(r) {
       while (true) {
         if (r instanceof TailCall) {
-          r = await r.fn.appBody.apply(r.fn, r.args);
+          r = r.fn.appBody.apply(r.fn, r.args);
         } else if (r instanceof TailMethodCall) {
-          r = await r.m.full_methBody(r.obj, ...r.args);
+          r = r.m.full_methBody(r.obj, ...r.args);
+        } else if (isThenable(r)) {
+          return r.then(drive);
         } else {
           return r;
         }
       }
     }
+    // Drive a compiled generator body (see the anf-loop-compiler-async
+    // gen-function wrapper) after its first suspension; `v` is the first yielded
+    // value. Mirrors `await` semantics exactly: a fulfilled thenable resumes the
+    // body with its value; a rejected one is THROWN INTO the body at the yield
+    // point (gen.throw), so error control flow matches async/await; a yielded
+    // non-thenable (an unconditional former-await of a flat value) resumes after
+    // a microtask, exactly like `await <non-thenable>` -- which also keeps the
+    // resume stack-bounded.
+    function driveGen(gen, v) {
+      return new Promise(function(resolve, reject) {
+        function onF(w) { var r; try { r = gen.next(w); } catch(e) { reject(e); return; } step(r); }
+        function onR(e) { var r; try { r = gen.throw(e); } catch(e2) { reject(e2); return; } step(r); }
+        function step(r) {
+          if (r.done) { resolve(r.value); return; }
+          var y = r.value;
+          if (isThenable(y)) { y.then(onF, onR); } else { Promise.resolve(y).then(onF, onR); }
+        }
+        if (isThenable(v)) { v.then(onF, onR); } else { Promise.resolve(v).then(onF, onR); }
+      });
+    }
+    // The gen-function wrapper's catch path: preserve the async-function
+    // guarantee that a compiled non-flat function never throws synchronously.
+    function rejP(e) { return Promise.reject(e); }
     // Like makeFunction, but `fun` is the token-minting body (kept as `appBody`)
     // and the public `.app` drives any bounce chain to a value. Used by the
     // compiler for functions whose body can end in a non-self tail call. Non-token
@@ -866,8 +897,16 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     function makeTailFunction(fun, name) {
       var f = new PFunction(fun, fun.length, name);
       // f.appBody stays === fun (set by the PFunction constructor)
-      f.app = async function() {
-        return drive(await fun.apply(this, arguments));
+      // Maybe-promise driver: returns a flat value when the whole bounce chain
+      // ran synchronously. The try/catch keeps the old async-function guarantee
+      // (a driven .app never throws synchronously): an FFI appBody in the chain
+      // can throw, which must surface as a rejection as before.
+      f.app = function() {
+        try {
+          return drive(fun.apply(this, arguments));
+        } catch(e) {
+          return Promise.reject(e);
+        }
       };
       return f;
     }
@@ -1104,8 +1143,13 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     function makeTailMethod(fullBody, name) {
       var m = new PMethod(appN, fullBody, name);
       // m.full_methBody === fullBody (set by the PMethod constructor)
-      m['full_meth'] = async function() {
-        return drive(await fullBody.apply(this, arguments));
+      // Maybe-promise driver, same shape as makeTailFunction's .app.
+      m['full_meth'] = function() {
+        try {
+          return drive(fullBody.apply(this, arguments));
+        } catch(e) {
+          return Promise.reject(e);
+        }
       };
       return m;
     }
@@ -5952,6 +5996,10 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       // after the nameMap short-name pass runs.
       'isThenable': isThenable,
       'iT': isThenable,
+      // Generator-compiled non-flat functions: slow-path driver + sync-throw
+      // rejection shim (see the gen-function wrapper in anf-loop-compiler-async).
+      'driveGen': driveGen,
+      'rejP': rejP,
       // Lets shared trove .js files (string-dict, etc.) pick the async code path.
       'stackBackend': 'promise',
       'runThunk': runThunk,

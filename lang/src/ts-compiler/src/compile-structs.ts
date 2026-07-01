@@ -1111,6 +1111,26 @@ export interface CompileOptions {
   // direct `obj.dict["field"]` instead of the reflective/megamorphic getField call.
   // Same soundness basis as directCases (self-disables unless valueIsTyped).
   directFields: boolean;
+  // Generator-based maybe-promise compilation of non-flat functions (promise
+  // backend codegen only). On by default; -no-gen-functions falls back to plain
+  // `async function` emission for A/B. A non-flat body compiles to a `function*`
+  // (awaits become yields) driven by a synchronous wrapper, so a call that never
+  // actually suspends returns its value flat -- no Promise allocation, no
+  // microtask hop -- while a genuine suspension still returns a Promise
+  // (R.driveGen), preserving the Awaitable ABI, fuel-based stack unwinding, and
+  // await error semantics exactly.
+  genFunctions: boolean;
+  // Tail-flat compilation attempt (promise backend codegen only; requires
+  // genFunctions). On by default; -no-tail-flat disables for A/B. A non-flat
+  // function whose body compiles with NO awaits outside tail-position calls
+  // (verified by construction: compile in tail-flat mode, scan for leftover
+  // awaits, fall back to the generator compilation if any remain) is emitted as
+  // a PLAIN synchronous function: tail calls return the callee's result
+  // (value or thenable) directly -- the Awaitable ABI allows both -- and the
+  // fuel check becomes `if (needsPause()) return checkPause().then(re-enter)`,
+  // which also unwinds sync tail chains (all frames return the same promise, so
+  // a bounce collapses to O(1) heap). Zero per-call allocation on the hot path.
+  tailFlat: boolean;
   // Redundant annotation-check elimination driven by the upper-bound type-flow
   // analysis (type-flow.ts; promise backend only). On by default; -no-ann-elision
   // disables it for A/B measurement. When the analysis proves an `:: T` bind's
@@ -1206,6 +1226,8 @@ export const defaultCompileOptions: CompileOptions = {
   unboxVars: true,
   directCases: true,
   directFields: true,
+  genFunctions: true,
+  tailFlat: true,
   annElision: true,
   methodFlatness: true,
   importedMethodFlat: true,
