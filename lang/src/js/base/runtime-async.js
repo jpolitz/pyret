@@ -2135,7 +2135,13 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         cache.equal.push(thisRuntime.ffi.equal);
         return cache.equal.length;
       }
-      async function equalHelp() {
+      // Maybe-promise equality (same discipline as the gen-compiled code and
+      // the arithmetic ops): the worklist drains SYNCHRONOUSLY and returns a
+      // flat EqualityResult -- no Promise, no microtask -- going async ONLY
+      // when a user _equals method actually suspends (returns a thenable),
+      // which gen-compiled methods only do on genuine suspension. This is the
+      // hot path of every `is` test on compound values.
+      function equalHelp() {
         var current, curLeft, curRight;
         while (toCompare.stack.length > 0 && !thisRuntime.ffi.isNotEqual(toCompare.curAns)) {
           current = toCompare.stack.pop();
@@ -2246,8 +2252,18 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
                 }
                 else if (isObject(curLeft) && curLeft.dict["_equals"]) {
                   /* Two objects with the same brands and the left has an _equals method */
-                  // _equals may run user code (async); await it.
-                  var newAns = await getColonField(curLeft, "_equals").full_meth(curLeft, curRight, equalFunPy);
+                  // _equals may run user code; a gen-compiled method returns a
+                  // flat result unless it genuinely suspends. equalFunPy is
+                  // allocated lazily -- only comparisons that dispatch to a
+                  // user _equals need the PFunction at all.
+                  if (equalFunPy === undefined) { equalFunPy = makeFunction(reenterEqualFun, "equalFun"); }
+                  var newAns = getColonField(curLeft, "_equals").full_meth(curLeft, curRight, equalFunPy);
+                  if (isThenable(newAns)) {
+                    return newAns.then(function(a) {
+                      toCompare.curAns = combineEquality(toCompare.curAns, a);
+                      return equalHelp();
+                    });
+                  }
                   toCompare.curAns = combineEquality(toCompare.curAns, newAns);
                 }
                 else if (isDataValue(curLeft) && isDataValue(curRight)) {
@@ -2289,24 +2305,28 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         }
         return toCompare.curAns;
       }
-      // Async-native equality (replaces the equalFun/reenterEqualFun trampoline).
-      // equalHelp drains the worklist, awaiting any user _equals method. Returns
-      // an EqualityResult. equalFunPy is handed to user _equals for recursion.
-      async function reenterEqualFun(left, right) {
+      // equalHelp drains the worklist (sync unless a user _equals suspends).
+      // Returns an EqualityResult or a thenable of one. equalFunPy (lazily
+      // created above) is handed to user _equals for recursion.
+      function reenterEqualFun(left, right) {
         stackOfToCompare.push(toCompare);
         toCompare = {stack: [{left: left, right: right, path: "the-value"}], curAns: thisRuntime.ffi.equal};
-        var ans = await equalHelp();
-        // If the loop short-circuited on NotEqual, settle any pending cache markers.
-        for(var i = 0; i < toCompare.stack.length; i++) {
-          var current = toCompare.stack[i];
-          if(current.setCache) {
-            cache.equal[current.index - 1] = ans;
+        function settle(ans) {
+          // If the loop short-circuited on NotEqual, settle any pending cache markers.
+          for(var i = 0; i < toCompare.stack.length; i++) {
+            var current = toCompare.stack[i];
+            if(current.setCache) {
+              cache.equal[current.index - 1] = ans;
+            }
           }
+          toCompare = stackOfToCompare.pop();
+          return ans;
         }
-        toCompare = stackOfToCompare.pop();
-        return ans;
+        var ans = equalHelp();
+        if (isThenable(ans)) { return ans.then(settle); }
+        return settle(ans);
       }
-      var equalFunPy = makeFunction(reenterEqualFun, "equalFun");
+      var equalFunPy = undefined;
       return reenterEqualFun(left, right);
     }
 
