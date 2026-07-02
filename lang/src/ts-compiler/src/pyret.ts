@@ -82,6 +82,8 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Disable the tail-call-in-effect-position optimization (for differential testing)')],
     ['no-ann-elision',
       C.flag(C.once, 'Disable redundant annotation-check elimination (promise backend; keep every _checkAnn the type-flow analysis proved dead, for A/B measurement)')],
+    ['no-method-flatness',
+      C.flag(C.once, 'Disable method-call flatness (promise backend; keep all method calls/methods async, for A/B measurement)')],
     ['no-op-weakening',
       C.flag(C.once, 'Disable typed operator weakening (promise backend; keep polymorphic _plus etc. instead of monomorphic _plus_nums, for A/B measurement)')],
     ['collect-times',
@@ -127,6 +129,7 @@ export function main(args: string[]): number {
     const tailCalls = !r.has('improper-tail-calls');
     const effectTailCalls = !r.has('no-effect-tail-calls');
     const annElision = !r.has('no-ann-elision');
+    const methodFlatness = !r.has('no-method-flatness');
     const opWeakening = !r.has('no-op-weakening');
     const compiledDir = r.get('compiled-dir');
     const standaloneFile = r.get('standalone-file');
@@ -204,6 +207,7 @@ export function main(args: string[]): number {
           properTailCalls: tailCalls,
           effectTailCalls: effectTailCalls,
           annElision: annElision,
+          methodFlatness: methodFlatness,
           opWeakening: opWeakening,
           stackBackend: stackBackend,
           compiledCache: compiledDir,
@@ -241,6 +245,7 @@ export function main(args: string[]): number {
         properTailCalls: tailCalls,
         effectTailCalls: effectTailCalls,
         annElision: annElision,
+        methodFlatness: methodFlatness,
         opWeakening: opWeakening,
         stackBackend: stackBackend,
         compileModule: false,

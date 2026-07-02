@@ -123,15 +123,28 @@ export function traceMakeCompiledPyret(
   // apps (`_plus` ...) into monomorphic, known-flat globals (`_plus_nums` ...) where
   // upper-bound type-flow proves the operand types, so ORDINARY structural flatness
   // flattens the arithmetic (no numeric special-casing in flatness.ts). An ANF->ANF
-  // rewrite, so it MUST run before the flatness env build and codegen: every later
-  // pass keys off (and codegen visits) the weakened ANF object graph, never the raw
-  // one. Gated like ann elision: the ub facts rest on the runtime ann checks.
+  // rewrite, so it MUST run before the method-receiver pre-pass, the flatness env
+  // build, and codegen: every later pass keys off (and codegen visits -- node
+  // identity for the method maps, bind keys for ann elision) the weakened ANF
+  // object graph, never the raw one. Gated like ann elision: the ub facts rest on
+  // the runtime ann checks.
   const anfed =
     (C.isPromise(options.stackBackend) && options.opWeakening
       && options.runtimeAnnotations && options.userAnnotations)
       ? addPhase('Operator weakening', TF.weakenOperators(anfedRaw, postEnv, env, provides.fromUri))
       : anfedRaw;
-  const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env));
+  // Method-call flatness (promise backend only): a receiver-type pre-pass resolves
+  // each method call's receiver to a concrete in-module data type and feeds the
+  // flatness pass so it can analyze that type's methods. Gated like the type-flow
+  // ann elision (the ub facts rest on the annotation/constructor checks that run).
+  // When undefined, the flatness env runs with methods DISABLED (cont backend, or
+  // -no-method-flatness): single pass, empty method maps, byte-identical cont output.
+  const methodInfo =
+    (C.isPromise(options.stackBackend) && options.methodFlatness
+      && options.runtimeAnnotations && options.userAnnotations)
+      ? addPhase('Method receiver info', TF.makeProgMethodInfo(anfed, postEnv, env, provides.fromUri))
+      : undefined;
+  const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env, methodInfo));
   const flatProvides = addPhase('Get flat-provides', FL.getFlatProvides(provides, env, postEnv, flatnessEnv, anfed));
   // Upper-bound type-flow: bind keys whose `:: T` annotation check is provably
   // redundant. Promise backend only (cont codegen stays frozen for the byte-parity

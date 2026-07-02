@@ -149,3 +149,36 @@ check "ann-elision: aliased refinement base propagates; alias check still fires"
   el-use-alias(5) is 6
   el-use-alias(500) raises ""   # el-is-small fails through the alias -> raises
 end
+
+# Soundness-basis pin for method-call flatness (-no-method-flatness,
+# flatness.ts + type-flow.ts): the analysis assumes a value satisfying `:: T`
+# carries T's ORIGINAL methods, so a `:: T`-checked receiver may dispatch to
+# the statically analyzed (possibly flattened) method. That assumption holds
+# because functional extend `obj.{m: ...}` that OVERRIDES a method STRIPS the
+# data brand: the extended object can no longer pass a `:: T` check, so no
+# checked receiver ever carries an override. Pin both halves: (a) the extended
+# value fails the annotation; (b) with NO intervening annotation, a call on the
+# extended value dispatches to the OVERRIDE (i.e. the optimization must never
+# re-route an unchecked receiver to the original method). These must behave
+# identically with method flatness on or off and in both backends.
+
+data FeBox:
+  | febox(v :: Number) with:
+    method get(self) -> Number: self.v end
+end
+
+fun fe-checked-get(x :: FeBox) -> Number: x.get() end
+
+check "functional-extend-strips-brand":
+  b = febox(3)
+  b.get() is 3
+  b2 = b.{get: method(self) -> Number: 42 end}
+  # (b) no annotation between the extend and the call: Pyret semantics dispatch
+  # to the override. If method flatness wrongly treated b2 as a FeBox receiver,
+  # a flattened direct dispatch could answer 3 here.
+  b2.get() is 42
+  # (a) the override stripped the brand, so the `:: FeBox`-checked path raises
+  # -- which is exactly why a checked receiver always has the original methods.
+  fe-checked-get(b) is 3
+  fe-checked-get(b2) raises "FeBox"
+end

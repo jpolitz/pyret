@@ -399,7 +399,7 @@ export function annLoc(ann: A.Ann): Loc {
 
 export function isFlatEnough(flatness: FL.Flatness): boolean {
   if (flatness === undefined) { return false; }
-  else { return flatness <= 5; }
+  else { return flatness <= FL.FLAT_LIMIT; }
 }
 
 export function isFunctionFlat(flatnessEnv: FL.FEnv, funName: string): boolean {
@@ -894,7 +894,7 @@ export function compileAppAsync(compiler: CompilerVisitor, l: Loc, f: N.AVal, ar
   }
 }
 
-export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.AVal, methname: string, args: N.AVal[]): CList<J.JStmt> {
+export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.AVal, methname: string, args: N.AVal[], node?: N.AMethodApp): CList<J.JStmt> {
   const objCe = obj.visit(compiler) as DAG.CExp;
   const argCes = args.map((a) => a.visit(compiler) as DAG.CExp);
   const compiledArgs = CL.map_list(getExp, argCes);
@@ -902,6 +902,26 @@ export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.
   const argcount = compiledArgs.length();
   const helperName = argcount <= 7 ? 'maybeMethodCall' + String(argcount) : 'maybeMethodCall';
   const compiledObj = objCe.exp;
+  // A method call proven flat dispatches to a synchronous method, so it returns a
+  // value directly (never a thenable). Emit a direct call with NO conditional await
+  // -- required for correctness when this sits in a now-synchronous function (a sync
+  // function cannot `await`), and it also avoids the isThenable check and never mints
+  // a tail token (the call is bounded). maybeMethodCall still does the dynamic
+  // dispatch; only the await is elided.
+  const isFlatMeth = node !== undefined && compiler.flatMethodApps.has(node);
+  if (isFlatMeth) {
+    let objExpr = compiledObj;
+    let preDecls: CList<J.JStmt> = clEmpty;
+    if (!J.isJId(compiledObj)) {
+      const objId = freshId(compilerName('obj'));
+      preDecls = clSing<J.JStmt>(jVar(objId, compiledObj));
+      objExpr = jId(objId);
+    }
+    const call = wrapWithSrcnode(l,
+      rtMethod(helperName,
+        clAppend(clist<J.JExprT>(objExpr, jStr(methname), compiler.getLoc(l)), compiledArgs)));
+    return clAppend(pre, clAppend(preDecls, compiler.complete(call)));
+  }
   if (compiler.mintsTokens && compiler.tailPos) {
     // Safe-for-space tail call THROUGH a method: mint a token instead of driving.
     // maybeMethodTail resolves obj.methname (obj evaluated once, as a single arg)
@@ -1003,7 +1023,7 @@ export function compileLettableAsync(compiler: CompilerVisitor, e: N.ALettable):
     case 'a-app':
       return compileAppAsync(compiler, e.l, e._fun, e.args, e.appInfo);
     case 'a-method-app':
-      return compileMethodAppAsync(compiler, e.l, e.obj, e.meth, e.args);
+      return compileMethodAppAsync(compiler, e.l, e.obj, e.meth, e.args, e);
     case 'a-prim-app': {
       const argCes = e.args.map((a) => a.visit(compiler) as DAG.CExp);
       const call = wrapWithSrcnode(e.l, rtMethod(e.f, CL.map_list(getExp, argCes)));
@@ -2105,6 +2125,13 @@ export class CompilerVisitor {
   options!: SplitCompileOptions;
   flatnessEnv!: FL.FEnv;
   typeFlatnessEnv!: FL.FEnv;
+  // Method-application nodes proven flat (the receiver's data type resolves and
+  // its method is flat); emitted as a direct call with NO conditional await. And
+  // `a-method` nodes proven flat; emitted as a synchronous function (makeMethod,
+  // not makeTailMethod). Empty unless method flatness is enabled. See aMethod,
+  // compileMethodAppAsync.
+  flatMethodApps!: Set<N.AMethodApp>;
+  flatMethods!: Set<N.AMethod>;
   // Bind keys whose `:: T` annotation check is provably redundant (the value is
   // already known to be `⊑ T`), per the upper-bound type-flow analysis
   // (type-flow.ts). The async backend skips emitting `_checkAnn` for these,
@@ -2355,17 +2382,23 @@ export class CompilerVisitor {
     const step = freshId(compilerName('step'));
     const tempFull = freshId(compilerName('temp_full'));
     const len = node.args.length;
-    // Methods participate in safe-for-space bouncing: a tail call inside the body
-    // (to a function OR another method) mints a token, and the body is wrapped with
-    // makeTailMethod (a driving full_meth) when it does. The token-cell records it,
-    // exactly like compile-a-lam; methods are non-flat, so mints-tokens = can-mint.
+    // A method proven flat (its body is bounded and never suspends) is emitted as a
+    // SYNCHRONOUS function -- no Promise alloc per call, and callers can skip the
+    // conditional await (see compileMethodAppAsync). Mirrors compile-a-lam's flat
+    // path. Otherwise the method participates in safe-for-space bouncing: a tail
+    // call inside the body (to a function OR another method) mints a token, and the
+    // body is wrapped with makeTailMethod (a driving full_meth) when it does. The
+    // token-cell records it, exactly like compile-a-lam.
+    const isFlat = this.flatMethods.has(node);
+    const funArgs = CL.map_list((a: N.ABind) => formalShadowName(a.id), node.args);
     const tokenCell: Map<string, boolean> = new Map();
-    const fullVar =
-      jVar(tempFull,
-        jAsyncFun(J.nextJFunId(), makeFunName(this, node.l),
-          CL.map_list((a: N.ABind) => formalShadowName(a.id), node.args),
-          compileFunBody(node.l, step, tempFull, ext(this, { allowTco: true, tokenCell: tokenCell }), node.args, len, node.body, true, false, true, true)
-        ));
+    const fullInner =
+      compileFunBody(node.l, step, tempFull, ext(this, { allowTco: true, tokenCell: tokenCell }), node.args, len, node.body, true, isFlat, true, true);
+    const fullVar = jVar(tempFull, isFlat
+      ? jFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, fullInner)
+      : jAsyncFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, fullInner));
+    // A flat method never mints a token (isFlat forces mintsTokens=false), so
+    // makeMethod is always correct for it.
     const maker = tokenCell.has('minted') ? 'makeTailMethod' : 'makeMethod';
     const methodExpr = len < 9
       ? rtMethod(maker + String(len - 1), clist<J.JExprT>(jId(tempFull), jStr(node.name)))
@@ -3159,7 +3192,7 @@ export class SplittingCompiler extends CompilerVisitor {
   constructor(
     env: CS.CompileEnvironment,
     addPhase: (phase: string, data: any) => any,
-    flatnessEnvs: [FL.FEnv, FL.FEnv],
+    flatnessEnvs: FL.FlatnessEnv,
     provides: CS.Provides,
     postEnv: CS.ComputedEnvironment,
     options: SplitCompileOptions,
@@ -3171,6 +3204,8 @@ export class SplittingCompiler extends CompilerVisitor {
     this.options = options;
     this.flatnessEnv = flatnessEnvs[0];
     this.typeFlatnessEnv = flatnessEnvs[1];
+    this.flatMethodApps = flatnessEnvs[2];
+    this.flatMethods = flatnessEnvs[3];
     this.redundantAnnChecks = redundantAnnChecks;
     // Pyret accesses these fields directly; a computed-none here would be a
     // field-not-found error there too.
@@ -3197,7 +3232,7 @@ export class SplittingCompiler extends CompilerVisitor {
 export function splittingCompiler(
   env: CS.CompileEnvironment,
   addPhase: (phase: string, data: any) => any,
-  flatnessEnvs: [FL.FEnv, FL.FEnv],
+  flatnessEnvs: FL.FlatnessEnv,
   provides: CS.Provides,
   postEnv: CS.ComputedEnvironment,
   options: SplitCompileOptions,

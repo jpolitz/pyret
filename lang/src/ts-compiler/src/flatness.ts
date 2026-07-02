@@ -30,8 +30,68 @@ import { InternalCompilerError, mapGetValue, raise } from './shared';
 
 export type Flatness = number | undefined;
 export type FEnv = Map<string, Flatness>;
-// The { sd; ad } tuple returned by make-prog-flatness-env
-export type FlatnessEnv = [FEnv, FEnv];
+// The { sd; ad } tuple returned by make-prog-flatness-env.
+// Third/fourth elements: the method-flatness outputs (promise backend) -- the
+// set of method-application nodes proven flat (so codegen emits a direct,
+// no-await call) and the set of `a-method` nodes proven flat (so codegen emits
+// the method body as a synchronous function). Empty unless method flatness is
+// enabled (cont backend / no methodInfo -> empty, and never consulted there).
+// Fifth element: this module's converged (dataId#method -> flatness) table.
+// Consumed in-module today; a follow-on exports it via getFlatProvides so
+// importers can flatten these methods cross-module.
+// [funFlatness, annFlatness, flatMethodApps, flatMethods, methodTable]
+export type FlatnessEnv = [FEnv, FEnv, Set<AA.AMethodApp>, Set<AA.AMethod>, Map<string, Flatness>];
+
+// Receiver/type facts the method-flatness analysis consumes (produced by
+// type-flow.ts's makeProgMethodInfo; structural to avoid an import cycle).
+export interface MethodFlatInfo {
+  receiver: Map<AA.AMethodApp, string>;
+  methodOf: Map<AA.AMethod, { dataId: string; methodName: string }>;
+}
+
+// A function/method/annotation is "flat enough" for sync emission / await
+// elision when its flatness is within this limit. Exported as the single
+// source of truth: isFlatEnough (anf-loop-compiler-async.ts) and flatAnn
+// (type-flow.ts) must use the SAME limit as the method-flatness analysis
+// below, or the sync-vs-async emission decision could disagree with the
+// analysis (an `await` inside a sync function is a JS syntax error).
+export const FLAT_LIMIT = 5;
+function methodFlatEnough(f: Flatness): boolean { return f !== undefined && f <= FLAT_LIMIT; }
+
+// ---------------------------------------------------------------------------
+// Method-flatness analysis (structural; promise backend only).
+//
+// A method call `obj.m(args)` is flat iff `obj`'s receiver resolves to an
+// in-module data type whose `m` (across all variants) is itself flat.
+// There is NO numeric special-casing here: arithmetic flatness is handled upstream by the
+// typed-operator-weakening pass (type-flow.ts), which rewrites `_plus(a,b)` on
+// Number operands into the flat global `_plus_nums(a,b)`, so ordinary structural
+// function-flatness (getAppFunFlatness) picks it up like any other flat call.
+//
+// Intra-type method dependencies (a method calling a sibling on `self`, e.g.
+// `get` using `self.length()`) are resolved by a FIXPOINT in makeProgFlatnessEnv:
+// each pass resolves every `self.m()` call against the PREVIOUS pass's COMPLETE
+// table (`methodTablePrev`), and the passes repeat until the table stops changing.
+// Monotone (a method only ever moves non-flat -> flat as its callees resolve), so
+// it converges; genuine recursion never resolves and correctly stays non-flat;
+// stopping early is sound (a missing entry reads as non-flat).
+// ---------------------------------------------------------------------------
+interface MethodCtx {
+  // ----- method flatness (promise backend; empty/disabled otherwise) -----------
+  methodsEnabled: boolean;
+  // receiver data type id per method-app, and method-node -> (dataId, methodName).
+  methodReceiver: Map<AA.AMethodApp, string>;
+  methodOf: Map<AA.AMethod, { dataId: string; methodName: string }>;
+  // THIS pass's table, built incrementally: `dataId#methodName` -> the method's
+  // flatness (max over all variants' definitions of that method, seen this pass).
+  methodTable: Map<string, Flatness>;
+  // The PREVIOUS pass's complete table, consulted to resolve `self.m()` calls
+  // (complete because the prior pass saw every variant). Empty on the first pass.
+  methodTablePrev: Map<string, Flatness>;
+  // outputs consumed by codegen (rebuilt each pass; the final pass's are returned).
+  flatMethodApps: Set<AA.AMethodApp>;
+  flatMethods: Set<AA.AMethod>;
+}
 
 // Where Pyret used torepr in internal error messages; best-effort
 // structural rendering (same approach as anf.ts / compile-errors.ts).
@@ -316,7 +376,8 @@ export function makeExprFlatnessEnv(
   sd: FEnv,
   ad: FEnv,
   mb: Map<string, C.ModuleBind>,
-  env: C.CompileEnvironment
+  env: C.CompileEnvironment,
+  nc: MethodCtx
 ): Flatness {
   // The body recursion (one chain node per statement) is rewritten as a
   // forward loop plus a backward fold so long programs don't overflow
@@ -345,7 +406,7 @@ export function makeExprFlatnessEnv(
             argsFlatness = flatnessMax(argsFlatness, annFlatness(elt.ann, sd, ad, mb, env));
           }
 
-          const bodyFlatness = makeExprFlatnessEnv(val.body, sd, ad, mb, env);
+          const bodyFlatness = makeExprFlatnessEnv(val.body, sd, ad, mb, env, nc);
           const lamFlatness = flatnessMax(bodyFlatness, argsFlatness);
 
           sd.set(bind.id.key(), lamFlatness);
@@ -369,7 +430,7 @@ export function makeExprFlatnessEnv(
           sd.set(bind.id.key(), funFlatness);
           valFlatness = 0;
         } else {
-          valFlatness = makeLettableFlatnessEnv(val, sd, ad, mb, env);
+          valFlatness = makeLettableFlatnessEnv(val, sd, ad, mb, env, nc);
         }
 
         frames.push((bodyFlatness) => {
@@ -384,7 +445,7 @@ export function makeExprFlatnessEnv(
         // sd to let us keep track of the flatness if e is an a-lam, but for
         // now we don't since I'm not sure it'd work right.
         const annF = annFlatness(aexpr.bind.ann, sd, ad, mb, env);
-        const lettF = makeLettableFlatnessEnv(aexpr.e, sd, ad, mb, env);
+        const lettF = makeLettableFlatnessEnv(aexpr.e, sd, ad, mb, env, nc);
         frames.push((bodyFlatness) => flatnessMax(annF, flatnessMax(lettF, bodyFlatness)));
         aexpr = aexpr.body;
         continue;
@@ -397,13 +458,13 @@ export function makeExprFlatnessEnv(
         continue;
       }
       case 'a-seq': {
-        const aFlatness = makeLettableFlatnessEnv(aexpr.e1, sd, ad, mb, env);
+        const aFlatness = makeLettableFlatnessEnv(aexpr.e1, sd, ad, mb, env, nc);
         frames.push((bodyFlatness) => flatnessMax(aFlatness, bodyFlatness));
         aexpr = aexpr.e2;
         continue;
       }
       case 'a-lettable':
-        result = makeLettableFlatnessEnv(aexpr.e, sd, ad, mb, env);
+        result = makeLettableFlatnessEnv(aexpr.e, sd, ad, mb, env, nc);
         break forward;
       default:
         throw new InternalCompilerError('makeExprFlatnessEnv: unknown expr ' + (aexpr as any).$name);
@@ -491,14 +552,15 @@ export function makeLettableFlatnessEnv(
   sd: FEnv,
   ad: FEnv,
   mb: Map<string, C.ModuleBind>,
-  env: C.CompileEnvironment
+  env: C.CompileEnvironment,
+  nc: MethodCtx
 ): Flatness {
   const defaultRet: Flatness = 0;
   switch (lettable.$name) {
     case 'a-module':
       return defaultRet;
     case 'a-if':
-      return flatnessMax(makeExprFlatnessEnv(lettable.t, sd, ad, mb, env), makeExprFlatnessEnv(lettable.e, sd, ad, mb, env));
+      return flatnessMax(makeExprFlatnessEnv(lettable.t, sd, ad, mb, env, nc), makeExprFlatnessEnv(lettable.e, sd, ad, mb, env, nc));
 
     // NOTE -- a-assign might not be flat b/c it checks annotations
     case 'a-assign': {
@@ -521,12 +583,35 @@ export function makeLettableFlatnessEnv(
       return getAppFunFlatness(f, sd, mb, env);
     }
 
-    case 'a-method-app':
-      // For now method calls are infinite flatness
+    case 'a-method-app': {
+      // Method calls are infinite flatness UNLESS the receiver resolves to an
+      // in-module data type whose method (across all its variants) is itself flat.
+      // Sound because a value of type T has T's original methods (functional extend
+      // that overrides a method strips the brand, so it can't satisfy `:: T`), and
+      // the receiver type rests on that same annotation/constructor basis.
+      if (nc.methodsEnabled) {
+        const dataId = nc.methodReceiver.get(lettable);
+        if (dataId !== undefined) {
+          const key = dataId + '#' + lettable.meth;
+          // Consult the previous pass's COMPLETE table (the fixpoint; see MethodCtx).
+          const f = nc.methodTablePrev.get(key);
+          if (methodFlatEnough(f)) {
+            nc.flatMethodApps.add(lettable);
+            return incrementFlatness(f);
+          }
+        }
+      }
       return undefined;
+    }
 
-    // TODO: Treat prim-app as flat always? Track depths of prim-anns?
     case 'a-prim-app':
+      // A prim-app marked needsStep=false never needs the Pyret stack -- the async
+      // codegen emits it as a direct, no-await call (compileLettableAsync). Honor
+      // that so a function/method whose only "calls" are flat prim-apps (e.g. the
+      // checkWrapBoolean / throwNoCasesMatched that `if`/`or`/`cases` desugar to)
+      // can be sync. Gated to the promise backend (methodsEnabled): the cont
+      // backend's flatness, codegen, and byte-parity oracle stay frozen.
+      if (nc.methodsEnabled && !lettable.appInfo.needsStep) { return defaultRet; }
       return getFlatnessForCall(lettable.f, sd);
 
     // May check unknown annotations, so is nonflat
@@ -545,7 +630,29 @@ export function makeLettableFlatnessEnv(
     case 'a-colon': return defaultRet;
     case 'a-get-bang': return defaultRet;
     case 'a-lam': return defaultRet;
-    case 'a-method': return defaultRet;
+    case 'a-method': {
+      // A data type's method: analyze its body like a lambda and record the
+      // resulting flatness in the per-(dataType,methodName) table. Methods not
+      // attached to an in-module data type (object literals, or unresolved) are
+      // left opaque exactly as before (no recursion, no table entry).
+      if (nc.methodsEnabled) {
+        const mi = nc.methodOf.get(lettable);
+        if (mi !== undefined) {
+          const retF = annFlatness(lettable.ret, sd, ad, mb, env);
+          let argsF = retF;
+          for (const arg of lettable.args) {
+            argsF = flatnessMax(argsF, annFlatness(arg.ann, sd, ad, mb, env));
+          }
+          const bodyF = makeExprFlatnessEnv(lettable.body, sd, ad, mb, env, nc);
+          const methF = flatnessMax(bodyF, argsF);
+          const key = mi.dataId + '#' + mi.methodName;
+          const prev: Flatness = nc.methodTable.has(key) ? nc.methodTable.get(key) : 0;
+          nc.methodTable.set(key, flatnessMax(prev, methF));
+          if (methodFlatEnough(methF)) { nc.flatMethods.add(lettable); }
+        }
+      }
+      return defaultRet;
+    }
     case 'a-id-var': return defaultRet;
     case 'a-id-var-modref': return defaultRet;
     case 'a-id-letrec': return defaultRet;
@@ -557,7 +664,7 @@ export function makeLettableFlatnessEnv(
     case 'a-cases': {
       // Flatness is the max of the flatness all the cases branches
       const combine = (caseBranch: AA.ACasesBranch, maxFlatAcc: Flatness): Flatness => {
-        const branchFlatness = makeExprFlatnessEnv(caseBranch.body, sd, ad, mb, env);
+        const branchFlatness = makeExprFlatnessEnv(caseBranch.body, sd, ad, mb, env, nc);
         return flatnessMax(maxFlatAcc, branchFlatness);
       };
       let maxFlat: Flatness = 0;
@@ -565,7 +672,7 @@ export function makeLettableFlatnessEnv(
         maxFlat = combine(b, maxFlat);
       }
 
-      const elseFlat = makeExprFlatnessEnv(lettable._else, sd, ad, mb, env);
+      const elseFlat = makeExprFlatnessEnv(lettable._else, sd, ad, mb, env, nc);
       const typFlat = annFlatness(lettable.typ, sd, ad, mb, env);
       return flatnessMax(typFlat, flatnessMax(maxFlat, elseFlat));
     }
@@ -577,7 +684,8 @@ export function makeLettableFlatnessEnv(
 export function makeProgFlatnessEnv(
   anfed: AA.AProg,
   postEnv: C.ComputedEnvironment,
-  env: C.CompileEnvironment
+  env: C.CompileEnvironment,
+  methodInfo?: MethodFlatInfo
 ): FlatnessEnv {
   const pe = postEnv as C.ComputedEnv;
   const bindings = pe.bindings;
@@ -650,9 +758,59 @@ export function makeProgFlatnessEnv(
 
   // cases(AA.AProg) anfed: | a-program(_, prov, imports, body)
   const body = anfed.body;
-  makeExprDataEnv(body, sd, ad, mb, env, new Map<string, AA.AVariant[]>(), new Map<string, string>());
-  makeExprFlatnessEnv(body, sd, ad, mb, env);
-  return [sd, ad];
+  const methodsEnabled = methodInfo !== undefined;
+  const methodReceiver = methodInfo?.receiver ?? new Map<AA.AMethodApp, string>();
+  const methodOf = methodInfo?.methodOf ?? new Map<AA.AMethod, { dataId: string; methodName: string }>();
+  // Fixpoint over the per-(dataType,method) flatness table (see MethodCtx): each
+  // pass resolves self-method calls against the previous pass's complete table and
+  // repeats until the table is stable. A module with no in-module methods produces
+  // an empty table and stops after one pass (== the old single pass, no overhead);
+  // method dependency chains of depth d converge in ~d passes. The cap bounds
+  // pathological cases and is sound (an unconverged slot just reads as non-flat).
+  const MAX_METHOD_PASSES = 16;
+  let methodTablePrev = new Map<string, Flatness>();
+  let flatMethodApps = new Set<AA.AMethodApp>();
+  let flatMethods = new Set<AA.AMethod>();
+  for (let pass = 0; pass < MAX_METHOD_PASSES; pass++) {
+    flatMethodApps = new Set<AA.AMethodApp>();
+    flatMethods = new Set<AA.AMethod>();
+    const nc: MethodCtx = {
+      methodsEnabled, methodReceiver, methodOf,
+      methodTable: new Map(),
+      methodTablePrev,
+      flatMethodApps,
+      flatMethods,
+    };
+    // Inside the fixpoint: a type alias to a refinement (`type Nat = Number%(Nat)`)
+    // has flatness = its predicate's flatness, but the predicate is an in-module
+    // function whose flatness is only known after makeExprFlatnessEnv has run. So
+    // recompute the data/type env each pass; once the predicate resolves flat, the
+    // alias does too, and a method/function annotated `:: Nat` can then flatten.
+    makeExprDataEnv(body, sd, ad, mb, env, new Map<string, AA.AVariant[]>(), new Map<string, string>());
+    makeExprFlatnessEnv(body, sd, ad, mb, env, nc);
+    const stable = flatnessMapsEqual(nc.methodTable, methodTablePrev);
+    if (process.env.PYRET_METHOD_DEBUG && nc.methodTable.size > 0) {
+      const rows = [...nc.methodTable.entries()].map(([k, f]) => `${k.split('#').pop()}=${f === undefined ? 'INF' : f}`);
+      process.stderr.write(`[method-flat] pass ${pass} recv=${methodReceiver.size}: ${rows.join(' ')}\n`);
+    }
+    methodTablePrev = nc.methodTable;
+    if (!methodsEnabled || stable) { break; }
+  }
+  if (process.env.PYRET_METHOD_DEBUG && methodTablePrev.size > 0) {
+    const rows = [...methodTablePrev.entries()].map(([k, f]) => `${k}=${f === undefined ? 'INF' : f}`);
+    process.stderr.write(`[method-flat] table: ${rows.join('  ')}\n[method-flat] flatMethods=${flatMethods.size} flatMethodApps=${flatMethodApps.size}\n`);
+  }
+  return [sd, ad, flatMethodApps, flatMethods, methodTablePrev];
+}
+
+// Equality of two (dataType,method) -> Flatness tables, for the method fixpoint's
+// convergence check (a stored `none`/undefined value is distinct from absent).
+function flatnessMapsEqual(a: Map<string, Flatness>, b: Map<string, Flatness>): boolean {
+  if (a.size !== b.size) { return false; }
+  for (const [k, v] of a) {
+    if (!b.has(k) || b.get(k) !== v) { return false; }
+  }
+  return true;
 }
 
 export function getDefinedValues(ast: AA.AProg): Map<string, string> {

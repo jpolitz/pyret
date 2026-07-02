@@ -5,13 +5,18 @@
   is guaranteed `∈ ⟦τ⟧`; the analysis never excludes a value `x` could hold.
   `Any` (⊤) is the always-sound, useless fallback.
 
-  Its consumer is redundant `_checkAnn` elimination (`makeProgTypeFlowEnv`
-  below), promise backend only and gated by the caller on
-  `runtimeAnnotations && userAnnotations`. The cont backend never consults the
-  result, so its codegen and byte-parity oracle stay frozen.
+  It has three consumers, all promise-only and all gated by the caller on
+  `runtimeAnnotations && userAnnotations`:
+    1. `weakenOperators` (below): rewrites polymorphic operator apps (`_plus` ...)
+       into monomorphic, known-flat globals (`_plus_nums` ...) where both operands
+       are proven Number, so ordinary structural flatness flattens the arithmetic.
+    2. `makeProgMethodInfo`: resolves each method call's receiver data type.
+    3. `makeProgTypeFlowEnv`: redundant `_checkAnn` elimination (below).
+  The cont backend consults none of these, so its codegen and byte-parity oracle
+  stay frozen.
 
   ----------------------------------------------------------------------------
-  Redundant `_checkAnn` elimination.
+  First consumer: redundant `_checkAnn` elimination.
   ----------------------------------------------------------------------------
   Every param / let / return / cases-scrutinee annotation `:: T` lowers to a
   runtime `_checkAnn(loc, T, v)` brand check (return and cases-scrutinee anns
@@ -91,12 +96,11 @@ export function join(a: AbsType, b: AbsType): AbsType {
   return ANY;
 }
 
-// Matches isFlatEnough in anf-loop-compiler-async.ts (inlined to avoid an
-// import cycle: that compiler imports this module).
-const FLAT_LIMIT = 5;
+// Matches isFlatEnough in anf-loop-compiler-async.ts: both use the single
+// exported limit from flatness.ts, so the verdicts can never drift.
 function flatAnn(ann: A.Ann, fl: FL.FlatnessEnv, mb: Map<string, C.ModuleBind>, env: C.CompileEnvironment): boolean {
   const f = FL.annFlatness(ann, fl[0], fl[1], mb, env);
-  return f !== undefined && f <= FLAT_LIMIT;
+  return f !== undefined && f <= FL.FLAT_LIMIT;
 }
 
 // ---------------------------------------------------------------------------
@@ -136,10 +140,25 @@ interface Ctx {
   compileEnv: C.CompileEnvironment;
   flatnessEnv: FL.FlatnessEnv;
   moduleUri: string;
-  // When false (the var-ub fixpoint passes below, which run before the ub maps
-  // converge), the redundant-ann-check work in bindLet is skipped; only the ub
-  // env is computed. When true (the final pass), the redundancy set is filled.
+  // When false (the receiver-type pre-pass for method flatness, which runs BEFORE
+  // the flatness env exists, and the var-ub fixpoint passes below), the
+  // redundant-ann-check work in bindLet is skipped (it needs flatnessEnv); only
+  // the ub env is computed. When true (the ann-elision consumer, after flatness),
+  // the redundancy set is filled.
   collectRedundant: boolean;
+  // ----- method-flatness receiver info (filled regardless of collectRedundant) ---
+  // For each method-application node, the canonical id of the receiver's data type,
+  // when the receiver resolves to a concrete in-module data type (else absent).
+  // The flatness pass keys its per-method flatness table on this id.
+  methodReceiver: Map<N.AMethodApp, string>;
+  // Each `a-method` node that is a member of an in-module data type, mapped to
+  // (dataId, methodName). Used by the flatness pass to know which method-table
+  // slot a method definition fills, and (here) to seed `self`'s type.
+  methodOf: Map<N.AMethod, { dataId: string; methodName: string; variant?: string }>;
+  // Transient (collect pass only): method-binding key -> the method node it binds,
+  // so a data-expr's withMembers/shared field (an a-id to that binding) resolves
+  // back to the method node.
+  methodBindNodes: Map<string, N.AMethod>;
   // canonical dataId -> fieldName -> the field's type, for fields declared (with a
   // consistent type) by EVERY non-singleton variant of the data type. A field read
   // `v.field` where ub(v) is that data type therefore yields this type. Sound: the
@@ -147,6 +166,12 @@ interface Ctx {
   // and ref-assignment field checks enforce it). Lets `self.x :: Number` reads feed
   // downstream ub uses so a later `:: Number` on the read value can elide.
   fieldTypes: Map<string, Map<string, AbsType>>;
+  // canonical `dataId#methodName` -> the method's DECLARED return-annotation upper
+  // bound (joined over variants). Trusted on the same basis as funRet: a method's
+  // `-> T` is _checkAnn'd before it returns, so `obj.m()` is a value of T's ub. Lets
+  // e.g. `self.length() - 1` weaken (length returns Number) so a method using a
+  // sibling's numeric result still flattens.
+  methodRet: Map<string, AbsType>;
   // ----- nested-var upper-bound inference (local-var ub fixpoint) ----------------
   // Bind keys of mutable `var`s declared inside SOME function body (lambda/method),
   // i.e. lexical depth > 0. Only these get a non-Any ub: a top-level var is REPL-
@@ -397,8 +422,28 @@ function absOfLettable(e: N.ALettable, ctx: Ctx): AbsType {
       const annT = annUpperBound(arg.ann, ctx);
       recordUb(ctx, arg.id.key(), annT ?? ANY);
     }
+    // Inside a data type's method, `self` (the first param, conventionally
+    // unannotated) is a value of that data type. Seeding it lets method calls on
+    // `self` (e.g. a method that calls a sibling method) resolve their receiver.
+    // Sound: the runtime dispatches a method only on a genuine value of its type.
+    if (N.isAMethod(e) && e.args.length > 0) {
+      const mi = ctx.methodOf.get(e);
+      if (mi !== undefined) { recordUb(ctx, e.args[0].id.key(), { k: 'data', id: mi.dataId, variant: mi.variant }); }
+    }
     analyzeExpr(e.body, ctx);
     return ANY;                            // the value is a function
+  }
+  if (N.isAMethodApp(e)) {
+    // Record the receiver's data type (if resolvable) for the flatness pass, and
+    // use the method's declared return-ann ub as the call's result type (trusted:
+    // the method _checkAnn's its return value). Lets `obj.m() <op> ...` chains weaken.
+    const ot = absOfVal(e.obj, ctx);
+    if (ot.k === 'data') {
+      ctx.methodReceiver.set(e, ot.id);
+      const r = ctx.methodRet.get(ot.id + '#' + e.meth);
+      if (r !== undefined) { return r; }
+    }
+    return ANY;
   }
   if (N.isADot(e)) {
     // Field read on a known data type -> the field's declared type.
@@ -466,7 +511,7 @@ function absOfLettable(e: N.ALettable, ctx: Ctx): AbsType {
     acc = join(acc, analyzeExpr(e._else, ctx));
     return acc;
   }
-  // Everything else (a-method-app, a-obj, a-update, a-ref, a-tuple, ...) is
+  // Everything else (a-obj, a-update, a-extend, a-ref, a-tuple, ...) is
   // conservatively Any.
   return ANY;
 }
@@ -624,6 +669,35 @@ function collectBind(key: string, e: N.ALettable, ctx: Ctx, dataObjs: Map<string
         vmap.set(v.name, v.members.map((m) => m.bind.ann));
       }
     }
+    // Associate each method member (a withMembers field on a variant, or a
+    // data-level shared field, whose value is an a-id to the method's let-binding)
+    // with (dataId, methodName), so the flatness pass can place its flatness. The
+    // method bindings precede the data-expr in the ANF spine, so methodBindNodes is
+    // already populated. Resolving through the method BIND NODE means a with:/
+    // sharing: member holding a plain FUNCTION (its value is an a-lam, not an
+    // a-method) is never mis-tagged as a method.
+    const recordMember = (fieldName: string, val: N.AVal, variant?: string): void => {
+      if (N.isAId(val) || N.isAIdSafeLetrec(val) || N.isAIdLetrec(val)) {
+        const node = ctx.methodBindNodes.get(val.id.key());
+        if (node !== undefined) {
+          ctx.methodOf.set(node, { dataId: id, methodName: fieldName, variant });
+          // Record the method's declared return-ann ub (joined over variants).
+          const rt = annUpperBound(node.ret, ctx);
+          if (rt !== undefined) {
+            const rk = id + '#' + fieldName;
+            const prev = ctx.methodRet.get(rk);
+            ctx.methodRet.set(rk, prev === undefined ? rt : join(prev, rt));
+          }
+        }
+      }
+    };
+    // A variant's own `with:` method runs only on that variant, so `self` is that
+    // exact variant (record it). A `sharing:` method runs on any variant -> no
+    // single variant.
+    for (const v of e.variants) {
+      for (const wm of v.withMembers) { recordMember(wm.name, wm.value, v.name); }
+    }
+    for (const sh of e.shared) { recordMember(sh.name, sh.value); }
     // Field types: a field read on a value of this data type is sound only when
     // the field is present (with a consistent type) on EVERY variant. Intersect
     // across variants. (Singleton variants have no fields -> any field present on
@@ -647,6 +721,7 @@ function collectBind(key: string, e: N.ALettable, ctx: Ctx, dataObjs: Map<string
     }
     if (common !== undefined && common.size > 0) { ctx.fieldTypes.set(id, common); }
   } else if (N.isALam(e) || N.isAMethod(e)) {
+    if (N.isAMethod(e)) { ctx.methodBindNodes.set(key, e); }
     const r = annUpperBound(e.ret, ctx);
     if (r !== undefined) { ctx.funRet.set(key, r); }
   } else if (N.isADot(e)) {
@@ -730,6 +805,14 @@ function collectEVLettable(e: N.ALettable, ctx: Ctx, depth: number): void {
   }
 }
 
+// Receiver info the flatness pass consumes for method-call flatness.
+export interface MethodInfo {
+  // method-application node -> canonical id of its receiver's data type.
+  receiver: Map<N.AMethodApp, string>;
+  // a-method node -> the (dataId, methodName) slot it fills.
+  methodOf: Map<N.AMethod, { dataId: string; methodName: string; variant?: string }>;
+}
+
 function newCtx(
   postEnv: C.ComputedEnvironment,
   env: C.CompileEnvironment,
@@ -753,7 +836,11 @@ function newCtx(
     flatnessEnv,
     moduleUri,
     collectRedundant,
+    methodReceiver: new Map(),
+    methodOf: new Map(),
+    methodBindNodes: new Map(),
     fieldTypes: new Map(),
+    methodRet: new Map(),
     eligibleVars: new Set(),
     varUb: new Map(),
     seedingVarUb: false,
@@ -761,9 +848,9 @@ function newCtx(
   };
 }
 
-// The shared two-phase walk: collect data/ctor defs over the whole program,
-// drop flow-insensitive tags for genuinely-reassigned vars, then run the
-// forward abstract interpretation. Mutates ctx.
+// The shared two-phase walk: collect data/ctor/method defs over the whole
+// program, drop flow-insensitive tags for genuinely-reassigned vars, then run
+// the forward abstract interpretation. Mutates ctx.
 function runTypeFlow(anfed: N.AProg, ctx: Ctx): void {
   collectDefs(anfed.body, ctx, new Map());
   // Drop flow-insensitive tags for any binding that took more than one value
@@ -804,12 +891,14 @@ function runTypeFlow(anfed: N.AProg, ctx: Ctx): void {
     ctx.varSourceAccum = null;
     ctx.collectRedundant = savedCR;
   }
-  // Final pass: redundant-ann-check info, with converged varUb. The outputs are
-  // rebuilt fresh here so any spurious entry recorded under an optimistic
-  // (pre-convergence) varUb during the seed/fixpoint passes is discarded -- a var
-  // that widened across iterations could otherwise leave a stale redundancy behind.
+  // Final pass: redundant-ann-check + method-receiver info, with converged varUb.
+  // All three outputs are rebuilt fresh here so any spurious entry recorded under an
+  // optimistic (pre-convergence) varUb during the seed/fixpoint passes is discarded --
+  // a var that widened data->Any across iterations could otherwise leave a stale
+  // method-receiver behind.
   ctx.env = new Map();
   ctx.redundant = new Set();
+  ctx.methodReceiver = new Map();
   analyzeExpr(anfed.body, ctx);
 }
 
@@ -848,6 +937,36 @@ export function makeProgTypeFlowEnv(
 }
 
 // ---------------------------------------------------------------------------
+// Receiver-type pre-pass for method flatness. Runs BEFORE the flatness env is
+// built (it needs no flatness), so the flatness pass can resolve each method
+// call's receiver data type and analyze that type's methods. Same forward
+// abstract interpretation as above, minus the redundant-ann-check work.
+// ---------------------------------------------------------------------------
+export function makeProgMethodInfo(
+  anfed: N.AProg,
+  postEnv: C.ComputedEnvironment,
+  env: C.CompileEnvironment,
+  moduleUri: string,
+): MethodInfo {
+  // flatnessEnv is unused when collectRedundant is false; pass an empty one.
+  const dummyFlat: FL.FlatnessEnv = [new Map(), new Map(), new Set(), new Set(), new Map()];
+  const ctx = newCtx(postEnv, env, dummyFlat, moduleUri, false);
+  try {
+    runTypeFlow(anfed, ctx);
+    if (process.env.PYRET_TF_DEBUG) {
+      process.stderr.write(`[type-flow ${moduleUri}] methodReceiver=${ctx.methodReceiver.size} methodOf=${ctx.methodOf.size}\n`);
+    }
+  } catch (_e) {
+    // Fail safe to "no method info" (no method calls get flattened).
+    if (process.env.PYRET_TF_DEBUG) {
+      process.stderr.write(`[type-flow ${moduleUri}] FAILED: ${(_e as any)?.stack ?? _e}\n`);
+    }
+    return { receiver: new Map(), methodOf: new Map() };
+  }
+  return { receiver: ctx.methodReceiver, methodOf: ctx.methodOf };
+}
+
+// ---------------------------------------------------------------------------
 // Typed operator weakening (ANF -> ANF; promise backend only).
 //
 // `a + b` lowers to a call of the POLYMORPHIC global `_plus`, which dispatches on
@@ -863,11 +982,10 @@ export function makeProgTypeFlowEnv(
 //
 // Soundness rests entirely on this upper-bound analysis (same basis as ann
 // elision); the caller gates on `runtimeAnnotations && userAnnotations`, promise
-// only. The rewrite ONLY rebuilds operator a-app nodes' callee, and it runs
-// BEFORE the flatness env build and codegen, so the ANF object graph those
-// passes see (and key on -- bind keys today, node identity for later
-// identity-keyed analyses) is the weakened one. Any future ANF -> ANF rewrite
-// or identity-keyed pre-pass must keep running AFTER this pass.
+// only. The rewrite ONLY rebuilds operator a-app nodes' callee; the method-info
+// receiver pre-pass (identity-keyed) runs AFTER this on the weakened ANF, so
+// method-app node identity is never stale. Any future ANF -> ANF rewrite must
+// keep running BEFORE the identity-keyed pre-passes and codegen.
 // ---------------------------------------------------------------------------
 // Binary operators that monomorphize on Number operands.
 const WEAKEN_NUM_OPS: Map<string, string> = new Map([
@@ -1028,7 +1146,7 @@ export function weakenOperators(
   // inside the fail-safe try, where it would be swallowed into a silent no-op.
   assertWeakenTableResolves(env);
   // flatnessEnv is unused when collectRedundant is false; pass an empty one.
-  const dummyFlat: FL.FlatnessEnv = [new Map(), new Map()];
+  const dummyFlat: FL.FlatnessEnv = [new Map(), new Map(), new Set(), new Set(), new Map()];
   const ctx = newCtx(postEnv, env, dummyFlat, moduleUri, false);
   try {
     runTypeFlow(anfed, ctx);
