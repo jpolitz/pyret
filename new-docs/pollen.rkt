@@ -11,3 +11,7 @@
            "abbrevs.rkt"
            "pyret-docs.rkt"
            ])
+
+(module setup racket/base
+  (provide command-char)
+  (define command-char #\@))

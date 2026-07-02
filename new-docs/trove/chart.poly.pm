@@ -1,156 +1,156 @@
 #lang pollen
 
-◊(define (in-link T) (a-id T (xref "chart" T)))
-◊(define (in-image f) (image (string-append "chart-images/" f ".png") #:scale 0.4))
-◊(define Self A)
-◊(define Color (a-id "Color" (xref "color" "Color")))
-◊(define Image (a-id "Image" (xref "image" "Image")))
-◊(define DataSeries (in-link "DataSeries"))
-◊(define ChartWindow (in-link "ChartWindow"))
-◊(define (method-data-series variant name)
+@(define (in-link T) (a-id T (xref "chart" T)))
+@(define (in-image f) (image (string-append "chart-images/" f ".png") #:scale 0.4))
+@(define Self A)
+@(define Color (a-id "Color" (xref "color" "Color")))
+@(define Image (a-id "Image" (xref "image" "Image")))
+@(define DataSeries (in-link "DataSeries"))
+@(define ChartWindow (in-link "ChartWindow"))
+@(define (method-data-series variant name)
   (method-doc "DataSeries" variant name))
 
-◊(define opaque '(("<opaque>" #f ("1" "2"))))
+@(define opaque '(("<opaque>" #f ("1" "2"))))
 
-◊(define color-meth
+@(define color-meth
   (method-spec "color"))
 
 
-◊(define legend-meth
+@(define legend-meth
    (method-spec "legend"))
 
 
-◊(define point-size-meth
+@(define point-size-meth
   (method-spec "point-size"))
 
-◊(define bin-width-meth
+@(define bin-width-meth
   (method-spec "bin-width"))
 
-◊(define max-num-bins-meth
+@(define max-num-bins-meth
   (method-spec "max-num-bins"))
 
-◊(define min-num-bins-meth
+@(define min-num-bins-meth
   (method-spec "min-num-bins"))
 
-◊(define num-bins-meth
+@(define num-bins-meth
          (method-spec "num-bins"))
 
-◊(define x-axis-meth
+@(define x-axis-meth
          (method-spec "x-axis"))
 
-◊(define y-axis-meth
+@(define y-axis-meth
          (method-spec "y-axis"))
 
 
-◊(define x-min-meth
+@(define x-min-meth
          (method-spec "x-min"))
 
-◊(define x-max-meth
+@(define x-max-meth
          (method-spec "x-max"))
 
-◊(define y-min-meth
+@(define y-min-meth
          (method-spec "y-min"))
 
-◊(define y-may-meth
+@(define y-may-meth
          (method-spec "y-max"))
 
-◊(define min-meth
+@(define min-meth
          (method-spec "min"))
 
-◊(define max-meth
+@(define max-meth
          (method-spec "max"))
 
-◊(define num-samples-meth
+@(define num-samples-meth
          (method-spec "num-samples"))
 
 
 
-◊docmodule["chart"]{
+@docmodule["chart"]{
   The Pyret Chart library. It consists of chart, plot, and data visualization tools,
-  using ◊link["https://developers.google.com/chart/" "Google Charts"] as a backend.
+  using @link["https://developers.google.com/chart/" "Google Charts"] as a backend.
 
-  This documentation assumes that your program begins with including the ◊pyret{chart} library and importing the ◊pyret{color} library as follows:
+  This documentation assumes that your program begins with including the @pyret{chart} library and importing the @pyret{color} library as follows:
 
-  ◊pyret-block{
+  @pyret-block{
 include chart
 import color as C
   }
 
-  There are two steps to create a chart: first, creating ◊emph{◊|DataSeries|} representing the information to be charted, and second, rendering ◊|DataSeries| into a ◊emph{◊|ChartWindow|}. We give examples of both steps below.
+  There are two steps to create a chart: first, creating @emph{@|DataSeries|} representing the information to be charted, and second, rendering @|DataSeries| into a @emph{@|ChartWindow|}. We give examples of both steps below.
 
-  ◊;############################################################################
-  ◊section{Creating a DataSeries}
+  @;############################################################################
+  @section{Creating a DataSeries}
 
-  In order to visualize data as a chart, you must decide what ◊emph{type} of chart (e.g., bar charts or pie charts; there are others detailed below) you want.
+  In order to visualize data as a chart, you must decide what @emph{type} of chart (e.g., bar charts or pie charts; there are others detailed below) you want.
 
-  The combination of data with a chart type and (optional) chart-specific configurations is called a ◊emph{◊|DataSeries|}. For example, your program might have population data about English native speakers in several countries, and your goal is to visualize that data as a bar chart. One reasonable starting point is to represent the data as a list of strings (country names) and a list of numbers (number of English native speakers):
+  The combination of data with a chart type and (optional) chart-specific configurations is called a @emph{@|DataSeries|}. For example, your program might have population data about English native speakers in several countries, and your goal is to visualize that data as a bar chart. One reasonable starting point is to represent the data as a list of strings (country names) and a list of numbers (number of English native speakers):
 
-  ◊pyret-block{
+  @pyret-block{
 countries =    [list: "US",      "India",   "Pakistan", "Philippines", "Nigeria"]
 num-speakers = [list: 251388301, 125344736, 110041604,  89800800,      79000000]
   }
 
-  Getting from this data to a data series is simple: use a ◊emph{chart constructor} -- here, the bar chart constructor ◊pyret{from-list.bar-chart} -- to create a ◊|DataSeries|:
+  Getting from this data to a data series is simple: use a @emph{chart constructor} -- here, the bar chart constructor @pyret{from-list.bar-chart} -- to create a @|DataSeries|:
 
-  ◊pyret-block{
+  @pyret-block{
 a-pie-chart-series = from-list.bar-chart(countries, num-speakers)
   }
 
-  As another example, consider the typical high-school math task of ``graphing a function'', that is, plotting the values of a function for some range of inputs. Another chart constructor, ◊pyret{from-list.function-plot}, would create the relevant ◊|DataSeries|:
+  As another example, consider the typical high-school math task of ``graphing a function'', that is, plotting the values of a function for some range of inputs. Another chart constructor, @pyret{from-list.function-plot}, would create the relevant @|DataSeries|:
 
-  ◊pyret-block{
+  @pyret-block{
 fun some-fun(x): num-sin(2 * x) end # some arbitrary function
 a-function-series = from-list.function-plot(some-fun)
   }
 
-  So far, we have only constructed ◊|DataSeries| without any additionnal configuration. ◊|DataSeries| also exist to allow customizing individual plots. As a simple first example of this, suppose the function plot should be in a specific color. You might write:
+  So far, we have only constructed @|DataSeries| without any additionnal configuration. @|DataSeries| also exist to allow customizing individual plots. As a simple first example of this, suppose the function plot should be in a specific color. You might write:
 
-  ◊pyret-block{
+  @pyret-block{
 colorful-function-series = a-function-series.color(C.purple)
   }
 
-  You can also combine ◊|DataSeries| creation and ◊|DataSeries| customization together via chaining to avoid an intermediate variable:
+  You can also combine @|DataSeries| creation and @|DataSeries| customization together via chaining to avoid an intermediate variable:
 
-  ◊pyret-block{
+  @pyret-block{
 fun some-fun(x): num-sin(2 * x) end # some arbitrary function
 colorful-function-series = from-list.function-plot(some-fun)
                                     .color(C.purple)
   }
 
-  There are also other customization options, described below, that can be chained onto the end of this expression to successively customize other details of the ◊|DataSeries|.
+  There are also other customization options, described below, that can be chained onto the end of this expression to successively customize other details of the @|DataSeries|.
 
-  ◊margin-note{We plan that the chart library should support the ◊pyret-id["Table" "tables"] inferface too.
-  Hence, each chart constructor will be provided under both ◊pyret{from-list}
-  and ◊pyret{from-table} object. However, currently only the list forms (◊pyret{from-list})
+  @margin-note{We plan that the chart library should support the @pyret-id["Table" "tables"] inferface too.
+  Hence, each chart constructor will be provided under both @pyret{from-list}
+  and @pyret{from-table} object. However, currently only the list forms (@pyret{from-list})
   are supported.}
 
-  ◊;############################################################################
-  ◊section{Creating a ChartWindow}
+  @;############################################################################
+  @section{Creating a ChartWindow}
 
-  Given ◊|DataSeries|, we can render it/them on a window using
-  the function ◊in-link{render-charts} or ◊in-link{render-chart}. The functions construct a ◊in-link{ChartWindow}.
+  Given @|DataSeries|, we can render it/them on a window using
+  the function @in-link{render-charts} or @in-link{render-chart}. The functions construct a @in-link{ChartWindow}.
   From the example in the previous section:
 
-  ◊pyret-block{
+  @pyret-block{
 fun some-fun(x): num-sin(2 * x) end
 a-series = from-list.function-plot(some-fun)
   .color(C.purple)
 a-chart-window = render-chart(a-series)
   }
 
-  Once you have a ◊|ChartWindow|, you can use its ◊pyret-method["ChartWindow" "display"] method to actually open up an interactive dialog: ◊pyret{a-chart-window.display()} will produce a dialog like this:
+  Once you have a @|ChartWindow|, you can use its @pyret-method["ChartWindow" "display"] method to actually open up an interactive dialog: @pyret{a-chart-window.display()} will produce a dialog like this:
 
-◊(in-image "dialog")
+@(in-image "dialog")
 
-  In addition to displaying the interactive dialog, the ◊pyret-method["ChartWindow" "display"] method will also return the rendered chart as an ◊pyret-id["Image" "image"]. If you only need the ◊pyret-id["Image" "image"] but not the interactive dialog, you should use the method ◊pyret-method["ChartWindow" "get-image"] instead of ◊pyret-method["ChartWindow" "display"].
+  In addition to displaying the interactive dialog, the @pyret-method["ChartWindow" "display"] method will also return the rendered chart as an @pyret-id["Image" "image"]. If you only need the @pyret-id["Image" "image"] but not the interactive dialog, you should use the method @pyret-method["ChartWindow" "get-image"] instead of @pyret-method["ChartWindow" "display"].
 
-  ◊pyret-block{
+  @pyret-block{
 an-image = a-chart-window.get-image()
   }
 
-  Just as ◊|DataSeries| is an intermediate value allowing for the customization of individual plots, ◊in-link{ChartWindow} is an intermediate value allowing for the customization of the ◊emph{entire chart window}. For example, charts ought to have titles and axis labels. These options do not make sense on individual plots; they are properties of the chart window as a whole. So we might write:
+  Just as @|DataSeries| is an intermediate value allowing for the customization of individual plots, @in-link{ChartWindow} is an intermediate value allowing for the customization of the @emph{entire chart window}. For example, charts ought to have titles and axis labels. These options do not make sense on individual plots; they are properties of the chart window as a whole. So we might write:
 
-  ◊pyret-block{
+  @pyret-block{
     a-chart-window
       .title("a sine function plot")
       .x-axis("this is x-axis")
@@ -160,93 +160,93 @@ an-image = a-chart-window.get-image()
 
   These customizations change the output from the previous image to the following:
 
-  ◊(in-image "window-config")
+  @(in-image "window-config")
 
-  ◊;############################################################################
-  ◊subsection{Interactive Dialog}
+  @;############################################################################
+  @subsection{Interactive Dialog}
 
   To close an interactive dialog, you can either click the close button on the top left corner, or press esc.
 
-  In addition to being able to obtain the chart as a Pyret ◊|Image|, you can
-  also save the chart image as a ◊pyret{png} file from the interactive dialog by
+  In addition to being able to obtain the chart as a Pyret @|Image|, you can
+  also save the chart image as a @pyret{png} file from the interactive dialog by
   clicking the save button which is next to the close button.
 
   For some kind of charts (e.g., function plot) there
   will be a controller panel for you to adjust configurations of the chart window interactively.
 
-  ◊;############################################################################
-  ◊subsection{Why are there watermarks on my charts?}
+  @;############################################################################
+  @subsection{Why are there watermarks on my charts?}
 
-  If you evaluate ◊pyret{colorful-function-series} or ◊pyret{a-chart-window} in the interactions pane, you will produce images like the following:
+  If you evaluate @pyret{colorful-function-series} or @pyret{a-chart-window} in the interactions pane, you will produce images like the following:
 
-  ◊repl-examples[
-   `(◊{colorful-function-series} ,(in-image "data-series-watermark"))
-   `(◊{a-chart-window}           ,(in-image "chart-window-watermark"))
+  @repl-examples[
+   `(@{colorful-function-series} ,(in-image "data-series-watermark"))
+   `(@{a-chart-window}           ,(in-image "chart-window-watermark"))
   ]
 
-  These images have watermarks on them to remind you that you are still working with ◊emph{intermediate} values, either ◊|DataSeries| or ◊|ChartWindow| respectively.  By default, both will render themselves as an appropriate chart with default configurations, but in order to interact with the chart you must use the ◊pyret-method["ChartWindow" "display"] method, and to produce an unwatermarked image of the chart you must use the ◊pyret-method["ChartWindow" "get-image"] method.
+  These images have watermarks on them to remind you that you are still working with @emph{intermediate} values, either @|DataSeries| or @|ChartWindow| respectively.  By default, both will render themselves as an appropriate chart with default configurations, but in order to interact with the chart you must use the @pyret-method["ChartWindow" "display"] method, and to produce an unwatermarked image of the chart you must use the @pyret-method["ChartWindow" "get-image"] method.
 
-  ◊;############################################################################
-  ◊section{Chart Constructors for List Interface}
+  @;############################################################################
+  @section{Chart Constructors for List Interface}
 
-  ◊function["from-list.function-plot"
+  @function["from-list.function-plot"
     #:contract (a-arrow (a-arrow N N) DataSeries)
     #:args '(("f" #f))
     #:return (a-pred DataSeries (in-link "function-plot-series"))
   ]{
 
-    Constructing a function plot series from ◊pyret{f}. See more details at
-    ◊(in-link "function-plot-series").
+    Constructing a function plot series from @pyret{f}. See more details at
+    @(in-link "function-plot-series").
 
-    ◊examples{
+    @examples{
 NUM_E = ~2.71828
 f-series = from-list.function-plot(lam(x): 1 - num-expt(NUM_E, 0 - x) end)
     }
   }
 
-  ◊function["from-list.line-plot"
+  @function["from-list.line-plot"
     #:contract (a-arrow (L-of N) (L-of N) DataSeries)
     #:args '(("xs" #f) ("ys" #f))
     #:return (a-pred DataSeries (in-link "line-plot-series"))
   ]{
 
-    Constructing a line plot series from ◊pyret{xs} and ◊pyret{ys}, representing x and y
-    coordinates of points. See more details at ◊(in-link "line-plot-series").
+    Constructing a line plot series from @pyret{xs} and @pyret{ys}, representing x and y
+    coordinates of points. See more details at @(in-link "line-plot-series").
 
-    ◊examples{
+    @examples{
 a-series = from-list.line-plot(
   [list: 0,  1, 2,  3, 6, 7,  10, 13, 16, 20],
   [list: 18, 2, 28, 9, 7, 29, 25, 26, 29, 24])
     }
   }
 
-  ◊function["from-list.scatter-plot"
+  @function["from-list.scatter-plot"
     #:contract (a-arrow (L-of N) (L-of N) DataSeries)
     #:args '(("xs" #f) ("ys" #f))
     #:return (a-pred DataSeries (in-link "scatter-plot-series"))
   ]{
 
-    Constructing a scatter plot series from ◊pyret{xs} and ◊pyret{ys}, representing x and y
-    coordinates of points. See more details at ◊(in-link "scatter-plot-series").
+    Constructing a scatter plot series from @pyret{xs} and @pyret{ys}, representing x and y
+    coordinates of points. See more details at @(in-link "scatter-plot-series").
 
-    ◊examples{
+    @examples{
 a-series = from-list.scatter-plot(
   [list: 0,  1, 2,  3, 6, 7,  10, 13, 16, 20],
   [list: 18, 2, 28, 9, 7, 29, 25, 26, 29, 24])
     }
   }
 
-  ◊function["from-list.labeled-scatter-plot"
+  @function["from-list.labeled-scatter-plot"
     #:contract (a-arrow (L-of S) (L-of N) (L-of N) DataSeries)
     #:args '(("labels" #f) ("xs" #f) ("ys" #f))
     #:return (a-pred DataSeries (in-link "scatter-plot-series"))
   ]{
 
-    Constructing a scatter plot series from ◊pyret{xs} and ◊pyret{ys}, representing x and y
-    coordinates of points, and ◊pyret{labels} whose element representing a label for each point.
-    See more details at ◊(in-link "scatter-plot-series").
+    Constructing a scatter plot series from @pyret{xs} and @pyret{ys}, representing x and y
+    coordinates of points, and @pyret{labels} whose element representing a label for each point.
+    See more details at @(in-link "scatter-plot-series").
 
-    ◊examples{
+    @examples{
 a-series = from-list.labeled-scatter-plot(
   [list: "a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
   [list: 0,   1,   2,   3,   6,   7,   10, 13,   16,  20],
@@ -254,17 +254,17 @@ a-series = from-list.labeled-scatter-plot(
     }
   }
 
-  ◊function["from-list.bar-chart"
+  @function["from-list.bar-chart"
     #:contract (a-arrow (L-of S) (L-of N) DataSeries)
     #:args '(("labels" #f) ("values" #f))
     #:return (a-pred DataSeries (in-link "bar-chart-series"))
   ]{
 
-    Constructing a bar chart series from ◊pyret{labels} and ◊pyret{values},
+    Constructing a bar chart series from @pyret{labels} and @pyret{values},
     representing the label and value of bars. See more details at
-    ◊(in-link "bar-chart-series").
+    @(in-link "bar-chart-series").
 
-    ◊examples{
+    @examples{
 a-series = from-list.bar-chart(
   [list: "Pyret", "OCaml", "C", "C++", "Python", "Racket", "Smalltalk"],
   [list: 10,       6,       1,   3,     5,       8,        9])
@@ -273,19 +273,19 @@ a-series = from-list.bar-chart(
     }
   }
 
-  ◊function["from-list.grouped-bar-chart"
+  @function["from-list.grouped-bar-chart"
     #:contract (a-arrow (L-of S) (L-of (L-of N)) (L-of S) DataSeries)
     #:args '(("labels" #f) ("value-lists" #f) ("legends" #f))
     #:return (a-pred DataSeries (in-link "bar-chart-series"))
   ]{
 
-    Constructing a bar chart series. A ◊pyret{value-list} in ◊pyret{value-lists} is
+    Constructing a bar chart series. A @pyret{value-list} in @pyret{value-lists} is
     a list of numbers, representing bars in a label but with different legends. The length
-    of ◊pyret{value-lists} must match the length of ◊pyret{labels}, and the length of each
-    ◊pyret{value-list} must match the length of ◊pyret{legends}. See more details at
-    ◊(in-link "bar-chart-series").
+    of @pyret{value-lists} must match the length of @pyret{labels}, and the length of each
+    @pyret{value-list} must match the length of @pyret{legends}. See more details at
+    @(in-link "bar-chart-series").
 
-    ◊examples{
+    @examples{
 a-series = from-list.grouped-bar-chart(
   [list: 'CA', 'TX', 'NY', 'FL', 'IL', 'PA'],
   [list:
@@ -306,47 +306,47 @@ a-series = from-list.grouped-bar-chart(
     }
   }
 
-  ◊function["from-list.freq-bar-chart"
+  @function["from-list.freq-bar-chart"
     #:contract (a-arrow (L-of S) DataSeries)
     #:args '(("values" #f))
     #:return (a-pred DataSeries (in-link "bar-chart-series"))
   ]{
     Constructing a bar chart series based on the frequencies of elements in
-    ◊pyret{values}. See more details at ◊(in-link "bar-chart-series").
+    @pyret{values}. See more details at @(in-link "bar-chart-series").
 
-    ◊examples{
+    @examples{
 a-series = from-list.freq-bar-chart(
   [list: "Pyret", "OCaml", "Pyret", "Java", " Pyret", "Racket", "Coq", "Coq"])
     }
   }
 
-  ◊function["from-list.pie-chart"
+  @function["from-list.pie-chart"
     #:contract (a-arrow (L-of S) (L-of N) DataSeries)
     #:args '(("labels" #f) ("values" #f))
     #:return (a-pred DataSeries (in-link "pie-chart-series"))
   ]{
-    Constructing a pie chart series from ◊pyret{labels} and ◊pyret{values},
+    Constructing a pie chart series from @pyret{labels} and @pyret{values},
     representing the label and value of slices. See more details at
-    ◊(in-link "pie-chart-series").
+    @(in-link "pie-chart-series").
 
-    ◊examples{
+    @examples{
 a-series = from-list.pie-chart(
   [list: "Pyret", "OCaml", "C", "C++", "Python", "Racket", "Smalltalk"],
   [list: 10,       6,       1,   3,     5,       8,        9])
     }
   }
 
-  ◊function["from-list.exploding-pie-chart"
+  @function["from-list.exploding-pie-chart"
     #:contract (a-arrow (L-of S) (L-of N) (L-of N) DataSeries)
     #:args '(("labels" #f) ("values" #f) ("offsets" #f))
     #:return (a-pred DataSeries (in-link "pie-chart-series"))
   ]{
-    Constructing a pie chart series from ◊pyret{labels} and ◊pyret{values},
-    representing the label and value of slices. ◊pyret{offsets}
+    Constructing a pie chart series from @pyret{labels} and @pyret{values},
+    representing the label and value of slices. @pyret{offsets}
     indicates the offset from the center of the chart for each slice. Each offset
-    must be in range 0 and 1. See more details at ◊(in-link "pie-chart-series").
+    must be in range 0 and 1. See more details at @(in-link "pie-chart-series").
 
-    ◊examples{
+    @examples{
 a-series = from-list.exploding-pie-chart(
   [list: "Pyret", "OCaml", "C", "C++", "Python", "Racket", "Smalltalk"],
   [list: 10,       6,       1,   3,     5,       8,        9],
@@ -354,84 +354,84 @@ a-series = from-list.exploding-pie-chart(
     }
   }
 
-  ◊function["from-list.histogram"
+  @function["from-list.histogram"
     #:contract (a-arrow (L-of N) DataSeries)
     #:args '(("values" #f))
     #:return (a-pred DataSeries (in-link "histogram-series"))
   ]{
-    Constructing a histogram series, grouping ◊pyret{values} into bins.
-    See more details at ◊(in-link "histogram-series").
+    Constructing a histogram series, grouping @pyret{values} into bins.
+    See more details at @(in-link "histogram-series").
 
-    ◊examples{
+    @examples{
 a-series = from-list.histogram(range(1, 100).map(lam(_): num-random(1000) end))
     }
   }
 
-  ◊function["from-list.labeled-histogram"
+  @function["from-list.labeled-histogram"
     #:contract (a-arrow (L-of S) (L-of N) DataSeries)
     #:args '(("labels" #f) ("values" #f))
     #:return (a-pred DataSeries (in-link "histogram-series"))
   ]{
-    Constructing a histogram series, grouping ◊pyret{values} into bins.
-    Each element of ◊pyret{labels} is attached to the corresponding value in
-    the bin. See more details at ◊(in-link "histogram-series").
+    Constructing a histogram series, grouping @pyret{values} into bins.
+    Each element of @pyret{labels} is attached to the corresponding value in
+    the bin. See more details at @(in-link "histogram-series").
 
-    ◊examples{
+    @examples{
 a-series = from-list.labeled-histogram(
   range(1, 100).map(lam(x): "foo " + num-to-string(x) end),
   range(1, 100).map(lam(_): num-random(1000) end))
     }
   }
 
-  ◊;############################################################################
-  ◊section{DataSeries}
+  @;############################################################################
+  @section{DataSeries}
 
-  ◊data-spec2["DataSeries" (list) (list
-  ◊constructor-spec["DataSeries" "function-plot-series" opaque]
-  ◊constructor-spec["DataSeries" "line-plot-series" opaque]
-  ◊constructor-spec["DataSeries" "scatter-plot-series" opaque]
-  ◊constructor-spec["DataSeries" "bar-chart-series" opaque]
-  ◊constructor-spec["DataSeries" "pie-chart-series" opaque]
-  ◊constructor-spec["DataSeries" "histogram-series" opaque]
+  @data-spec2["DataSeries" (list) (list
+  @constructor-spec["DataSeries" "function-plot-series" opaque]
+  @constructor-spec["DataSeries" "line-plot-series" opaque]
+  @constructor-spec["DataSeries" "scatter-plot-series" opaque]
+  @constructor-spec["DataSeries" "bar-chart-series" opaque]
+  @constructor-spec["DataSeries" "pie-chart-series" opaque]
+  @constructor-spec["DataSeries" "histogram-series" opaque]
   )]
 
-  ◊;################################
-  ◊subsection{Function Plot Series}
+  @;################################
+  @subsection{Function Plot Series}
 
-  ◊constructor-doc["DataSeries" "function-plot-series" opaque DataSeries]{
+  @constructor-doc["DataSeries" "function-plot-series" opaque DataSeries]{
     A function plot series. When it is rendered, the function will be sampled
-    on different x values. The library intentionally does ◊emph{not} draw lines
+    on different x values. The library intentionally does @emph{not} draw lines
     between sample points because it is possible that the function will be
     discontinuous, and drawing lines between sample points would mislead users
     that the function is continuous (for example, the stepping function
-    ◊pyret{num-floor} should not have vertical lines in each step). Instead,
+    @pyret{num-floor} should not have vertical lines in each step). Instead,
     we let users increase sample sizes, allowing the function to be rendered
     more accurately.
   }
 
-  ◊method-doc["DataSeries" "function-plot-series" "color"]
-  ◊method-doc["DataSeries" "function-plot-series" "legend"]
+  @method-doc["DataSeries" "function-plot-series" "color"]
+  @method-doc["DataSeries" "function-plot-series" "legend"]
 
-  ◊examples{
+  @examples{
 NUM_E = ~2.71828
 f-series = from-list.function-plot(lam(x): 1 - num-expt(NUM_E, 0 - x) end)
   .color(C.orange)
   .legend("My legend")
 render-chart(f-series).display()
   }
-  ◊(in-image "function-plot")
+  @(in-image "function-plot")
 
-  ◊;################################
-  ◊subsection{Line Plot Series}
+  @;################################
+  @subsection{Line Plot Series}
 
-  ◊constructor-doc["DataSeries" "line-plot-series" opaque DataSeries]{
+  @constructor-doc["DataSeries" "line-plot-series" opaque DataSeries]{
     A line plot series
   }
 
-  ◊method-doc["DataSeries" "line-plot-series" "color"]
-  ◊method-doc["DataSeries" "line-plot-series" "legend"]
+  @method-doc["DataSeries" "line-plot-series" "color"]
+  @method-doc["DataSeries" "line-plot-series" "legend"]
 
-  ◊examples{
+  @examples{
 a-series = from-list.line-plot(
   [list: 0,  1, 2,  3, 6, 7,  10, 13, 16, 20],
   [list: 18, 2, 28, 9, 7, 29, 25, 26, 29, 24])
@@ -439,21 +439,21 @@ a-series = from-list.line-plot(
   .legend("My legend")
 render-chart(a-series).display()
   }
-  ◊(in-image "line-plot")
+  @(in-image "line-plot")
 
-  ◊;################################
-  ◊subsection{Scatter Plot Series}
+  @;################################
+  @subsection{Scatter Plot Series}
 
-  ◊constructor-doc["DataSeries" "scatter-plot-series" opaque DataSeries]{
+  @constructor-doc["DataSeries" "scatter-plot-series" opaque DataSeries]{
     A scatter plot series. If a data point has a label, then hovering over the
     point in the interactive dialog will show the label.
   }
 
-  ◊method-doc["DataSeries" "scatter-plot-series" "color"]
-  ◊method-doc["DataSeries" "scatter-plot-series" "legend"]
-  ◊method-doc["DataSeries" "scatter-plot-series" "point-size"]
+  @method-doc["DataSeries" "scatter-plot-series" "color"]
+  @method-doc["DataSeries" "scatter-plot-series" "legend"]
+  @method-doc["DataSeries" "scatter-plot-series" "point-size"]
 
-  ◊examples{
+  @examples{
 a-series = from-list.labeled-scatter-plot(
   [list: "a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
   [list: 0,   1,   2,   3,   6,   7,   10, 13,   16,  20],
@@ -462,16 +462,16 @@ a-series = from-list.labeled-scatter-plot(
   .legend("My legend")
 render-chart(a-series).display()
   }
-  ◊(in-image "scatter-plot")
+  @(in-image "scatter-plot")
 
-  ◊;################################
-  ◊subsection{Bar Chart Series}
+  @;################################
+  @subsection{Bar Chart Series}
 
-  ◊constructor-doc["DataSeries" "bar-chart-series" opaque DataSeries]{
+  @constructor-doc["DataSeries" "bar-chart-series" opaque DataSeries]{
     A bar chart series. In a label, there could be several bars.
   }
 
-  ◊examples{
+  @examples{
 a-series = from-list.grouped-bar-chart(
   [list: 'CA', 'TX', 'NY', 'FL', 'IL', 'PA'],
   [list:
@@ -491,81 +491,81 @@ a-series = from-list.grouped-bar-chart(
     '65 Years and Over'])
 render-chart(a-series).display()
   }
-  ◊(in-image "grouped-bar-chart")
+  @(in-image "grouped-bar-chart")
 
-  ◊;################################
-  ◊subsection{Pie Chart Series}
+  @;################################
+  @subsection{Pie Chart Series}
 
-  ◊constructor-doc["DataSeries" "pie-chart-series" opaque DataSeries]{
+  @constructor-doc["DataSeries" "pie-chart-series" opaque DataSeries]{
     A pie chart series. Each slice could be offset from the center.
   }
 
-  ◊examples{
+  @examples{
 a-series = from-list.exploding-pie-chart(
   [list: "Pyret", "OCaml", "C", "C++", "Python", "Racket", "Smalltalk"],
   [list: 10,       6,       1,   3,     5,       8,        9],
   [list: 0.2,      0,       0,   0,     0,       0.1,      0])
 render-chart(a-series).display()
   }
-  ◊(in-image "exploding-pie-chart")
+  @(in-image "exploding-pie-chart")
 
 
-  ◊;################################
-  ◊subsection{Histogram Series}
+  @;################################
+  @subsection{Histogram Series}
 
-  ◊constructor-doc["DataSeries" "histogram-series" opaque DataSeries]{
+  @constructor-doc["DataSeries" "histogram-series" opaque DataSeries]{
     A histogram series.
   }
 
-  ◊method-doc["DataSeries" "histogram-series" "bin-width"]
-  ◊method-doc["DataSeries" "histogram-series" "max-num-bins"]
-  ◊method-doc["DataSeries" "histogram-series" "min-num-bins"]
-  ◊method-doc["DataSeries" "histogram-series" "num-bins"]
+  @method-doc["DataSeries" "histogram-series" "bin-width"]
+  @method-doc["DataSeries" "histogram-series" "max-num-bins"]
+  @method-doc["DataSeries" "histogram-series" "min-num-bins"]
+  @method-doc["DataSeries" "histogram-series" "num-bins"]
 
-  ◊examples{
+  @examples{
 a-series = from-list.labeled-histogram(
   range(1, 100).map(lam(x): "foo " + num-to-string(x) end),
   range(1, 100).map(lam(_): num-random(1000) end))
 render-chart(a-series).display()
   }
-  ◊(in-image "labeled-histogram")
+  @(in-image "labeled-histogram")
 
-  ◊;############################################################################
-  ◊section{Renderers}
+  @;############################################################################
+  @section{Renderers}
 
-  ◊function["render-chart"
+  @function["render-chart"
     #:contract (a-arrow DataSeries ChartWindow)
     #:args '(("series" #f))
     #:return ChartWindow
   ]{
-    Constructing a chart window from one ◊|DataSeries|.
+    Constructing a chart window from one @|DataSeries|.
 
-    ◊itemlist[
-    ◊item{◊in-link{function-plot-series} creates a ◊in-link{plot-chart-window}}
-    ◊item{◊in-link{line-plot-series} creates a ◊in-link{plot-chart-window}}
-    ◊item{◊in-link{scatter-plot-series} creates a ◊in-link{plot-chart-window}}
-    ◊item{◊in-link{bar-chart-series} creates a ◊in-link{bar-chart-window}}
-    ◊item{◊in-link{pie-chart-series} creates a ◊in-link{pie-chart-window}}
-    ◊item{◊in-link{histogram-series} creates a ◊in-link{histogram-chart-window}}
+    @itemlist[
+    @item{@in-link{function-plot-series} creates a @in-link{plot-chart-window}}
+    @item{@in-link{line-plot-series} creates a @in-link{plot-chart-window}}
+    @item{@in-link{scatter-plot-series} creates a @in-link{plot-chart-window}}
+    @item{@in-link{bar-chart-series} creates a @in-link{bar-chart-window}}
+    @item{@in-link{pie-chart-series} creates a @in-link{pie-chart-window}}
+    @item{@in-link{histogram-series} creates a @in-link{histogram-chart-window}}
     ]
 
-    ◊examples{
+    @examples{
 a-series = from-list.function-plot(lam(x): x * x end)
 a-chart-window = render-chart(a-series)
     }
   }
 
-  ◊function["render-charts"
+  @function["render-charts"
     #:contract (a-arrow (L-of DataSeries) ChartWindow)
     #:args '(("lst" #f))
     #:return ChartWindow
   ]{
-    Constructing a chart window from several ◊|DataSeries| and draw them together
-    in the same window. All ◊|DataSeries| in ◊pyret{lst} must be either
-    a ◊in-link{function-plot-series}, ◊in-link{line-plot-series}, or
-    ◊in-link{scatter-plot-series}.
+    Constructing a chart window from several @|DataSeries| and draw them together
+    in the same window. All @|DataSeries| in @pyret{lst} must be either
+    a @in-link{function-plot-series}, @in-link{line-plot-series}, or
+    @in-link{scatter-plot-series}.
 
-    ◊examples{
+    @examples{
 series-1 = from-list.function-plot(lam(x): x end)
 series-2 = from-list.scatter-plot(
   [list: 1, 2, 3,  4.1, 4.1, 4.5],
@@ -573,91 +573,91 @@ series-2 = from-list.scatter-plot(
 a-chart-window = render-charts([list: series-1, series-2])
     }
 
-    ◊(in-image "render-charts")
+    @(in-image "render-charts")
   }
 
-  ◊;############################################################################
-  ◊section{ChartWindow}
+  @;############################################################################
+  @section{ChartWindow}
 
-  ◊data-spec2["ChartWindow" (list) (list
-  ◊constructor-spec["ChartWindow" "pie-chart-window" opaque]
-  ◊constructor-spec["ChartWindow" "bar-chart-window" opaque]
-  ◊constructor-spec["ChartWindow" "histogram-chart-window" opaque]
-  ◊constructor-spec["ChartWindow" "plot-chart-window" opaque]
+  @data-spec2["ChartWindow" (list) (list
+  @constructor-spec["ChartWindow" "pie-chart-window" opaque]
+  @constructor-spec["ChartWindow" "bar-chart-window" opaque]
+  @constructor-spec["ChartWindow" "histogram-chart-window" opaque]
+  @constructor-spec["ChartWindow" "plot-chart-window" opaque]
   )]
 
-  ◊;################################
-  ◊subsection{Shared Methods}
+  @;################################
+  @subsection{Shared Methods}
 
-  ◊method-doc["ChartWindow" #f "title"]
-  ◊method-doc["ChartWindow" #f "width"]
-  ◊method-doc["ChartWindow" #f "height"]
-  ◊method-doc["ChartWindow" #f "display"]
-  ◊method-doc["ChartWindow" #f "get-image"]
+  @method-doc["ChartWindow" #f "title"]
+  @method-doc["ChartWindow" #f "width"]
+  @method-doc["ChartWindow" #f "height"]
+  @method-doc["ChartWindow" #f "display"]
+  @method-doc["ChartWindow" #f "get-image"]
 
-  ◊;################################
-  ◊subsection{Plot Chart Window}
+  @;################################
+  @subsection{Plot Chart Window}
 
-  ◊constructor-doc["ChartWindow" "plot-chart-window" opaque ChartWindow]{
+  @constructor-doc["ChartWindow" "plot-chart-window" opaque ChartWindow]{
     A plot chart window. For this type of chart window, when it is displayed in
-    an interactive dialog, there will be a controller panel to control ◊pyret{x-min},
-    ◊pyret{x-max}, ◊pyret{y-min}, ◊pyret{y-max}, and possibly ◊pyret{num-samples} (if the chart contains ◊in-link{function-plot-series})
+    an interactive dialog, there will be a controller panel to control @pyret{x-min},
+    @pyret{x-max}, @pyret{y-min}, @pyret{y-max}, and possibly @pyret{num-samples} (if the chart contains @in-link{function-plot-series})
   }
-  ◊method-doc["ChartWindow" "plot-chart-window" "x-min"]
-  ◊method-doc["ChartWindow" "plot-chart-window" "x-max"]
-  ◊method-doc["ChartWindow" "plot-chart-window" "y-min"]
-  ◊method-doc["ChartWindow" "plot-chart-window" "y-max"]
-  ◊method-doc["ChartWindow" "plot-chart-window" "num-samples"]
-  ◊method-doc["ChartWindow" "plot-chart-window" "x-axis"]
-  ◊method-doc["ChartWindow" "plot-chart-window" "y-axis"]
+  @method-doc["ChartWindow" "plot-chart-window" "x-min"]
+  @method-doc["ChartWindow" "plot-chart-window" "x-max"]
+  @method-doc["ChartWindow" "plot-chart-window" "y-min"]
+  @method-doc["ChartWindow" "plot-chart-window" "y-max"]
+  @method-doc["ChartWindow" "plot-chart-window" "num-samples"]
+  @method-doc["ChartWindow" "plot-chart-window" "x-axis"]
+  @method-doc["ChartWindow" "plot-chart-window" "y-axis"]
 
-  ◊;################################
-  ◊subsection{Bar Chart Window}
+  @;################################
+  @subsection{Bar Chart Window}
 
-  ◊constructor-doc["ChartWindow" "bar-chart-window" opaque ChartWindow]{
+  @constructor-doc["ChartWindow" "bar-chart-window" opaque ChartWindow]{
     A bar chart window.
   }
-  ◊method-doc["ChartWindow" "bar-chart-window" "y-min"]
-  ◊method-doc["ChartWindow" "bar-chart-window" "y-max"]
-  ◊method-doc["ChartWindow" "bar-chart-window" "x-axis"]
-  ◊method-doc["ChartWindow" "bar-chart-window" "y-axis"]
+  @method-doc["ChartWindow" "bar-chart-window" "y-min"]
+  @method-doc["ChartWindow" "bar-chart-window" "y-max"]
+  @method-doc["ChartWindow" "bar-chart-window" "x-axis"]
+  @method-doc["ChartWindow" "bar-chart-window" "y-axis"]
 
-  ◊;################################
-  ◊subsection{Multi Bar Chart Window}
+  @;################################
+  @subsection{Multi Bar Chart Window}
 
-  ◊constructor-doc["ChartWindow" "multi-bar-chart-window" opaque ChartWindow]{
+  @constructor-doc["ChartWindow" "multi-bar-chart-window" opaque ChartWindow]{
     A multi bar chart window.
   }
-  ◊method-doc["ChartWindow" "multi-bar-chart-window" "y-min"]
-  ◊method-doc["ChartWindow" "multi-bar-chart-window" "y-max"]
-  ◊method-doc["ChartWindow" "multi-bar-chart-window" "x-axis"]
-  ◊method-doc["ChartWindow" "multi-bar-chart-window" "y-axis"]
+  @method-doc["ChartWindow" "multi-bar-chart-window" "y-min"]
+  @method-doc["ChartWindow" "multi-bar-chart-window" "y-max"]
+  @method-doc["ChartWindow" "multi-bar-chart-window" "x-axis"]
+  @method-doc["ChartWindow" "multi-bar-chart-window" "y-axis"]
 
-  ◊;################################
-  ◊subsection{Box Plot Chart Window}
+  @;################################
+  @subsection{Box Plot Chart Window}
 
-  ◊constructor-doc["ChartWindow" "box-chart-window" opaque ChartWindow]{
+  @constructor-doc["ChartWindow" "box-chart-window" opaque ChartWindow]{
     A box plot chart window.
   }
-  ◊method-doc["ChartWindow" "box-chart-window" "min"]
-  ◊method-doc["ChartWindow" "box-chart-window" "max"]
+  @method-doc["ChartWindow" "box-chart-window" "min"]
+  @method-doc["ChartWindow" "box-chart-window" "max"]
 
-  ◊;################################
-  ◊subsection{Pie Chart Window}
+  @;################################
+  @subsection{Pie Chart Window}
 
-  ◊constructor-doc["ChartWindow" "pie-chart-window" opaque ChartWindow]{
+  @constructor-doc["ChartWindow" "pie-chart-window" opaque ChartWindow]{
     A pie chart window.
   }
 
-  ◊;################################
-  ◊subsection{Histogram Chart Window}
+  @;################################
+  @subsection{Histogram Chart Window}
 
-  ◊constructor-doc["ChartWindow" "histogram-chart-window" opaque ChartWindow]{
+  @constructor-doc["ChartWindow" "histogram-chart-window" opaque ChartWindow]{
     A histogram chart window.
   }
-  ◊method-doc["ChartWindow" "histogram-chart-window" "x-min"]
-  ◊method-doc["ChartWindow" "histogram-chart-window" "x-max"]
-  ◊method-doc["ChartWindow" "histogram-chart-window" "y-max"]
-  ◊method-doc["ChartWindow" "histogram-chart-window" "x-axis"]
-  ◊method-doc["ChartWindow" "histogram-chart-window" "y-axis"]
+  @method-doc["ChartWindow" "histogram-chart-window" "x-min"]
+  @method-doc["ChartWindow" "histogram-chart-window" "x-max"]
+  @method-doc["ChartWindow" "histogram-chart-window" "y-max"]
+  @method-doc["ChartWindow" "histogram-chart-window" "x-axis"]
+  @method-doc["ChartWindow" "histogram-chart-window" "y-axis"]
 }

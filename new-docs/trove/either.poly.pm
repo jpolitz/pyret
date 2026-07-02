@@ -1,37 +1,37 @@
 #lang pollen
 
-◊(define left-args (list `("v" ("type" "normal") ("contract" ,(a-id "a")))))
-◊(define right-args (list `("v" ("type" "normal") ("contract" ,(a-id "b")))))
+@(define left-args (list `("v" ("type" "normal") ("contract" ,(a-id "a")))))
+@(define right-args (list `("v" ("type" "normal") ("contract" ,(a-id "b")))))
 
 
-◊docmodule["either"]{
-  ◊; Ignored type testers
-  ◊section[#:tag "either_DataTypes"]{Data types}
-  ◊data-spec2["Either" (list "a" "b") (list
-    ◊constructor-spec["Either" "left" left-args]
-    ◊constructor-spec["Either" "right" right-args]
+@docmodule["either"]{
+  @; Ignored type testers
+  @section[#:tag "either_DataTypes"]{Data types}
+  @data-spec2["Either" (list "a" "b") (list
+    @constructor-spec["Either" "left" left-args]
+    @constructor-spec["Either" "right" right-args]
   )]
 
-  ◊nested[#:style 'inset]{
-  ◊constructor-doc["Either" "left" left-args (E-of "a" "b")]
-  ◊constructor-doc["Either" "right" right-args (E-of "a" "b")]
+  @nested[#:style 'inset]{
+  @constructor-doc["Either" "left" left-args (E-of "a" "b")]
+  @constructor-doc["Either" "right" right-args (E-of "a" "b")]
 
-  ◊function["is-left" #:contract (a-arrow (p-a-var-type "val" A) B)]
-  ◊function["is-right" #:contract (a-arrow (p-a-var-type "val" A) B)]
+  @function["is-left" #:contract (a-arrow (p-a-var-type "val" A) B)]
+  @function["is-right" #:contract (a-arrow (p-a-var-type "val" A) B)]
   }
   }
 
-◊pyret{Either} implements a functional programming idiom that is often used
+@pyret{Either} implements a functional programming idiom that is often used
 when a function may return either a meaningful value or an error message.
-By convention, the ◊pyret{left} variant is used to return an error, usually
-as a string, and the ◊pyret{right} variant returns a valid value.
+By convention, the @pyret{left} variant is used to return an error, usually
+as a string, and the @pyret{right} variant returns a valid value.
 
 The following example is based on a function that searches for a student
-with a specific numeric id in a list.  ◊tt{find-person-from-id} returns
-◊pyret{Either} a valid ◊tt{Person} as ◊pyret{right} or one of two
-error messages as ◊pyret{String}s in ◊pyret{left}.
+with a specific numeric id in a list.  @tt{find-person-from-id} returns
+@pyret{Either} a valid @tt{Person} as @pyret{right} or one of two
+error messages as @pyret{String}s in @pyret{left}.
 
-◊examples{
+@examples{
 import either as E
 
 data Person:
@@ -59,10 +59,10 @@ where:
 end
 }
 
-Typically, the ◊pyret{Either} variants are processed by a ◊pyret{cases}
+Typically, the @pyret{Either} variants are processed by a @pyret{cases}
 expression, for example:
 
-◊examples{
+@examples{
 fun search(id :: Number):
   doc: "Hypothetical function calls resulting from either result."
   result = find-person-from-id(people, id)

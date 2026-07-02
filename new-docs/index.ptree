@@ -1,10 +1,10 @@
 #lang pollen
 
-◊index.html{
-  ◊getting-started.html{
+@index.html{
+  @getting-started.html{
     platforms/platforms.html
   }
-  ◊language-concepts.html{
+  @language-concepts.html{
     lang/forms.html
     lang/testing.html
     lang/equality.html
@@ -15,8 +15,8 @@
     lang/type-check.html
     lang/spies.html
   }
-  ◊libraries.html{
-    ◊libraries-general.html{
+  @libraries.html{
+    @libraries-general.html{
       trove/globals.html
       builtin/numbers.html
       builtin/strings.html
@@ -43,11 +43,11 @@
       trove/fetch.html
       trove/filesystem.html
     }
-    ◊libraries-archived.html{
+    @libraries-archived.html{
       trove/image-structs.html
       trove/world.html
     }
-    ◊libraries-internal.html{
+    @libraries-internal.html{
       builtin/raw-arrays.html
       trove/data-source.html
       trove/srcloc.html
@@ -57,7 +57,7 @@
     }
   }
   style-guide.html
-  ◊internal.html{
+  @internal.html{
     internals/runtime.html
     internals/ffi-helpers.html
     internals/running.html

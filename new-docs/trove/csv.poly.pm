@@ -1,22 +1,22 @@
 #lang pollen
 
-◊(define TL (a-id "TableLoader" (xref "tables" "TableLoader")))
+@(define TL (a-id "TableLoader" (xref "tables" "TableLoader")))
 
 
 
-◊(define Opts (a-id "CSVOptions" (xref "csv" "CSVOptions")))
+@(define Opts (a-id "CSVOptions" (xref "csv" "CSVOptions")))
 
-◊docmodule["csv"]{
+@docmodule["csv"]{
 
-◊function["csv-table-str"
+@function["csv-table-str"
   #:contract (a-ftype (a-var-type "csv-string" S) (a-var-type "options" Opts) TL)
   #:return TL
   ]{
 
-  Reads CSV data from ◊pyret{csv-str} with the given ◊pyret{options}, returning
-  a ◊pyret-id["TableLoader" "tables"] suitable for use with ◊pyret{load-table:}
+  Reads CSV data from @pyret{csv-str} with the given @pyret{options}, returning
+  a @pyret-id["TableLoader" "tables"] suitable for use with @pyret{load-table:}
 
-◊examples{
+@examples{
 include csv
 animals-data = ```
 Pet Name, Age (years), species, fixed
@@ -39,25 +39,25 @@ end
 
   }
 
-◊function["csv-table-file"
+@function["csv-table-file"
   #:contract (a-ftype (a-var-type "csv-file" S) (a-var-type "options" Opts) TL)
   #:return TL
   ]{
 
-  Reads CSV data from the file at path ◊pyret{csv-path} with the given ◊pyret{options}, returning
-  a ◊pyret-id["TableLoader" "tables"] suitable for use with ◊pyret{load-table:}
+  Reads CSV data from the file at path @pyret{csv-path} with the given @pyret{options}, returning
+  a @pyret-id["TableLoader" "tables"] suitable for use with @pyret{load-table:}
 
   }
 
-◊function["csv-table-url"
+@function["csv-table-url"
   #:contract (a-ftype (a-var-type "csv-file" S) (a-var-type "options" Opts) TL)
   #:return TL
   ]{
 
-  Reads CSV data from the url ◊pyret{csv-url} with the given ◊pyret{options}, returning
-  a ◊pyret-id["TableLoader" "tables"] suitable for use with ◊pyret{load-table:}
+  Reads CSV data from the url @pyret{csv-url} with the given @pyret{options}, returning
+  a @pyret-id["TableLoader" "tables"] suitable for use with @pyret{load-table:}
 
-  ◊examples{
+  @examples{
 include csv
 animals-csv = csv-table-url("https://raw.githubusercontent.com/brownplt/pyret-lang/refs/heads/horizon/tests/io-tests/tests/animals-ds-2024.csv", default-options)
 animals-table = load-table: name, species, sex, age, fixed, legs, weight, weeks
@@ -70,15 +70,15 @@ end
 }
 
   }
-◊type-spec["CSVOptions" (list) #:alias ◊a-record[(a-field "header-row" B)]]
+@type-spec["CSVOptions" (list) #:alias @a-record[(a-field "header-row" B)]]
 
 The type of options for processing CSV strings.
 
-◊value["default-options" Opts]
+@value["default-options" Opts]
 
 The default options for processing CSV strings.
 
-◊examples{
+@examples{
 include csv
 check:
   default-options is { header-row: true }

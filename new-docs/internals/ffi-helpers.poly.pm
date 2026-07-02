@@ -1,133 +1,133 @@
 #lang pollen
 
-◊title[#:tag "ffi"]{FFI Helpers}
+@title[#:tag "ffi"]{FFI Helpers}
 
 There are a number of convenience functions that aren't native to the Pyret
 runtime, but are often used in JavaScript code that interacts with the runtime.
 Some of the most commonly used ones are documented here; this list is often
 growing.
 
-◊section[#:tag "ffi:equality"]{Equality}
+@section[#:tag "ffi:equality"]{Equality}
 
-The ffi exposes several utilities related to ◊secref["equality"].
+The ffi exposes several utilities related to @secref["equality"].
 
-◊doc-internal{
+@doc-internal{
   FFI.equal :: PyretObject
 }
 
-The ◊pyret-id["Equal" "equality"] value.
+The @pyret-id["Equal" "equality"] value.
 
-◊doc-internal{
+@doc-internal{
   FFI.unknown :: PyretObject
 }
 
-The ◊pyret-id["Unknown" "equality"] value.
+The @pyret-id["Unknown" "equality"] value.
 
-◊doc-internal{
+@doc-internal{
   FFI.notEqual :: PyretFunction
 }
 
-The ◊pyret-id["NotEqual" "equality"] constructor.
+The @pyret-id["NotEqual" "equality"] constructor.
 
-◊doc-internal{
+@doc-internal{
   FFI.isEqual(Any) → JSBoolean
 }
 
-Checks if the given value is ◊pyret-id["Equal" "equality"].
+Checks if the given value is @pyret-id["Equal" "equality"].
 
-◊doc-internal{
+@doc-internal{
   FFI.isNotEqual(Any) → JSBoolean
 }
 
-Checks if the given value is an instance of ◊pyret-id["NotEqual" "equality"].
+Checks if the given value is an instance of @pyret-id["NotEqual" "equality"].
 
-◊doc-internal{
+@doc-internal{
   FFI.isUnknown(Any) → JSBoolean
 }
 
-Checks if the given value is a ◊pyret-id["Unknown" "equality"].
+Checks if the given value is a @pyret-id["Unknown" "equality"].
 
-◊doc-internal{
+@doc-internal{
   FFI.isEqualityResult(Any) → JSBoolean
 }
 
-Checks if the given value is an instance of a ◊pyret-id["EqualityResult" "equality"].
+Checks if the given value is an instance of a @pyret-id["EqualityResult" "equality"].
 
-◊section[#:tag "ffi:exceptions"]{Exceptions}
+@section[#:tag "ffi:exceptions"]{Exceptions}
 
 FFI helpers provide the easiest way to programmatically throw Pyret exceptions
 from JavaScript.  Most commonly, user-defined modules will simply throw
-◊tt{MessageExceptions} that contain a string describing the error.
+@tt{MessageExceptions} that contain a string describing the error.
 
-◊doc-internal{
+@doc-internal{
   FFI.throwMessageException(PyretString) → Undefined
 }
 
 Throws an exception that Pyret recognizes and reports with a stack trace, using
 the provided string as the message.
 
-◊doc-internal{
+@doc-internal{
   FFI.makeMessageException(PyretString) → Error
 }
 
-Sometimes its useful to ◊emph{create} an exception without actually throwing
-it, like when using the ◊tt{error} callback of the ◊tt{Restarter} in
-◊internal-id["Runtime" "pauseStack"].  This call creates a new exception object
+Sometimes its useful to @emph{create} an exception without actually throwing
+it, like when using the @tt{error} callback of the @tt{Restarter} in
+@internal-id["Runtime" "pauseStack"].  This call creates a new exception object
 without throwing it.
 
-◊section[#:tag "ffi:lists"]{Lists}
+@section[#:tag "ffi:lists"]{Lists}
 
 Pyret lists are ubiquitous in Pyret's internals and libraries, and this library
 provides a few conveniences for working with them.
 
-◊doc-internal{
+@doc-internal{
   FFI.makeList(JSArray) → List
 }
 
-Turns a JavaScript array into a Pyret ◊pyret-id["List" "lists"] with the same
+Turns a JavaScript array into a Pyret @pyret-id["List" "lists"] with the same
 elements in the same order.
 
-◊doc-internal{
+@doc-internal{
   FFI.toArray(List) → JSArray
 }
 
-Turns a Pyret ◊pyret-id["List" "lists"] with the same elements in the same
+Turns a Pyret @pyret-id["List" "lists"] with the same elements in the same
 order.  For doing computationally heavy work, sometimes it is useful to convert
-a Pyret ◊tt{List} to an array before processing it (and using JavaScript's
+a Pyret @tt{List} to an array before processing it (and using JavaScript's
 map/filter, etc.), since the Pyret version incurs more overhead.
 
-◊doc-internal{
+@doc-internal{
   FFI.isList(Any) → JSBoolean
 }
 
-Returns ◊tt{true} if the value is a Pyret ◊pyret-id["List" "lists"] and
-◊tt{false} otherwise.
+Returns @tt{true} if the value is a Pyret @pyret-id["List" "lists"] and
+@tt{false} otherwise.
 
-◊section{Other Data Helpers}
+@section{Other Data Helpers}
 
-◊doc-internal{
+@doc-internal{
   FFI.makeSome(Any) → Option
 }
 
-◊doc-internal{
+@doc-internal{
   FFI.makeNone(Any) → Option
 }
 
-Create instances of ◊pyret-id["none" "option"] and ◊pyret-id["some" "option"]
-from ◊secref["option"].
+Create instances of @pyret-id["none" "option"] and @pyret-id["some" "option"]
+from @secref["option"].
 
-◊doc-internal{
+@doc-internal{
   FFI.makeLeft(Any) → Either
 }
 
-◊doc-internal{
+@doc-internal{
   FFI.makeRight(Any) → Either
 }
 
-Create instances of ◊pyret-id["left" "either"] and ◊pyret-id["right" "either"]
-from ◊secref["either"].
+Create instances of @pyret-id["left" "either"] and @pyret-id["right" "either"]
+from @secref["either"].
 
-◊doc-internal{
+@doc-internal{
   FFI.cases(
     (Any -> JSBoolean)
     JSString
@@ -137,12 +137,12 @@ from ◊secref["either"].
   → Any
 }
 
-This call emulates the functionality of the ◊tt{cases} expression in a
+This call emulates the functionality of the @tt{cases} expression in a
 JavaScript context.  It takes a predicate to check (usually a function like
-◊tt{is-List}), a name for the predicate being checked, a ◊tt{data} value, and
+@tt{is-List}), a name for the predicate being checked, a @tt{data} value, and
 an object containing handlers for its variants.  For example:
 
-◊verbatim{
+@verbatim{
 function sum(l) {
   cases(runtime.getField(lists, "is-List"), "List", l, {
     empty: function() { return "Empty"; },

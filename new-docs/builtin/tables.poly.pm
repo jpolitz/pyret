@@ -1,46 +1,46 @@
 #lang pollen
 
-◊(define (g-id name) (seclink (xref "<global>" name)))
+@(define (g-id name) (seclink (xref "<global>" name)))
 
 
 
-◊(define (table-method name #:args args #:return ret #:contract contract)
+@(define (table-method name #:args args #:return ret #:contract contract)
   (method-doc "Table" "table" name #:alt-docstrings "" #:args args #:return ret #:contract contract))
-◊(define Table  (a-id "Table" (xref "tables" "Table")))
-◊(define (row-method name #:args args #:return ret #:contract contract)
+@(define Table  (a-id "Table" (xref "tables" "Table")))
+@(define (row-method name #:args args #:return ret #:contract contract)
   (method-doc "Row" "row" name #:alt-docstrings "" #:args args #:return ret #:contract contract))
-◊(define Row  (a-id "Row" (xref "tables" "Row")))
+@(define Row  (a-id "Row" (xref "tables" "Row")))
 
-◊(define (Red-of acc in result) (a-app (a-id "Reducer" (xref "tables" "Reducer")) acc in result))
-◊(define (red-method name #:args args #:return ret #:contract contract)
+@(define (Red-of acc in result) (a-app (a-id "Reducer" (xref "tables" "Reducer")) acc in result))
+@(define (red-method name #:args args #:return ret #:contract contract)
   (method-doc "Reducer" "reducer" name #:alt-docstrings "" #:args args #:return ret #:contract contract))
-◊(define Red-params (list "Acc" "InVal" "OutVal"))
+@(define Red-params (list "Acc" "InVal" "OutVal"))
 
-◊docmodule["tables" #:friendly-title "Tables"]{
+@docmodule["tables" #:friendly-title "Tables"]{
 
 There are many examples of tables in computing, with
 spreadsheets being the most obvious.
                                                              
-A ◊pyret-id{Table} is made up of ◊bold{rows} and ◊bold{columns}. All rows have the
+A @pyret-id{Table} is made up of @bold{rows} and @bold{columns}. All rows have the
 same number of columns, in the same order. Each column has a name.  Each column
 may also be assigned a type via an annotation; if so, all entries in a column
 will then be checked against the annotation.  Unsurprisingly, they are useful
 for representing tabular data from sources like spreadsheets or CSV files.
 
-◊bold{Note:} The ◊pyret-id{Table} data type and the syntax for manipulating
+@bold{Note:} The @pyret-id{Table} data type and the syntax for manipulating
 tables is built in to Pyret without needing any imports; however, using the
-◊secref{Reducers} or the functions in ◊secref{s:tables:methods} require the
-◊pyret{import} line above.
+@secref{Reducers} or the functions in @secref{s:tables:methods} require the
+@pyret{import} line above.
 
-  ◊section[#:tag "s:tables"]{Creating Tables}
+  @section[#:tag "s:tables"]{Creating Tables}
 
-A simple ◊pyret-id{Table} can be directly created with a ◊pyret{table:}
+A simple @pyret-id{Table} can be directly created with a @pyret{table:}
 expression, which lists any number of
 columns, with optional annotations, and then any number of rows.  For example,
-this expression creates a table with three columns, ◊pyret{name}, ◊pyret{age},
-and ◊pyret{favorite-color}, and three rows:
+this expression creates a table with three columns, @pyret{name}, @pyret{age},
+and @pyret{favorite-color}, and three rows:
 
-  ◊examples{
+  @examples{
 my-table = table: name :: String, age :: Number, favorite-color :: String
   row: "Bob", 12, "blue"
   row: "Alice", 17, "green"
@@ -48,14 +48,14 @@ my-table = table: name :: String, age :: Number, favorite-color :: String
 end
   }
 
-◊margin-note{Indeed, ◊pyret{my-table} is used as a running example in much of
+@margin-note{Indeed, @pyret{my-table} is used as a running example in much of
 the following.}
-Evaluating ◊pyret{my-table} in the interactions window after running the
+Evaluating @pyret{my-table} in the interactions window after running the
 program above will display a formatted version of the table:
 
-◊(image "table-print.png")
+@(image "table-print.png")
   
-  ◊section[#:tag "s:tables:loading"]{Loading Tables}
+  @section[#:tag "s:tables:loading"]{Loading Tables}
 
 Pyret supports loading spreadsheets from Google Sheets and
 interpreting them as Pyret tables.
@@ -64,7 +64,7 @@ You can import most relevant file types, including .xlsx,
 into Google Sheets, and then into Pyret, so you should be able to
 get almost any tabular data into Pyret with a little effort.
 
-◊margin-note{In Google Sheets, you create a file, referred to as a
+@margin-note{In Google Sheets, you create a file, referred to as a
 "spreadsheet" that contains one or more grids called
 "sheets."  Excel refers to the file as a "workbook" and each
 grid as a "worksheet."  We will follow Google Sheets'
@@ -75,82 +75,82 @@ data, without skipping columns or extra comments other than an
 optional single header row at the top.
 
 As a simple and consistent example, let's say we wanted to import the
-◊tt{my-table} data from a spreadsheet.
+@tt{my-table} data from a spreadsheet.
 
-◊(image "gsheet-1.png")
+@(image "gsheet-1.png")
 
 To import this data into a Pyret program, you need to get the
 spreadsheet's
 unique Google ID.  The easiest way to do this is to click
-on the blue ◊tt{Share} button in the upper right.
+on the blue @tt{Share} button in the upper right.
 
-◊(image "gsheet-2.png")
+@(image "gsheet-2.png")
 
 If you don't
 want to share your spreadsheet with anyone else, click
-◊tt{Advanced} in the lower right of the ◊tt{Share with others}
-dialog, then copy the ◊tt{Link to share}, highlighted in orange below,
+@tt{Advanced} in the lower right of the @tt{Share with others}
+dialog, then copy the @tt{Link to share}, highlighted in orange below,
 and paste it into your Pyret definitions area (or another editor).
 
-◊(image "gsheet-3.png")
+@(image "gsheet-3.png")
 
 The URL will look something like
 
-◊tt{https://docs.google.com/spreadsheets/d/1BAexzf08Q5o8bXb_k8PwuE3tMKezxRfbKBKT-4L6UzI/edit?usp=sharing}
+@tt{https://docs.google.com/spreadsheets/d/1BAexzf08Q5o8bXb_k8PwuE3tMKezxRfbKBKT-4L6UzI/edit?usp=sharing}
 
-The Google ID is the part between ◊tt{/d/} and ◊tt{/edit...}, in this case:
+The Google ID is the part between @tt{/d/} and @tt{/edit...}, in this case:
 
-◊tt{1BAexzf08Q5o8bXb_k8PwuE3tMKezxRfbKBKT-4L6UzI}
+@tt{1BAexzf08Q5o8bXb_k8PwuE3tMKezxRfbKBKT-4L6UzI}
 
-◊margin-note{If you do want to share the spreadsheet with others, click
-on the blue ◊tt{Share} button as above, and then click
-◊tt{Get sharable link}, choose the appropriate level of
+@margin-note{If you do want to share the spreadsheet with others, click
+on the blue @tt{Share} button as above, and then click
+@tt{Get sharable link}, choose the appropriate level of
 sharing, and copy the URL to get the Google ID as above.}
 
 Now you can load the spreadsheet into your Pyret program:
 
-◊examples{
+@examples{
 import gdrive-sheets as GS
 
 imported-my-table = 
   GS.load-spreadsheet("1BAexzf08Q5o8bXb_k8PwuE3tMKezxRfbKBKT-4L6UzI")
 }
 
-You can use ◊pyret{include} instead of ◊pyret{import as...} to cut down on
-some typing by omitting the ◊tt{GS.} before the ◊pyret{tables} module
+You can use @pyret{include} instead of @pyret{import as...} to cut down on
+some typing by omitting the @tt{GS.} before the @pyret{tables} module
 functions.
 
-◊examples{
+@examples{
 include gdrive-sheets
 
 imported-my-table = 
   load-spreadsheet("1BAexzf08Q5o8bXb_k8PwuE3tMKezxRfbKBKT-4L6UzI")
 }
-◊margin-note{We'll use
-◊pyret{import} and the prefix ◊tt{GS.} in the following examples.  If you
-use ◊pyret{include}, omit ◊tt{GS.} where used below.}
+@margin-note{We'll use
+@pyret{import} and the prefix @tt{GS.} in the following examples.  If you
+use @pyret{include}, omit @tt{GS.} where used below.}
 
-When data is loaded into a table, we recommend using ◊italic{sanitizers} 
+When data is loaded into a table, we recommend using @italic{sanitizers} 
 to properly load each entry of the table as the correct Pyret type.  The
-supported sanitizers are imported from the ◊pyret{data-source} module.
+supported sanitizers are imported from the @pyret{data-source} module.
 
 The sanitizers currently provided by Pyret are:
 
-◊itemlist[◊item{◊bold{string-sanitizer} tries to convert anything to a ◊g-id{String}}
-◊item{◊bold{num-sanitizer} tries to convert  numbers, strings and booleans to ◊g-id{Number}s}
-◊item{◊bold{bool-sanitizer} tries to convert numbers, strings and booleans to ◊g-id{Boolean}s} 
-◊item{◊bold{strict-num-sanitizer} tries to convert numbers and strings (not booleans) to ◊g-id{Number}s}
-◊item{◊bold{strings-only} converts only strings to ◊g-id{String}s}
-◊item{◊bold{numbers-only} converts only numbers to ◊g-id{Number}s}
-◊item{◊bold{booleans-only} converts only booleans to ◊g-id{Boolean}s}
-◊item{◊bold{empty-only} converts only empty cells to ◊pyret-id["none" "option"]s}]
+@itemlist[@item{@bold{string-sanitizer} tries to convert anything to a @g-id{String}}
+@item{@bold{num-sanitizer} tries to convert  numbers, strings and booleans to @g-id{Number}s}
+@item{@bold{bool-sanitizer} tries to convert numbers, strings and booleans to @g-id{Boolean}s} 
+@item{@bold{strict-num-sanitizer} tries to convert numbers and strings (not booleans) to @g-id{Number}s}
+@item{@bold{strings-only} converts only strings to @g-id{String}s}
+@item{@bold{numbers-only} converts only numbers to @g-id{Number}s}
+@item{@bold{booleans-only} converts only booleans to @g-id{Boolean}s}
+@item{@bold{empty-only} converts only empty cells to @pyret-id["none" "option"]s}]
 
-◊margin-note{While the ◊tt{data-source} library provides sanitizers which should cover
+@margin-note{While the @tt{data-source} library provides sanitizers which should cover
 most use cases, there may be times when one would like to create a custom
 data sanitizer. To do so, one must simply create a function which conforms
-to the ◊pyret-id["Sanitizer" "data-source"] type in the ◊tt{data-source} module.}
+to the @pyret-id["Sanitizer" "data-source"] type in the @tt{data-source} module.}
 
-Use the ◊pyret{load-table:} expression to create a table from an
+Use the @pyret{load-table:} expression to create a table from an
 imported sheet.
 
 Each spreadsheet file contains multiple, named sheets, displayed
@@ -158,15 +158,15 @@ as tabs across the bottom of the Sheets user interface.  When you start
 working with the data in an imported spreadsheet, you need to indentify
 which sheet you are using as the data source.
 
-The ◊pyret{source:} expression should be followed by the imported spreadsheet,
-calling the ◊pyret-method["Spreadsheet" #f "sheet-by-name" "gdrive-sheets"] method with two arguments, the sheet name and
+The @pyret{source:} expression should be followed by the imported spreadsheet,
+calling the @pyret-method["Spreadsheet" #f "sheet-by-name" "gdrive-sheets"] method with two arguments, the sheet name and
 a boolean flag indicating whether or not there is a header row in the sheet
-that should be ignored.  In our example above,  ◊tt{imported-my-table} contains
-one sheet, called ◊tt{3-rows},
+that should be ignored.  In our example above,  @tt{imported-my-table} contains
+one sheet, called @tt{3-rows},
 and there is a header row that should be ignored by the importer, so the
-◊pyret{source:} expression would be written as illustrated below.
+@pyret{source:} expression would be written as illustrated below.
 
-◊examples{
+@examples{
 import gdrive-sheets as GS
 import data-source as DS
 
@@ -181,7 +181,7 @@ my-table = load-table: name :: String, age :: Number, favorite-color :: String
 end
 }
 
-◊example-preamble{
+@example-preamble{
 import gdrive-sheets as GS
 import data-source as DS
 
@@ -196,7 +196,7 @@ my-table = load-table: name :: String, age :: Number, favorite-color :: String
 end
 }
 
-In general, it is ◊italic{safest} to sanitize ◊italic{every} input column, since it
+In general, it is @italic{safest} to sanitize @italic{every} input column, since it
 is the only way to guarantee that the data source will not guess the column's
 type incorrectly.
 
@@ -205,23 +205,23 @@ assign or infer types to data in a way that often is not apparent to the user
 and is a common source of errors when exporting from or between spreadsheet
 applications.
 
-◊type-spec["TableLoader" (list)]
+@type-spec["TableLoader" (list)]
 
-The type of values that can be loaded using ◊pyret{load-table}. Common ways to
-generate a ◊pyret{TableLoader} are:
+The type of values that can be loaded using @pyret{load-table}. Common ways to
+generate a @pyret{TableLoader} are:
 
-◊itemlist[
-  ◊item{◊pyret-method["Spreadsheet" "shared methods" "sheet-by-name" "gdrive-sheets"] and ◊pyret-method["Spreadsheet" "shared methods" "sheet-by-index" "gdrive-sheets"]}
-  ◊item{◊pyret-id["csv-table-str" "csv"] and ◊pyret-id["csv-table-file" "csv"]}
+@itemlist[
+  @item{@pyret-method["Spreadsheet" "shared methods" "sheet-by-name" "gdrive-sheets"] and @pyret-method["Spreadsheet" "shared methods" "sheet-by-index" "gdrive-sheets"]}
+  @item{@pyret-id["csv-table-str" "csv"] and @pyret-id["csv-table-file" "csv"]}
 ]
 
-  ◊section[#:tag "s:tables:select"]{Selecting Columns}
+  @section[#:tag "s:tables:select"]{Selecting Columns}
 
-The ◊pyret{select} expression can be used to create a new table from a subset
+The @pyret{select} expression can be used to create a new table from a subset
 of the columns of an existing one.  For example, we can get just the names
-and ages from ◊pyret{my-table} above:
+and ages from @pyret{my-table} above:
 
-◊examples[#:load-preamble #t]{
+@examples[#:load-preamble #t]{
 names-and-ages = select name, age from my-table end
 check:
   names-and-ages is table: name, age
@@ -232,16 +232,16 @@ check:
 end
 }
 
-  ◊section{Filtering Tables}
+  @section{Filtering Tables}
 
-The ◊pyret{sieve} mechanism allows for filtering out rows of tables based
-on some criteria. The ◊pyret{using} keyword specifies which columns may be
-used in the body of the ◊pyret{sieve} expression.
+The @pyret{sieve} mechanism allows for filtering out rows of tables based
+on some criteria. The @pyret{using} keyword specifies which columns may be
+used in the body of the @pyret{sieve} expression.
 
-For instance, we can find the individuals in ◊pyret{my-table} who are old
+For instance, we can find the individuals in @pyret{my-table} who are old
 enough to drive in the United States.
 
-◊pyret-block[#:style "good-ex"]{
+@pyret-block[#:style "good-ex"]{
 can-drive = sieve my-table using age:
   age >= 16
 end
@@ -252,25 +252,25 @@ check:
 end
 }
 
-Note that the ◊pyret{sieve} block must explicitly list the columns used to
-filter out values with ◊pyret{using}.  The following would signal an undefined
-name error for ◊pyret{age}, because names being used in the expression body
+Note that the @pyret{sieve} block must explicitly list the columns used to
+filter out values with @pyret{using}.  The following would signal an undefined
+name error for @pyret{age}, because names being used in the expression body
 must be listed:
 
-◊pyret-block[#:style "bad-ex"]{
+@pyret-block[#:style "bad-ex"]{
 can-drive = sieve my-table using name:
   # age is not visible inside of this expression
   age >= 16
 end
 }
 
-  ◊section{Ordering Tables}
+  @section{Ordering Tables}
 
-To arrange the rows of a table in some particular order, use an ◊pyret{order}
+To arrange the rows of a table in some particular order, use an @pyret{order}
 expression.  This can be done with any column whose
-type supports the use of ◊pyret{<} and ◊pyret{>}, including ◊g-id{String}s. 
+type supports the use of @pyret{<} and @pyret{>}, including @g-id{String}s. 
 
-◊examples[#:load-preamble #t]{
+@examples[#:load-preamble #t]{
 name-ordered = order my-table:
   name ascending
 end
@@ -284,10 +284,10 @@ end
 }
 
 Tables can be sorted by multiple columns.  In general you may select as many
-columns as desired, and can mix and match ◊pyret{ascending} and
-◊pyret{descending} sorts.  No column can be mentioned more than once.
+columns as desired, and can mix and match @pyret{ascending} and
+@pyret{descending} sorts.  No column can be mentioned more than once.
 
-◊pyret-block{
+@pyret-block{
 order some-table:
   column1 ascending,
   column3 descending,
@@ -295,21 +295,21 @@ order some-table:
 end
 }
 
-This example will first sort the data in increasing order on ◊tt{column1}.  If there
-are any duplicate values in ◊tt{column1}, each such group of rows will be sorted in
-decreasing order by ◊tt{column3}.  If there are any duplicates in both columns,
-each remaining group will be sorted in increasing order by ◊tt{column2}.
+This example will first sort the data in increasing order on @tt{column1}.  If there
+are any duplicate values in @tt{column1}, each such group of rows will be sorted in
+decreasing order by @tt{column3}.  If there are any duplicates in both columns,
+each remaining group will be sorted in increasing order by @tt{column2}.
 
-  ◊section{Transforming Tables}
+  @section{Transforming Tables}
 
-The ◊pyret{transform} expression allows the changing of columns within a
-table, similar to the ◊pyret-id["map" "lists"] function over lists (and, just like
-◊pyret-id["map" "lists"], ◊pyret{transform} expressions do not mutate the table, but
+The @pyret{transform} expression allows the changing of columns within a
+table, similar to the @pyret-id["map" "lists"] function over lists (and, just like
+@pyret-id["map" "lists"], @pyret{transform} expressions do not mutate the table, but
 instead return a new one).
 
-Suppose we find out that ◊pyret{my-table} is wrong and everyone is actually
+Suppose we find out that @pyret{my-table} is wrong and everyone is actually
 a year older than it says they are. We can fix our data as follows:
-◊pyret-block{
+@pyret-block{
 age-fixed = transform my-table using age:
   age: age + 1
 end
@@ -323,44 +323,44 @@ end
 }
 
 
-◊section{Extracting Columns from Tables}
+@section{Extracting Columns from Tables}
 
-A large number of Pyret modules work on ◊seclink{lists} instead of tables, so it
+A large number of Pyret modules work on @seclink{lists} instead of tables, so it
 may be desired to pull the contents of one column of a table as a list to
-use it elsewhere. The ◊pyret{extract} mechanism allows this ability, and
+use it elsewhere. The @pyret{extract} mechanism allows this ability, and
 serves as the primary link between processing tabular data and non-tabular
 Pyret functions.
 
 Suppose, for example, we wanted just the names of each person in
-◊pyret{my-table}. We could pull those names out as follows:
-◊pyret-block{
+@pyret{my-table}. We could pull those names out as follows:
+@pyret-block{
 name-list = extract name from my-table end
 check:
   name-list is [list: "Bob", "Alice", "Eve"]
 end
 }
 
-◊section{Extending Tables}
+@section{Extending Tables}
 
 "Extending" a table means to create a new table with an additional,
 calculated column. There are two types of extensions which can be
 made to tables: mapping extensions and reducing extensions.
 
-◊subsection{Mapping extensions}
+@subsection{Mapping extensions}
 
 A mapping column is one whose contents are calculated from other
 columns only in the row it is being added to.  This is analogous
-to the map function for ◊seclink{lists}.
+to the map function for @seclink{lists}.
 
 In a mapping expression, the body of the expression defines the name of
 the new column or columns followed by an expression which calculates
 the new value to be placed in each row of the new column.
 
 One example of this is a column which tells
-whether the ◊pyret{age} field of a given row in ◊pyret{my-table} indicates
+whether the @pyret{age} field of a given row in @pyret{my-table} indicates
 that the person in that row is old enough drive in the United States or not,
 that is, whether that person is at least 16:
-◊examples[#:load-preamble #t]{
+@examples[#:load-preamble #t]{
 can-drive-col = extend my-table using age:
   can-drive: age >= 16
 end
@@ -377,7 +377,7 @@ Another example creates a new table including baseball players'
 calculated batting average and slugging percentage in extended
 columns:
 
-◊examples{
+@examples{
 batting = table: batter :: String, 
   at-bats :: Number, singles :: Number, doubles :: Number, 
   triples :: Number, home-runs :: Number
@@ -393,36 +393,36 @@ batting-avg-and-slugging = extend batting
 end
 }
 
-◊(image "baseball.png")
+@(image "baseball.png")
 
-◊margin-note{As in ◊seclink["s:tables:transform"]{◊pyret{transform}},
+@margin-note{As in @seclink["s:tables:transform"]{@pyret{transform}},
 you must specify which columns will be used to calculate the
 value in the 
-◊pyret{extend} expression using the ◊pyret{using} keyword.}
+@pyret{extend} expression using the @pyret{using} keyword.}
 
 
-◊subsection{Reducers}
+@subsection{Reducers}
 
 A "reducing" column is one whose information is computed from the
-row it is being added to ◊italic{and one or more of the rows above}
+row it is being added to @italic{and one or more of the rows above}
 that row.  This is
-analogous to the ◊pyret-id["fold" "lists"] function for ◊seclink{lists}.
+analogous to the @pyret-id["fold" "lists"] function for @seclink{lists}.
 
 The simplest examples of reducing use reducers built into Pyret.
 
 For each reducer below, you will need to specify
 a name for the new column and which existing column new value
 will be based on.  You will also need to
-◊pyret{import} or ◊pyret{include} ◊pyret{tables}.
+@pyret{import} or @pyret{include} @pyret{tables}.
 
-◊value["running-sum" (Red-of N N N)]
+@value["running-sum" (Red-of N N N)]
 
 Creates a new column where in each row,
 the running sum will be the added
 value of the cell in the selected column plus all the cells
-◊italic{above} the cell in the same column.
+@italic{above} the cell in the same column.
 
-◊examples{
+@examples{
 import tables as T
 dem-primary-delegates = table: state :: String, clinton :: Number, 
   sanders :: Number
@@ -439,21 +439,21 @@ end
 print(running-total-delegates)
 }
 
-◊(image "primaries.png")
+@(image "primaries.png")
 
-◊value["difference" (Red-of N N N)]{
+@value["difference" (Red-of N N N)]{
 
-The ◊pyret{difference} extender creates a new column 
+The @pyret{difference} extender creates a new column 
 containing the difference between the value in
-the current row (of the selected column) minus the value in ◊italic{only}
+the current row (of the selected column) minus the value in @italic{only}
 the row directly above.  In the first row, the value is unchanged.
 Since there's no value before the first row, Pyret behaves as if it were zero.
 
-◊margin-note{Both ◊pyret{difference} and ◊pyret-id{difference-from} do
-◊italic{not} calculate a running difference, only the difference between
+@margin-note{Both @pyret{difference} and @pyret-id{difference-from} do
+@italic{not} calculate a running difference, only the difference between
 the selected row and the single row above.}
 
-◊examples{
+@examples{
 import tables as T
 test-scores = table: year :: Number, 
   math-score :: Number, reading-score :: Number
@@ -467,18 +467,18 @@ changes-by-year = extend test-scores using math-score, reading-score:
   reading-change-from-previous: T.difference of reading-score
 end
 }
-◊(image "difference-table.png")
+@(image "difference-table.png")
 }
 
-◊function["difference-from"
+@function["difference-from"
   #:contract (a-ftype (a-var-type "start-value" N) (Red-of N N N))
   #:args '(("start-value" #f))
   #:return (Red-of N N N)]{
 
-Like ◊pyret-id{difference}, except the starting value is specified, instead
+Like @pyret-id{difference}, except the starting value is specified, instead
 of defaulting to 0.
 
-◊examples{
+@examples{
 # calculates velocity of a dropping ball
 import tables at T
 ball-info = table: pos-y
@@ -504,14 +504,14 @@ end
 
 }
 
-◊value["running-mean" (Red-of N N N)]
+@value["running-mean" (Red-of N N N)]
 
 Creates a new column  where the
 value in each row is equal to the
-mean of ◊italic{all} values in the designated column in the current row and
+mean of @italic{all} values in the designated column in the current row and
 above.
 
-◊examples{
+@examples{
 import tables as T
 my-grades = table: score :: Number
   row: 87
@@ -533,14 +533,14 @@ check:
 end
 }
 
-◊value["running-max" (Red-of N N N)]
-◊value["running-min" (Red-of N N N)]
+@value["running-max" (Red-of N N N)]
+@value["running-min" (Red-of N N N)]
 
 Creates a new column that contains the maximum
 or minimum value in the selected column in the current row or
 above.
 
-◊examples{
+@examples{
 import tables as T
 some-numbers = table: n :: Number
   row: 4
@@ -565,25 +565,25 @@ end
 }
 
 
-◊function["running-fold"
+@function["running-fold"
   #:contract (a-ftype (a-var-type "start-value" "Result") (a-var-type "combiner" (p-a-arrow "Result" "Col" "Result")) (Red-of "Result" "Col" "Result"))
   #:args '(("start-value" #f) ("combiner" #f))
   #:return (Red-of "Result" "Col" "Result")]{}
 
-◊function["running-reduce"
+@function["running-reduce"
   #:contract (a-ftype (a-var-type "combiner" (p-a-arrow "Col" "Col" "Col")) (Red-of "Col" "Col" "Col"))
   #:args '(("combiner" #f))
   #:return (Red-of "Col" "Col" "Col")]
                                             
-◊pyret{running-fold} and ◊pyret{running-reduce} allow you
+@pyret{running-fold} and @pyret{running-reduce} allow you
 to specify a function used to calculate
 the value in the new column, based on a running calculation of all the
 values in the selected column in the current row and above.
 
-The difference between ◊pyret{running-fold} and ◊pyret{running-reduce} is
-that ◊pyret{running-fold} requires an explicit ◊tt{start-value}.
+The difference between @pyret{running-fold} and @pyret{running-reduce} is
+that @pyret{running-fold} requires an explicit @tt{start-value}.
                                             
-◊examples{
+@examples{
 import tables as T
 count-if-driver = T.running-fold(0,
   lam(sum, col): if col >= 16: 1 + sum else: sum end end)
@@ -626,35 +626,35 @@ end
 
 }
 
-While the reducers found in the ◊tt{tables} module should cover most all
+While the reducers found in the @tt{tables} module should cover most all
 use cases, there may be times when one would like to create a reducer of their
 own. To do so, one must construct an object of the following type:                                          
 
-◊type-spec["Reducer" (list "Acc" "InVal" "OutVal")]{
-◊red-method["one"
+@type-spec["Reducer" (list "Acc" "InVal" "OutVal")]{
+@red-method["one"
   #:contract (a-ftype  (a-var-type "value-from-column" "InVal") (a-tuple "Acc" "OutVal"))
   #:args '(("self" #f) ("value-from-column" #f))
   #:return (a-tuple "Acc" "OutVal")]
-◊red-method["reduce"
+@red-method["reduce"
   #:contract (a-ftype (a-var-type "accumulator" "Acc") (a-var-type "value-from-column" "InVal") (a-tuple "Acc" "OutVal"))
   #:args '(("self" #f) ("accumulator" #f) ("value-from-column" #f))
   #:return (a-tuple "Acc" "OutVal")]
 
 
-Reducers are essentially descriptions of folds (in the list ◊pyret-id["fold" "lists"]
+Reducers are essentially descriptions of folds (in the list @pyret-id["fold" "lists"]
 sense) over table columns. The way reducers are called by the language
 runtime is as follows: the value(s) from the first row are passed to the
-reducer's ◊pyret-method["Reducer" "reducer" "one"] method, which should return a tuple containing both
+reducer's @pyret-method["Reducer" "reducer" "one"] method, which should return a tuple containing both
 any accumulated information needed for the fold and the value which should
 be placed in the new column in that row. The remaining rows are then
-sequentially populated using the reducer's ◊pyret-method["Reducer" "reducer" "reduce"] method, which is
-identical to the ◊pyret-method["Reducer" "reducer" "one"] method except that it receives an additional
+sequentially populated using the reducer's @pyret-method["Reducer" "reducer" "reduce"] method, which is
+identical to the @pyret-method["Reducer" "reducer" "one"] method except that it receives an additional
 argument which is the previously mentioned accumulated information from the
 previous row.
 
-To illustrate, a ◊pyret{running-mean} reducer which is equivalent to the
-one provided by the ◊tt{tables} module could be implemented as follows:
-◊examples{
+To illustrate, a @pyret{running-mean} reducer which is equivalent to the
+one provided by the @tt{tables} module could be implemented as follows:
+@examples{
 import tables as T
 running-mean :: T.Reducer<{Number; Number}, Number, Number> = {
   one: lam(n): {{n; 1}; n} end,
@@ -666,13 +666,13 @@ running-mean :: T.Reducer<{Number; Number}, Number, Number> = {
 }
 
 
-  ◊section[#:tag "s:tables:comparing"]{Comparing Tables}
+  @section[#:tag "s:tables:comparing"]{Comparing Tables}
 
 The order of both rows and columns are part of a table value.  To be considered
 equal, tables need to have all the same rows and columns, with the rows and
 columns appearing in the same order.
 
-◊section[#:tag "s:tables:methods"]{Advanced Table Manipulation}
+@section[#:tag "s:tables:methods"]{Advanced Table Manipulation}
 
 The operations listed above come with a significant restriction: all column
 names must also be valid identifier names. In addition, column names are always
@@ -682,7 +682,7 @@ over them.
 To see why this is a significant restriction, consider this (non-working)
 example:
 
-◊examples{
+@examples{
 fun sieve-by-large-number(t :: Table, colname :: String) -> Table:
   doc: ```Return a new table containing the rows of t whose column
           named by the string provided for colname have value greater than
@@ -704,9 +704,9 @@ end
 
 We may well want to write this if we have a number of tables, all of which we
 want to sieve by the same criteria. However, it isn't possible to abstract over
-a column name using ◊tt{sieve}: the program above conflates the identifier
-◊tt{colname} with the column name ◊tt{colname}. As a result, that program gives
-an error that the ◊tt{colname} in the query shadows the ◊tt{colname} that's a
+a column name using @tt{sieve}: the program above conflates the identifier
+@tt{colname} with the column name @tt{colname}. As a result, that program gives
+an error that the @tt{colname} in the query shadows the @tt{colname} that's a
 parameter of the function.
 
 Pyret provides facilities for writing programs like the above, they are simply
@@ -715,31 +715,31 @@ operations are useful for building abstractions over tables and for creating
 tables programmatically.
 
 
-◊type-spec["Row" (list)]{
+@type-spec["Row" (list)]{
 
 The type of all row values.
 }
 
-◊collection-doc["raw-row" #:fields (list (a-var-type "elt" (a-tuple S "Col"))) #:return Row]
+@collection-doc["raw-row" #:fields (list (a-var-type "elt" (a-tuple S "Col"))) #:return Row]
 
-Takes a sequence of tuples and constructs a ◊pyret-id["Row"] value. Note that
+Takes a sequence of tuples and constructs a @pyret-id["Row"] value. Note that
 the type for each column may be different. The constructed row can be added to
-appropriate tables by using the table methods like ◊pyret-method["Table" "table"
+appropriate tables by using the table methods like @pyret-method["Table" "table"
 "add-row"].
 
 It is often preferable to construct rows for an existing table by using the
-◊pyret-method["Table" "table" "row"] method, which avoids typing out the names of each
+@pyret-method["Table" "table" "row"] method, which avoids typing out the names of each
 column for each created row, and provides built-in checking for the count of
 columns.
 
-◊row-method["get-column-names"
+@row-method["get-column-names"
   #:contract (a-ftype (L-of S))
   #:args '((self #f))
   #:return (L-of S)]
 
 Produces a list of strings containing the names of the columns in the row.
 
-◊examples{
+@examples{
 include tables
 check:
   r = [raw-row: {"city"; "NYC"}, {"pop"; 8500000}]
@@ -747,17 +747,17 @@ check:
 end
 }
 
-◊row-method["get-value"
+@row-method["get-value"
   #:contract (a-ftype (a-var-type "col-name" S) "Col")
   #:args '((self #f) ("col-name" #f))
   #:return "Col"]
 
 Consumes the name of a column, and produces the corresponding value. Results in
-an error if the value isn't found. Square-bracket (◊tt{[]}) accessor syntax
-uses ◊tt{get-value}, which is often more pleasant to write than writing out
-◊tt{get-value} fully.
+an error if the value isn't found. Square-bracket (@tt{[]}) accessor syntax
+uses @tt{get-value}, which is often more pleasant to write than writing out
+@tt{get-value} fully.
 
-◊examples{
+@examples{
 include tables
 check:
   r = [raw-row: {"city"; "NYC"}, {"pop"; 8500000}]
@@ -766,26 +766,26 @@ check:
 end
 }
 
-◊row-method["get"
+@row-method["get"
   #:contract (a-ftype (a-var-type "col-name" S) (O-of "Col"))
   #:args '((self #f) ("col-name" #f))
   #:return (O-of "Col")]
 
-Consumes the name of a column, and produces a ◊pyret-id["some" "option"]
-containing the corresponding value if it's present, or ◊pyret-id["none"
+Consumes the name of a column, and produces a @pyret-id["some" "option"]
+containing the corresponding value if it's present, or @pyret-id["none"
 "option"] if it isn't.
 
 
-◊type-spec["Table" (list)]{
+@type-spec["Table" (list)]{
 
 The type of all tables.
 }
 
-◊collection-doc["table-from-rows" #:fields (list (a-var-type "elt" Row)) #:return Table]
+@collection-doc["table-from-rows" #:fields (list (a-var-type "elt" Row)) #:return Table]
 
-A collection constructor that creates tables from ◊pyret-id["Row"] values.
+A collection constructor that creates tables from @pyret-id["Row"] values.
 
-◊examples{
+@examples{
 include tables
 check:
   t = [table-from-rows:
@@ -799,15 +799,15 @@ check:
 end
 }
 
-◊collection-doc["table-from-columns"
+@collection-doc["table-from-columns"
                      #:args (list (a-var-type "elt" (a-tuple "String" (L-of "A"))))
                      #:return Table]
 
 A collection constructor that creates tables from columns, where each column is
-specified as a tuple of its name (as a ◊pyret-id["String" "<global>"]) and a
-◊pyret-id["List" "lists"] of its values.
+specified as a tuple of its name (as a @pyret-id["String" "<global>"]) and a
+@pyret-id["List" "lists"] of its values.
 
-◊examples{
+@examples{
 include tables
 check:
   t = [table-from-columns:
@@ -821,15 +821,15 @@ check:
 end
 }
 
-◊function["table-from-column"
+@function["table-from-column"
     #:contract (a-ftype (a-var-type "column-name" S) (a-var-type "values" (L-of "A")) Table)
     #:args '(("column-name" #f) ("values" #f))
     #:return Table]{
 
 A function that creates a table of a single column from a column name, given as
-a ◊pyret-id["String" "<global>"] and a ◊pyret-id["List" "lists"] of values.
+a @pyret-id["String" "<global>"] and a @pyret-id["List" "lists"] of values.
 
-◊examples{
+@examples{
 include tables
 check:
   col = range(0, 100)
@@ -844,23 +844,23 @@ end
     }
 
 
-◊table-method["length"
+@table-method["length"
   #:contract (a-ftype N)
   #:args '(("self" #f))
   #:return N]
 
 Evaluates to the number of rows in the table.
 
-◊table-method["row"
+@table-method["row"
   #:contract (a-arrow Table "Col1" "Col2" "..." "ColN" Row)
   #:args '(("self" #f) ("col-1" #f) ("col-2" #f) ("..." #f) ("col-n" #f))
   #:return Row]
 
 Consumes one value for each column in the table, and produces a
-◊pyret-id["Row"] value where each provided value is associated with the
+@pyret-id["Row"] value where each provided value is associated with the
 appropriate column.
 
-◊examples{
+@examples{
 include tables
 check:
   t = table: city, pop
@@ -873,19 +873,19 @@ end
 }
 
 
-◊table-method["build-column"
+@table-method["build-column"
   #:contract (a-ftype (a-var-type "colname" S) (a-var-type "compute-new-val" (p-a-arrow Row "Col")) Table)
   #:args '(("self" #f) ("colname" #f) ("compute-new-val" #f))
   #:return Table]
 
 Consumes an existing table, and produces a new
-table containing an additional column with the given ◊tt{colname}, using
-◊tt{compute-new-val} to produce the values for that column, once for each row.
+table containing an additional column with the given @tt{colname}, using
+@tt{compute-new-val} to produce the values for that column, once for each row.
 
-Here, ◊tt{Col} is the type of the new column, determined by the type of value
-the ◊tt{compute-new-val} function returns.
+Here, @tt{Col} is the type of the new column, determined by the type of value
+the @tt{compute-new-val} function returns.
 
-◊examples{
+@examples{
 check:
   foods = table: name, grams, calories
     row: "Fries", 200, 500
@@ -904,7 +904,7 @@ check:
 end
 }
 
-◊examples{
+@examples{
 fun add-index(t):
   var ix = -1
   t.build-column("index", lam(_) block:
@@ -926,18 +926,18 @@ where:
 end
 }
 
-◊table-method["add-column"
+@table-method["add-column"
   #:contract (a-ftype (a-var-type "colname" S) (a-var-type "new-vals" (L-of "Col")) Table)
   #:args '(("self" #f) ("colname" #f) ("new-vals" #f))
   #:return Table]
 
 Consumes a column name and a list of values, and produces a new table with a
-columng of the given name added, containing the values from ◊tt{new-vals}.
+columng of the given name added, containing the values from @tt{new-vals}.
 
-It is an error if the length of ◊tt{new-vals} is different than the length of
+It is an error if the length of @tt{new-vals} is different than the length of
 the table.
 
-◊table-method["add-row"
+@table-method["add-row"
   #:contract (a-ftype  (a-var-type "r" Row) Table)
   #:args '(("self" #f) ("r" #f))
   #:return Table]
@@ -945,7 +945,7 @@ the table.
 Consumes a table and a row to add, and produces a new table with the given row
 at the end.
 
-◊table-method["row-n"
+@table-method["row-n"
   #:contract (a-ftype (a-var-type  "index" N) Row)
   #:args '(("self" #f) ("index" #f))
   #:return Row]
@@ -953,7 +953,7 @@ at the end.
 Consumes an index, and returns the row at that index. The first row has index
 0.
 
-◊table-method["get-column"
+@table-method["get-column"
   #:contract (a-ftype (a-var-type "colname" S) (L-of "Col"))
   #:args '(("self" #f) ("colname" #f))
   #:return (L-of "Col")]
@@ -961,15 +961,15 @@ Consumes an index, and returns the row at that index. The first row has index
 Consumes the name of a column, and returns the values in that column as a
 list.
 
-◊table-method["column"
+@table-method["column"
   #:contract (a-ftype (a-var-type "colname" S) (L-of "Col"))
   #:args '(("self" #f) ("colname" #f))
   #:return (L-of "Col")]
 
-This method is no longer used (use ◊pyret-method["Table" "table" "get-column"]
+This method is no longer used (use @pyret-method["Table" "table" "get-column"]
 instead).
 
-◊table-method["column-n"
+@table-method["column-n"
   #:contract (a-ftype (a-var-type "index" N) (L-of "Col"))
   #:args '(("self" #f) ("index" #f))
   #:return (L-of "Col")]
@@ -977,7 +977,7 @@ instead).
 Consumes an index, and returns the values in the column at that index as a
 list. The first column has index 0.
 
-◊table-method["column-names"
+@table-method["column-names"
   #:contract (a-ftype  (L-of S))
   #:args '(("self" #f))
   #:return (L-of S)]
@@ -985,7 +985,7 @@ list. The first column has index 0.
 Consumes no arguments, and produces the names of the columns of the table as a
 list.
 
-◊table-method["all-rows"
+@table-method["all-rows"
   #:contract (a-ftype (L-of Row))
   #:args '(("self" #f))
   #:return (L-of Row)]
@@ -993,7 +993,7 @@ list.
 Consumes no arguments, and produces a list containing all the rows in the
 table, in the same order they appear in the table.
 
-◊table-method["all-columns"
+@table-method["all-columns"
   #:contract (a-ftype (L-of (L-of "Col")))
   #:args '(("self" #f))
   #:return (L-of (L-of "Col"))]
@@ -1001,26 +1001,26 @@ table, in the same order they appear in the table.
 Consumes no arguments, and produces a list of lists of the column values. The
 columns and values appear in the same order they appeared in the table.
 
-◊table-method["filter"
+@table-method["filter"
   #:contract (a-ftype (a-var-type "predicate" (p-a-arrow Row B)) Table)
   #:args '(("self" #f) ("predicate" #f))
   #:return Table]
 
 Consumes a predicate over rows, and produces a new table containing only the
-rows for which the predicate returned ◊pyret{true}.
+rows for which the predicate returned @pyret{true}.
 
-◊table-method["filter-by"
+@table-method["filter-by"
   #:contract (a-ftype (a-var-type "colname" S) (a-var-type "predicate" (p-a-arrow "Col" B)) Table)
   #:args '(("self" #f) ("colname" #f) ("predicate" #f))
   #:return Table]
 
 Consumes a column name and a predicate over the values of that column, and
 produces a new table containing only the rows for which the predicate returned
-◊pyret{true} for that column. The type of argument to the predicate has the
+@pyret{true} for that column. The type of argument to the predicate has the
 type of values in the specified column.
 
 
-◊table-method["order-by"
+@table-method["order-by"
   #:contract (a-ftype (a-var-type "colname" S) (a-var-type "asc" B) Table)
   #:args '(("self" #f) ("colname" #f) ("asc" #f))
   #:return Table]
@@ -1028,11 +1028,11 @@ type of values in the specified column.
 Consumes a column name and whether to order ascending or descending, and
 produces a new table with the rows ordered by the given column.
 
-If ◊pyret{true} is given for ◊tt{asce}, the rows are ordered lowest to
-highest by the given column (e.g. using ◊pyret{<}), and if ◊pyret{false} is
+If @pyret{true} is given for @tt{asce}, the rows are ordered lowest to
+highest by the given column (e.g. using @pyret{<}), and if @pyret{false} is
 given, they are ordered highest to lowest.
 
-◊table-method["order-by-columns"
+@table-method["order-by-columns"
   #:contract (a-ftype (a-var-type "cols" (L-of (a-tuple S B))) Table)
   #:args '(("self" #f) ("cols" #f))
   #:return Table]
@@ -1042,26 +1042,26 @@ according to the given ordering.
 
 Each element of the list must be a two-element tuple, containing a column name
 and a boolean indicating whether to order ascending or not. As with
-◊pyret-method["Table" "table" "order-by"], ◊pyret{true} indicates ascending and
-◊pyret{false} indicates descending.
+@pyret-method["Table" "table" "order-by"], @pyret{true} indicates ascending and
+@pyret{false} indicates descending.
 
-◊table-method["increasing-by"
+@table-method["increasing-by"
   #:contract (a-ftype (a-var-type "colname" S) Table)
   #:args '(("self" #f) ("colname" #f))
   #:return Table]
 
-Like ◊pyret-method["Table" "table" "order-by"], but ◊tt{ascending} is always
-◊pyret{true}.
+Like @pyret-method["Table" "table" "order-by"], but @tt{ascending} is always
+@pyret{true}.
 
-◊table-method["decreasing-by"
+@table-method["decreasing-by"
   #:contract (a-ftype (a-var-type "colname" S) Table)
   #:args '(("self" #f) ("colname" #f))
   #:return Table]
 
-Like ◊pyret-method["Table" "table" "order-by"], but ◊tt{ascending} is always
-◊pyret{false}.
+Like @pyret-method["Table" "table" "order-by"], but @tt{ascending} is always
+@pyret{false}.
 
-◊table-method["select-columns"
+@table-method["select-columns"
   #:contract (a-ftype (a-var-type "colnames" (L-of S)) Table)
   #:args '(("self" #f) ("colnames" #f))
   #:return Table]
@@ -1071,7 +1071,7 @@ columns. The order of the values in the columns is the same as in the input
 table, and the order of the columns themselves is the order they are given in
 the list.
 
-◊table-method["transform-column"
+@table-method["transform-column"
   #:contract (a-ftype (a-var-type "colname" S) (a-var-type "f" (p-a-arrow "ColIn" "ColOut")) Table)
   #:args '(("self" #f) ("colname" "") ("f" ""))
   #:return Table]
@@ -1080,7 +1080,7 @@ Consumes a column name and a transformation function, and produces a new table
 where the given function has been applied to all values in the specified
 column of the original table.
 
-◊table-method["rename-column"
+@table-method["rename-column"
   #:contract (a-ftype (a-var-type "old-colname" S) (a-var-type "new-colname" S) Table)
   #:args '(("self" #f) ("old-colname" "") ("new-colname" ""))
   #:return Table]
@@ -1090,26 +1090,26 @@ been renamed to the new name.  The new name must not already be present in the
 table's columns.
 
 This operation is essentially the following:
-◊pyret-block{
+@pyret-block{
 fun rename-column(t :: Table, old-colname :: String, new-colname :: String):
   new-t = t.build-column(new-colname, lam(r): r["old-colname"] end)
   new-t.drop("old-colname")
 end
 }
 except that in this code, the renamed column will appear as the rightmost column of
-the result, whereas using ◊pyret-method["Table" "table" "rename-column"], the renamed
+the result, whereas using @pyret-method["Table" "table" "rename-column"], the renamed
 column will stay in its original place.
 
-◊table-method["stack"
+@table-method["stack"
   #:contract (a-ftype (a-var-type "bot-table" Table) Table)
   #:args '(("self" #f) ("bot-table" ""))
   #:return Table]
 
 Returns a new table containing all the rows of this table, followed by all the
-rows of the ◊pyret{bot-table}.  The column names must all match, but the order
+rows of the @pyret{bot-table}.  The column names must all match, but the order
 is not required to match.
 
-◊examples{
+@examples{
 check:
   t1 = table: city, pop
     row: "Houston", 2400000
@@ -1131,7 +1131,7 @@ check:
 end
 }
     
-◊table-method["empty"
+@table-method["empty"
   #:contract (a-ftype Table)
   #:args '(("self" #f))
   #:return Table]
@@ -1139,7 +1139,7 @@ end
 Returns a new table with the same columns as this table, but with all rows
 removed.
 
-◊examples{
+@examples{
 check:
   t1 = table: city, pop
     row: "Houston", 2400000
@@ -1149,7 +1149,7 @@ check:
 end
 }
 
-◊table-method["drop"
+@table-method["drop"
   #:contract (a-ftype (a-var-type "colname" S) Table)
   #:args '(("self" #f) ("colname" ""))
   #:return Table]
@@ -1157,7 +1157,7 @@ end
 Returns a new table that contains all the data from this table except the
 specified column.
 
-◊examples{
+@examples{
 check:
   t1 = table: city, pop
     row: "Houston", 2400000
@@ -1175,17 +1175,17 @@ end
 }
 
 
-◊;{
-◊table-method["join"
+@;{
+@table-method["join"
   #:contract (a-arrow Table S Table S Table)
   #:args '(("self" #f) ("col1" #f) ("t2" #f) ("col2" #f))
   #:return Table]
   
 Creates a new table containing all the rows from the tables where the column
-◊tt{col1} in ◊tt{t1} is equal to the column ◊tt{col2} in ◊tt{t2}. If the column 
+@tt{col1} in @tt{t1} is equal to the column @tt{col2} in @tt{t2}. If the column 
 
 
-◊examples{
+@examples{
 check:
   t1 = table: city, pop
     row: "Houston", 2400000
