@@ -57,6 +57,34 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-02 — fast-mode dicts via shared dictProto: geomean 0.82, JSC-checked)
+
+V8 keeps null-prototype objects in dictionary mode ("used as a map"), so every
+record dict — `Object.create(null)` — paid hash-table reads and NameDictionary
+construction. All dicts now share `dictProto`, one EMPTY null-proto prototype
+object: the chain contributes nothing (`in`/for-in/keys/missing-read identical),
+but V8's heuristic keys on a *null* prototype specifically, so dicts get fast
+shape-tracked properties. Records additionally compile to adopt-ready
+`{__proto__: R.$dictProto, …}` literals that the PObject constructor takes
+without its normalizing copy (sound: dicts are immutable post-construction —
+brandClone already aliases them; `__proto__` is reserved in Pyret so no record
+key can collide). Runtime allocation sites use `Object.create(dictProto)`, which
+measured fast on BOTH engines; data-value dicts (`Object.create(variant base)`)
+were already fast-mode on V8 and are untouched.
+
+**Engine-specificity check (bun 1.3 / JSC):** JSC has no dictionary-mode
+penalty (reads identical either way) and allocates dynamic-`__proto__` literals
+~3.5× slower than Object.create — hence the Object.create choice for runtime
+sites. Interleaved pre-vs-post A/B under bun: NEUTRAL (orbital medians equal,
+boids-data slightly better). And promise beats frozen cont under JSC too:
+orbital 0.97, plagiarism 0.82, boids-data 0.58, dtree 0.88. The optimization is
+V8-targeted but nowhere V8-regressive.
+
+N=5 table (node22, all 16 parity OK): geomean ≈ **0.82**, every bench ≤ 1.01 —
+orbital-compute **0.78**, plagiarism 0.67, matrix 0.80, dtree 0.84, spell 0.81,
+orbital-render 0.87, boids-data 0.69, vec-methods 0.47. Suites 13346 + 12914
+green; exec wall-clock ~178s med (holds).
+
 ## Results (2026-07-02 — flat-dict object extension: ALL 16 BENCHES ≤ 1.01, geomean 0.84)
 
 Runtime-side follow-on to the few-suspend profile finding (orbital's residual =
