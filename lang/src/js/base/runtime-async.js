@@ -52,20 +52,35 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
        @return {!PBase} the extended object
     */
     function extendWith(fields) {
+      // Build the extended dict FLAT in one pass instead of layering a
+      // prototype level (Object.create(this.dict)) and letting the PObject
+      // constructor re-flatten it: that paid a shadow-filtering for-in over
+      // the two-level chain plus a second full copy per extension (hot in
+      // record-update loops, e.g. per-tick physics `o.{pos: …, vel: …}`).
+      // Enumeration order is preserved exactly: the old path's final dict was
+      // populated own-props-first-then-unshadowed-proto, which is the same
+      // extension-fields-then-remaining-old-fields sequence built here (torepr
+      // / cross-backend parity pin that order).
+      var oldDict = this.dict;
       /**@type {!Object}*/
-      var newDict = Object.create(this.dict);
+      var newDict = Object.create(null);
       /**@type {!boolean}*/
       var allNewFields = true;
 
       for(var field in fields) {
-        if(hasProperty(this.dict, field)) {
+        if(hasProperty(oldDict, field)) {
           allNewFields = false;
-          if(isRef(this.dict[field])) {
+          if(isRef(oldDict[field])) {
             thisRuntime.ffi.throwMessageException("Cannot update ref field " + field);
           }
         }
 
         newDict[field] = fields[field];
+      }
+      for(var field in oldDict) {
+        if(!hasProperty(newDict, field)) {
+          newDict[field] = oldDict[field];
+        }
       }
 
       var newObj = this.updateDict(newDict, allNewFields);
@@ -1405,7 +1420,12 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     //PObject.prototype = Object.create(PBase.prototype);
 
     PObject.prototype.updateDict = function(dict, keepBrands) {
-      var newObj = new PObject(dict, keepBrands ? this.brands : noBrands);
+      // The only caller is extendWith, which now hands over a flat
+      // null-prototype own-props-only dict -- adopt it directly instead of
+      // paying the constructor's normalizing copy. (`for (p in null)` in the
+      // constructor is spec-legal and iterates zero times.)
+      var newObj = new PObject(null, keepBrands ? this.brands : noBrands);
+      newObj.dict = dict;
       return newObj;
     }
 
@@ -1413,7 +1433,10 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
        @return {!PObject} With same dict
     */
     PObject.prototype.brand = function(b) {
-      var newObj = makeObject(this.dict);
+      // brandClone shares this.dict on the clone, so the old
+      // makeObject(this.dict) here did a full dict copy that was immediately
+      // discarded. Allocate an empty shell instead.
+      var newObj = new PObject(null, noBrands);
       return brandClone(newObj, this, b);
     };
 
