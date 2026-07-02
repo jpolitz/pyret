@@ -113,5 +113,5 @@ as ◊form, ◊type-spec, etc.
 
 Although these are seemingly local directives, they do use some of
 the utilities from the pollenboots' pollen.rkt in order to
-automatically insert anchort points for the cross-references,
+automatically insert anchor points for the cross-references,
 glossary entries, and ToC entries.
