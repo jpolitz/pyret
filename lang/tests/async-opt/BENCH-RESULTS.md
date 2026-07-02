@@ -88,6 +88,31 @@ bench-plagiarism (1.36) the one per-bench outlier. Remaining profile buckets if 
 needed: `(anon)` 17% vs 5.4% (driveGen closures/.then/module anons), equalHelp ~1.7×
 cont's samples (unexplained), raw_array_* still plain async fns.
 
+**Final curated table with the runtime fixes embedded (N=5 medians, all parity-OK):**
+
+| benchmark | cont | prom | p/c |
+|---|---|---|---|
+| vec-methods        | 2.70 | 1.35 | **0.50** |
+| boids-compute-data | 2.70 | 1.97 | **0.73** |
+| car-compute        | 2.72 | 2.02 | **0.74** |
+| spell              | 3.20 | 2.77 | **0.87** |
+| matrix             | 3.09 | 2.92 | **0.94** |
+| dtree              | 1.14 | 1.07 | **0.94** |
+| kmeans             | 1.69 | 1.62 | 0.96 |
+| boids-compute      | 2.60 | 2.52 | **0.97** |
+| boids-raster       | 2.61 | 2.54 | 0.97 |
+| seam               | 2.17 | 2.11 | 0.97 |
+| lander             | 2.61 | 2.56 | 0.98 |
+| car-render         | 2.78 | 2.74 | 0.99 |
+| orbital-render     | 2.95 | 2.97 | 1.01 |
+| orbital-ems        | 1.66 | 1.69 | 1.02 |
+| orbital-compute    | 2.19 | 2.43 | 1.11 |
+| plagiarism         | 1.31 | 1.85 | **1.41** |
+
+**Geomean 0.92; 14/16 at ≤1.02.** orbital-compute has ranged 1.03/1.07/1.11 across
+tables (cont's own median swung 2.19–2.29) — honest read: ~5–10% behind, physics
+integrator with polymorphic arithmetic on record fields. plagiarism holds 1.36–1.41.
+
 ## Results (2026-07-01 — generator machinery: gen-functions + tail-flat; promise beats frozen cont)
 
 The two machinery levers that finally moved the backend gap itself (not the static opts):
