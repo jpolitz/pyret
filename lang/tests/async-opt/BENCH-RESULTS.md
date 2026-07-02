@@ -57,6 +57,48 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-02 — flat-dict object extension: ALL 16 BENCHES ≤ 1.01, geomean 0.84)
+
+Runtime-side follow-on to the few-suspend profile finding (orbital's residual =
+`extendWith` + for-in machinery, not call machinery). `extendWith` used to build
+the extended dict as a prototype layer (`Object.create(this.dict)`) and let the
+PObject constructor's normalizing for-in flatten it — every `.{ }` record update
+paid a shadow-filtering for-in over a two-level chain, a second full copy, and an
+intermediate object. It now builds the flat null-proto dict in one merged pass
+and `updateDict` adopts it without re-copying; `.brand()` also stops making a
+dict copy that brandClone immediately discarded. Enumeration order, brand
+keep/strip, ref-field errors, and the updateDict dispatch are preserved exactly
+(suite pins all of them). Promise runtime only — frozen cont keeps the old path.
+
+| benchmark | cont med | prom med | p/c | prior p/c |
+|---|---|---|---|---|
+| spell              | 3.15 | 2.58 | **0.82** | 0.86 |
+| car-compute        | 2.72 | 2.05 | **0.75** | 0.73 |
+| car-render         | 2.72 | 2.57 | **0.94** | 0.96 |
+| lander             | 2.56 | 2.58 | 1.01 | 0.98 |
+| **orbital-compute**| 2.39 | 2.01 | **0.84** | **1.12** |
+| orbital-ems        | 1.71 | 1.72 | 1.01 | 1.04 |
+| orbital-render     | 3.03 | 2.86 | **0.94** | 1.02 |
+| boids-compute      | 2.67 | 2.60 | **0.97** | 0.93 |
+| boids-compute-data | 2.79 | 1.93 | **0.69** | 0.68 |
+| boids-raster       | 2.69 | 2.49 | **0.93** | 0.99 |
+| vec-methods        | 2.82 | 1.34 | **0.48** | 0.48 |
+| matrix             | 3.21 | 2.65 | **0.83** | 0.80 |
+| dtree              | 1.25 | 1.02 | **0.82** | 0.91 |
+| kmeans             | 1.79 | 1.60 | **0.89** | 0.93 |
+| plagiarism         | 1.37 | 0.95 | **0.69** | 0.74 |
+| seam               | 2.16 | 2.13 | **0.99** | 0.97 |
+
+**Geomean p/c ≈ 0.84 (was 0.87); ALL 16 benches ≤ 1.01 — the curated table has
+no non-parity bench left.** orbital-compute (the last holdout) 1.12 → 0.84.
+Suites: 13346 + exec 12914 green on rebuilt jarrs (runtime is EMBEDDED in
+standalones — every promise jarr was rebuilt); exec wall-clock med 185.3s →
+180.9s. Possible future lever in the same bucket: null-proto record dicts are
+dictionary-mode in V8 (the megamorphic Keyed*IC ticks); codegen-emitted
+`{__proto__: null, …}` literals or an own-property `in`-free representation
+could de-megamorphize reads, but that's a codegen + whole-runtime `in`-semantics
+audit, not a runtime patch.
+
 ## Results (2026-07-02 — few-suspend tier: PLAGIARISM CRACKED, 1.22 → 0.74; geomean 0.87)
 
 The third compilation tier between tail-flat and the generator (`-no-few-suspend`
