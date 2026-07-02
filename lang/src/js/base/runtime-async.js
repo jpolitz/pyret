@@ -63,7 +63,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       // / cross-backend parity pin that order).
       var oldDict = this.dict;
       /**@type {!Object}*/
-      var newDict = Object.create(null);
+      var newDict = Object.create(dictProto);
       /**@type {!boolean}*/
       var allNewFields = true;
 
@@ -223,7 +223,30 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return fields;
     }
 
-    var emptyDict = Object.create(null);
+    // The shared prototype of every Pyret object dict. V8 keeps null-PROTO
+    // objects in dictionary mode (they read as "used as a map"), which makes
+    // every field read a hash lookup and every dict allocation build a
+    // NameDictionary; an object whose prototype is this EMPTY null-proto
+    // object gets fast (shape-tracked) properties instead, while `in`,
+    // for-in, Object.keys, and missing-read-is-undefined behave exactly as
+    // they did with null-proto dicts because the chain contributes nothing.
+    // getFields' chain walk sees one extra empty level and terminates at
+    // null as before, and the structural-equality fast path
+    // (getProto(l) === getProto(r)) keeps firing for all dict pairs.
+    // NOTHING may ever add a property to this object.
+    //
+    // Engine notes (measured, node22 V8 12.x / bun 1.3 JSC): V8's
+    // dictionary-mode heuristic keys on a NULL prototype specifically, so
+    // both Object.create(dictProto)+assigns and `{__proto__: dictProto, …}`
+    // literals get fast properties. JSC has no such penalty for reads, but
+    // dynamic-`__proto__` LITERALS take a slow allocation path (~3.5x
+    // Object.create). So runtime allocation sites use Object.create(dictProto)
+    // (fast on both engines); only codegen-emitted adopt-ready literals use
+    // the `{__proto__: R.$dictProto, …}` form, where the adopted copy it
+    // saves costs about the same as JSC's slower literal allocation.
+    var dictProto = Object.create(null);
+
+    var emptyDict = Object.create(dictProto);
 
     /**Tests whether an object is a PBase
        @param {Object} obj the item to test
@@ -1409,10 +1432,21 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
        @extends {PBase}
     */
     function PObject(dict, brands) {
-      /**@type {!Object.<string, !PBase>}*/
-      this.dict = Object.create(null);
-      for (var prop in dict)
-        this.dict[prop] = dict[prop];
+      // A dict whose prototype is ALREADY dictProto is one of ours -- either
+      // a codegen-emitted `{__proto__: R.$dictProto, …}` literal (always
+      // fresh) or an existing object's dict (safe to alias: dicts are never
+      // mutated after construction; brandClone already shares them). Adopt it
+      // and skip the normalizing copy. Anything else (FFI/trove literals with
+      // Object.prototype, null from the internal shell constructors) gets the
+      // classic copy onto a fresh fast-mode dict.
+      if (dict !== null && getProto(dict) === dictProto) {
+        /**@type {!Object.<string, !PBase>}*/
+        this.dict = dict;
+      } else {
+        this.dict = Object.create(dictProto);
+        for (var prop in dict)
+          this.dict[prop] = dict[prop];
+      }
 
       /**@type {!Object.<string, Boolean>}*/
       this.brands = brands;
@@ -1420,12 +1454,9 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     //PObject.prototype = Object.create(PBase.prototype);
 
     PObject.prototype.updateDict = function(dict, keepBrands) {
-      // The only caller is extendWith, which now hands over a flat
-      // null-prototype own-props-only dict -- adopt it directly instead of
-      // paying the constructor's normalizing copy. (`for (p in null)` in the
-      // constructor is spec-legal and iterates zero times.)
-      var newObj = new PObject(null, keepBrands ? this.brands : noBrands);
-      newObj.dict = dict;
+      // extendWith hands over a fresh dictProto-based flat dict; the
+      // constructor's adopt path takes it without a copy.
+      var newObj = new PObject(dict, keepBrands ? this.brands : noBrands);
       return newObj;
     }
 
@@ -6308,6 +6339,10 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       'getTuple'         : getTuple,
       'checkTupleBind'   : checkTupleBind,
       'extendObj'        : extendObj,
+      // The shared dict prototype, exported ONLY so codegen can emit
+      // adopt-ready `{__proto__: R.$dictProto, …}` dict literals (see
+      // PObject); not part of the FFI surface.
+      '$dictProto'       : dictProto,
 
       'hasBrand' : hasBrand,
       'getMaker' : getMaker,
