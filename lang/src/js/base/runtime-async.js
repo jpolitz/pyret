@@ -5614,6 +5614,13 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var funToReturn = makeFunction(function() {
         var theFun = makeConstructor();
         funToReturn.app = theFun;
+        // ALSO patch appBody: the safe-for-space token driver (drive()) calls
+        // r.fn.appBody, not .app -- without this, every TAIL call to a data
+        // constructor bypassed the .app patch and re-synthesized the
+        // constructor through Function() (measured ~5% of the whole exec
+        // suite). app === appBody also keeps PFunction.brand on the plain
+        // makeFunction path, which is right (constructors mint no tokens).
+        funToReturn.appBody = theFun;
         //CONSOLE.log("Calling constructor ", quote(reflName), arguments);
         //CONSOLE.trace();
         var res = theFun.apply(null, arguments)

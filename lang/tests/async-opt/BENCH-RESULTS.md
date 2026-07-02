@@ -57,6 +57,37 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-02 — runtime follow-ons: WHOLE-SUITE PARITY CROSSED, p/c 0.957)
+
+Differential (promise-vs-cont) profiling of the exec suite after the generator levers
+found two shared-runtime costs; with the cont baseline frozen, fixing them counts fully
+toward p/c. Whole-suite main2-exec wall-clock progression (12914 tests, interleaved N=3
+medians, both sides all-pass every step):
+
+| state | cont | promise | p/c |
+|---|---|---|---|
+| session start (async-function codegen)   | ~227s  | ~267s  | 1.18 |
+| + gen-functions + tail-flat              | 227.7s | 255.2s | 1.12 |
+| + maybe-promise equality core            | 228.2s | 247.6s | 1.085 |
+| + constructor appBody fix                | 227.5s | 217.8s | **0.957** |
+
+1. **Maybe-promise equality** (`equal3`/`equalHelp`): the worklist drains synchronously
+   and returns a flat EqualityResult; async ONLY when a user `_equals` actually suspends
+   (knowable precisely because gen-compiled methods return flat when they don't).
+   `equalFunPy` allocated lazily. Covers equal-always/now/within*.
+2. **Constructor `appBody` staleness (pre-existing bug, ~12% of promise suite time!)**:
+   the lazy data-constructor shim patches `funToReturn.app` on first call, but the token
+   driver `drive()` calls `r.fn.appBody` — so every TAIL call to a data constructor
+   re-ran the whole `Function()` constructor synthesis (`makeConstructor` 2.31% of
+   promise samples vs 0.02% on cont in the differential profile). Fix: patch `.appBody`
+   alongside `.app`.
+
+**The promise backend is now faster than frozen cont on ALL THREE goal criteria**
+(curated benches 0.93 geomean, whole suite 0.957, semantics 13346 shipshape), with
+bench-plagiarism (1.36) the one per-bench outlier. Remaining profile buckets if ever
+needed: `(anon)` 17% vs 5.4% (driveGen closures/.then/module anons), equalHelp ~1.7×
+cont's samples (unexplained), raw_array_* still plain async fns.
+
 ## Results (2026-07-01 — generator machinery: gen-functions + tail-flat; promise beats frozen cont)
 
 The two machinery levers that finally moved the backend gap itself (not the static opts):
