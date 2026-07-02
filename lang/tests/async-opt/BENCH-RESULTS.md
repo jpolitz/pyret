@@ -60,6 +60,26 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-02 — Stage 1: string-dict library pass)
+
+`string-dict.js` read fast path on frozen dicts + typeof-gated arg checks +
+keys-list memo (see the commit message for the full design). Promise caches
+cleaned, all 16 promise jarrs + suite jarrs rebuilt (freshness pinned by
+grepping `$fastDict` in the new jarrs and its absence in the frozen-cont ones).
+Cont side stays the frozen Stage-0 build.
+
+- O1 cont byte-parity: 16/16 PASS (trove JS is embedded verbatim by both
+  compilers, so parity is structural — confirmed anyway).
+- O3 promise main2: 13176 green (covers string-dict error messages and
+  key-order pins). O4 exec: 12751 green.
+- O5 N=5: parity 16/16, geomean **1.130** (from 1.134). The pass is a targeted
+  one: **plagiarism 1.46 → 1.24** (its hot path is freeze() + per-key
+  get-value/has-key dot-products). dtree printed 1.16 in the table but an
+  interleaved re-check gives p/c ≈ 1.06 with cont itself wobbling 1.12–1.31 —
+  same-day noise band, not a regression. Remaining big ratios (matrix 1.33,
+  boids 1.29, orbital-compute 1.26) are call-machinery/representation costs —
+  later stages' territory.
+
 ## Results (2026-07-02 — re-derivation Stage 0: baseline lockdown at 8674a57c6)
 
 Session-frozen baseline for the re-derivation campaign (branch `promise-rederive`;
