@@ -96,6 +96,8 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Disable generator-based maybe-promise compilation of non-flat functions (promise backend; emit plain async functions instead, for A/B measurement)')],
     ['no-tail-flat',
       C.flag(C.once, 'Disable the tail-flat synchronous compilation attempt for non-flat functions whose only suspension points are tail calls (promise backend; for A/B measurement)')],
+    ['no-few-suspend',
+      C.flag(C.once, 'Disable the few-suspend synchronous compilation attempt for non-flat functions with at most 2 mid-body suspension points (promise backend; keep them generator-compiled, for A/B measurement)')],
     ['no-ann-elision',
       C.flag(C.once, 'Disable redundant annotation-check elimination (promise backend; keep every _checkAnn the type-flow analysis proved dead, for A/B measurement)')],
     ['no-method-flatness',
@@ -156,6 +158,7 @@ export function main(args: string[]): number {
     const directFields = !r.has('no-direct-fields');
     const genFunctions = !r.has('no-gen-functions');
     const tailFlat = !r.has('no-tail-flat');
+    const fewSuspend = !r.has('no-few-suspend');
     const annElision = !r.has('no-ann-elision');
     const methodFlatness = !r.has('no-method-flatness');
     const importedMethodFlat = !r.has('no-imported-method-flat');
@@ -244,6 +247,7 @@ export function main(args: string[]): number {
           directFields: directFields,
           genFunctions: genFunctions,
           tailFlat: tailFlat,
+          fewSuspend: fewSuspend,
           annElision: annElision,
           methodFlatness: methodFlatness,
           importedMethodFlat: importedMethodFlat,
@@ -292,6 +296,7 @@ export function main(args: string[]): number {
         directFields: directFields,
         genFunctions: genFunctions,
         tailFlat: tailFlat,
+        fewSuspend: fewSuspend,
         annElision: annElision,
         methodFlatness: methodFlatness,
         importedMethodFlat: importedMethodFlat,

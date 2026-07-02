@@ -2169,6 +2169,210 @@ export function hasAwaits(body: J.JBlockT): boolean {
   return awaitScanFound;
 }
 
+// ---------- Few-suspend tier: sync compilation of small mid-body-suspend functions ----------
+//
+// A non-flat function whose only suspension points are a FEW mid-body
+// conditional awaits (the hot shape of tiny dict/list callbacks: one or two
+// polymorphic ops on untyped values) still pays a generator + IteratorResult
+// allocation per call in the generator tier, which dominates its cost. This
+// tier rewrites the (failed) tail-flat attempt's body -- whose only remaining
+// awaits are exactly those mid-body sites -- into a PLAIN SYNCHRONOUS function:
+// each suspend site becomes `if (R.iT(t)) return t.then(<continuation over the
+// live vars>)`, with the synchronous path falling through to the SAME
+// continuation statements in place. Zero allocation unless a suspension
+// actually happens; on suspension, the `.then` mirrors `await` semantics
+// exactly (a rejected thenable skips the continuation and rejects the result,
+// which is rethrow-at-the-suspend-point for a body with no try/catch; a throw
+// inside the continuation rejects, matching driveGen's onF discipline; a
+// continuation returning a thenable is flattened by `.then`).
+//
+// The continuation statements are ALIASED, not deep-copied: the J AST is
+// immutable and printing is pure, so the same statement nodes appearing on
+// both the fall-through path and inside the resume closure is safe (the
+// js-dag-utils per-JFun caches key on fun id with identical bodies, so even
+// they stay consistent). Exactly one of the two paths executes at runtime.
+// `var` declarations inside an aliased continuation become locals of the
+// closure on the resume path and (hoisted) locals of the function on the sync
+// path; both copies are self-contained, and vars declared BEFORE the suspend
+// site are shared via ordinary closure capture, so assignments to them (e.g. a
+// captured accumulator) behave identically on either path.
+//
+// Membership is decided BY CONSTRUCTION, like tail-flat: take the tail-flat
+// attempt's compiled body (tail calls already return their result directly;
+// the fuel check is already the sync `return checkPause().then(re-enter)`
+// form), attempt this rewrite, and fall back to the generator tier unless
+//   - every remaining await matches a recognized pattern (below),
+//   - at most FS_MAX_SUSPENDS continuation-capturing sites (the "manual
+//     promise.then appraisal" bound: more than that, write it async),
+//   - at most FS_MAX_BRANCHES branches interacting with suspension (branches
+//     containing no awaits are opaque, freely-aliased units and don't count),
+//   - every captured continuation is expressible as statements: no bare
+//     `continue`/`break` (the TCO loop back-edge), no await inside a
+//     try/catch/switch/for (a resume `return` would escape the construct),
+//   - the rewritten body scans await-free (the same safety net tail-flat uses).
+//
+// Recognized await patterns:
+//   A. `if (R.iT(t)) { t = await t; }`   (callAndMaybeAwait residue)
+//        -> `if (R.iT(t)) return t.then(function(t) { <rest> });`
+//   B. `x = await E;`                    (non-flat ann checks, method funnel)
+//        -> `var f = E; if (R.iT(f)) return f.then(function(f) { x = f; <rest> }); x = f;`
+//   C. `return await E;`                 (tail awaits outside tail-flat's cases)
+//        -> `return E;` -- the Awaitable ABI permits returning the thenable
+//        directly (the caller conditional-awaits it), exactly like tail-flat's
+//        tail calls. No continuation is captured, so C doesn't count toward
+//        FS_MAX_SUSPENDS.
+const FS_MAX_SUSPENDS = 2;
+const FS_MAX_BRANCHES = 1;
+
+function fsStmtsOf(b: J.JBlockT): J.JStmt[] {
+  return b instanceof J.JBlock1 ? [b.stmt] : (b as J.JBlock).stmts.toList();
+}
+
+function fsStmtHasAwait(s: J.JStmt): boolean {
+  return hasAwaits(jBlock1(s));
+}
+
+// Would this statement, if reached, never fall through to the one after it?
+function fsTerminal(s: J.JStmt): boolean {
+  if (s instanceof J.JReturn || s instanceof J.JThrow
+    || s instanceof J.JContinue || s instanceof J.JBreak) { return true; }
+  if (s instanceof J.JIf) { return fsBlockTerminal(s.consq) && fsBlockTerminal(s.alt); }
+  return false;
+}
+function fsBlockTerminal(b: J.JBlockT): boolean {
+  const st = fsStmtsOf(b);
+  return st.length > 0 && fsTerminal(st[st.length - 1]);
+}
+
+// May these statements be aliased into a resume closure? A bare `continue` or
+// `break` would rebind to (or escape) the wrong construct there; a whole
+// while/for is self-contained, and breaks inside a switch are switch-local
+// (but a `continue` inside a switch still targets the enclosing loop).
+function fsCopyableStmt(s: J.JStmt, breakOk: boolean): boolean {
+  if (s instanceof J.JContinue) { return false; }
+  if (s instanceof J.JBreak) { return breakOk; }
+  if (s instanceof J.JIf1) { return fsCopyableBlock(s.consq, breakOk); }
+  if (s instanceof J.JIf) { return fsCopyableBlock(s.consq, breakOk) && fsCopyableBlock(s.alt, breakOk); }
+  if (s instanceof J.JTryCatch) { return fsCopyableBlock(s.body, breakOk) && fsCopyableBlock(s.catch, breakOk); }
+  if (s instanceof J.JSwitch) {
+    return s.branches.toList().every((c: J.JCaseT) => fsCopyableBlock(c.body, true));
+  }
+  return true; // JWhile/JFor are self-contained; JVar/JExpr/JReturn/JThrow are plain
+}
+function fsCopyableBlock(b: J.JBlockT, breakOk: boolean): boolean {
+  return fsStmtsOf(b).every((s) => fsCopyableStmt(s, breakOk));
+}
+
+// Pattern A matcher: `if (R.iT(t)) { t = await t; }` for a single name t.
+function fsMatchAwaitIf(s: J.JStmt): { t: A.Name; cond: J.JExprT } | undefined {
+  if (!(s instanceof J.JIf1)) { return undefined; }
+  const st = fsStmtsOf(s.consq);
+  if (st.length !== 1) { return undefined; }
+  const inner = st[0];
+  if (!(inner instanceof J.JExpr) || !(inner.expr instanceof J.JAssign)) { return undefined; }
+  const asgn = inner.expr;
+  if (!(asgn.rhs instanceof J.JAwait) || !(asgn.rhs.expr instanceof J.JId)) { return undefined; }
+  const t = asgn.name;
+  if (asgn.rhs.expr.id.key() !== t.key()) { return undefined; }
+  const cond = s.cond;
+  if (!(cond instanceof J.JMethod) || cond.meth !== 'iT'
+    || !(cond.obj instanceof J.JId) || cond.obj.id.key() !== RUNTIME.id.key()) { return undefined; }
+  const condArgs = cond.args.toList();
+  if (condArgs.length !== 1 || !(condArgs[0] instanceof J.JId)
+    || (condArgs[0] as J.JId).id.key() !== t.key()) { return undefined; }
+  return { t: t, cond: cond };
+}
+
+export function tryFewSuspend(body: J.JBlockT): J.JBlockT | undefined {
+  let suspends = 0;
+  let branches = 0;
+  let failed = false;
+
+  function resumeClosure(param: A.Name, contStmts: J.JStmt[]): J.JExprT {
+    return jFun(J.nextJFunId(), '', clist<A.Name>(param), jBlock(CL.from_list(contStmts)));
+  }
+
+  function contOk(tail: J.JStmt[] | null): tail is J.JStmt[] {
+    return tail !== null && tail.length > 0 && tail.every((s) => fsCopyableStmt(s, false));
+  }
+
+  // Rewrite one statement given `tail`, the (already-rewritten) statements
+  // that execute after it -- or null when that continuation is not
+  // expressible (it reaches a loop back-edge or an unknown join).
+  function rwStmt(s: J.JStmt, tail: J.JStmt[] | null): J.JStmt[] {
+    const pa = fsMatchAwaitIf(s);
+    if (pa !== undefined) {
+      suspends = suspends + 1;
+      if (!contOk(tail)) { failed = true; return [s]; }
+      return [jIf1(pa.cond, jBlock1(jReturn(
+        jMethod(jId(pa.t), 'then', clist<J.JExprT>(resumeClosure(pa.t, tail))))))];
+    }
+    if (s instanceof J.JExpr && s.expr instanceof J.JAssign && s.expr.rhs instanceof J.JAwait) {
+      suspends = suspends + 1;
+      if (!contOk(tail)) { failed = true; return [s]; }
+      const x = s.expr.name;
+      const tmp = freshId(compilerName('fs'));
+      return [
+        jVar(tmp, s.expr.rhs.expr),
+        jIf1(jIsThenable(tmp), jBlock1(jReturn(jMethod(jId(tmp), 'then',
+          clist<J.JExprT>(resumeClosure(tmp, [jExpr(jAssign(x, jId(tmp))) as J.JStmt, ...tail])))))),
+        jExpr(jAssign(x, jId(tmp))),
+      ];
+    }
+    if (s instanceof J.JReturn && s.expr instanceof J.JAwait) {
+      return [jReturn(s.expr.expr)];
+    }
+    if (!fsStmtHasAwait(s)) { return [s]; }
+    if (s instanceof J.JIf1) {
+      branches = branches + 1;
+      return [jIf1(s.cond, rwBlock(s.consq, tail))];
+    }
+    if (s instanceof J.JIf) {
+      branches = branches + 1;
+      return [jIf(s.cond, rwBlock(s.consq, tail), rwBlock(s.alt, tail))];
+    }
+    if (s instanceof J.JWhile) {
+      // The (sole, function-level) TCO loop: awaits inside have no statement-
+      // expressible continuation past the back-edge, so they must locally
+      // terminate (ANF branch arms end in return) or the rewrite bails.
+      return [jWhile(s.cond, rwBlock(s.body, null))];
+    }
+    // An await inside any other construct (switch/try/for/var/return-expr
+    // shapes we don't recognize): a resume `return` would escape it. Bail.
+    failed = true;
+    return [s];
+  }
+
+  function rwStmts(stmts: J.JStmt[], cont: J.JStmt[] | null): J.JStmt[] {
+    let tail: J.JStmt[] | null = cont;
+    let out: J.JStmt[] = [];
+    for (let i = stmts.length - 1; i >= 0; i--) {
+      const rs = rwStmt(stmts[i], tail);
+      out = [...rs, ...out];
+      if (rs.length > 0 && fsTerminal(rs[rs.length - 1])) {
+        // Nothing after this statement is reachable from before it; trimming
+        // keeps resume closures minimal and drops unreachable back-edges.
+        tail = [...rs];
+      } else if (tail !== null) {
+        tail = [...rs, ...tail];
+      }
+      // else: tail stays null (continuation still not expressible)
+    }
+    return out;
+  }
+
+  function rwBlock(b: J.JBlockT, cont: J.JStmt[] | null): J.JBlockT {
+    return jBlock(CL.from_list(rwStmts(fsStmtsOf(b), cont)));
+  }
+
+  const result = rwBlock(body, []);
+  if (failed || suspends > FS_MAX_SUSPENDS || branches > FS_MAX_BRANCHES) {
+    return undefined;
+  }
+  if (hasAwaits(result)) { return undefined; }
+  return result;
+}
+
 // Build the generator + sync-wrapper pair for a non-flat function body.
 // Returns the statements declaring both (the wrapper is bound to `temp`, which
 // is what gets wrapped by makeFunction/makeMethod etc.). Shape:
@@ -2242,16 +2446,28 @@ export function compileALam(
   // generator compilation. canMintTokens=false (a sync body never mints; the
   // returned-promise pass-through IS the O(1) bounce). Fail-safe on any
   // internal error.
-  if (!isFlat && compiler.options.genFunctions && compiler.options.tailFlat) {
+  if (!isFlat && compiler.options.genFunctions && (compiler.options.tailFlat || compiler.options.fewSuspend)) {
     try {
       const tfBody = compileFunBody(l, freshId(compilerName('step')), temp,
         ext(compiler, { allowTco: true, tokenCell: new Map(), tailFlatMode: true }),
         effectiveArgs, len, body, true, false, false, false);
       if (!hasAwaits(tfBody)) {
-        const theFun = jFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, tfBody);
-        return cExp(
-          rtMethod('makeFunction', clist<J.JExprT>(jId(temp), jStr(name))),
-          clist<J.JStmt>(jVar(temp, theFun)));
+        if (compiler.options.tailFlat) {
+          const theFun = jFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, tfBody);
+          return cExp(
+            rtMethod('makeFunction', clist<J.JExprT>(jId(temp), jStr(name))),
+            clist<J.JStmt>(jVar(temp, theFun)));
+        }
+      } else if (compiler.options.fewSuspend) {
+        // Few-suspend tier (see tryFewSuspend): the residual awaits become
+        // sync `if (R.iT(t)) return t.then(<rest>)` resume sites.
+        const fsBody = tryFewSuspend(tfBody);
+        if (fsBody !== undefined) {
+          const theFun = jFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, fsBody);
+          return cExp(
+            rtMethod('makeFunction', clist<J.JExprT>(jId(temp), jStr(name))),
+            clist<J.JStmt>(jVar(temp, theFun)));
+        }
       }
     } catch (e) {
       // fall through to the generator compilation
@@ -2823,13 +3039,20 @@ export class CompilerVisitor {
     const isFlat = this.flatMethods.has(node);
     const funArgs = CL.map_list((a: N.ABind) => formalShadowName(a.id), node.args);
     // Tail-flat attempt for methods -- same scheme as compile-a-lam.
-    if (!isFlat && this.options.genFunctions && this.options.tailFlat) {
+    if (!isFlat && this.options.genFunctions && (this.options.tailFlat || this.options.fewSuspend)) {
       try {
         const tfInner = compileFunBody(node.l, freshId(compilerName('step')), tempFull,
           ext(this, { allowTco: true, tokenCell: new Map(), tailFlatMode: true }),
           node.args, len, node.body, true, false, true, false);
+        let syncInner: J.JBlockT | undefined = undefined;
         if (!hasAwaits(tfInner)) {
-          const fullVar = jVar(tempFull, jFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, tfInner));
+          if (this.options.tailFlat) { syncInner = tfInner; }
+        } else if (this.options.fewSuspend) {
+          // Few-suspend tier (see tryFewSuspend) -- same scheme as compile-a-lam.
+          syncInner = tryFewSuspend(tfInner);
+        }
+        if (syncInner !== undefined) {
+          const fullVar = jVar(tempFull, jFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, syncInner));
           const methodExpr = len < 9
             ? rtMethod('makeMethod' + String(len - 1), clist<J.JExprT>(jId(tempFull), jStr(node.name)))
             : rtMethod('makeMethodN', clist<J.JExprT>(jId(tempFull), jStr(node.name)));

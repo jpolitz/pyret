@@ -1131,6 +1131,21 @@ export interface CompileOptions {
   // which also unwinds sync tail chains (all frames return the same promise, so
   // a bounce collapses to O(1) heap). Zero per-call allocation on the hot path.
   tailFlat: boolean;
+  // Few-suspend compilation attempt (promise backend codegen only; requires
+  // genFunctions; the third tier between tail-flat and the generator). On by
+  // default; -no-few-suspend disables for A/B. A non-flat function whose
+  // tail-flat attempt leaves only a FEW mid-body conditional awaits (at most 2
+  // suspend sites and 1 suspension-relevant branch -- the "could I write this
+  // as a manual promise.then" bound) is emitted as a PLAIN synchronous
+  // function: each suspend site becomes `if (R.iT(t)) return t.then(<the rest
+  // of the body>)`, with the synchronous path falling through to the same
+  // statements in place. Zero per-call allocation unless a suspension actually
+  // happens -- this removes the generator + IteratorResult allocation that
+  // dominates tiny hot callbacks (dict-update / fold lambdas doing one or two
+  // polymorphic ops). Decided by construction (attempt the rewrite, fall back
+  // to the generator tier if the body doesn't fit); fuel is charged on entry
+  // via the same needsPause/checkPause protocol as tail-flat.
+  fewSuspend: boolean;
   // Redundant annotation-check elimination driven by the upper-bound type-flow
   // analysis (type-flow.ts; promise backend only). On by default; -no-ann-elision
   // disables it for A/B measurement. When the analysis proves an `:: T` bind's
@@ -1228,6 +1243,7 @@ export const defaultCompileOptions: CompileOptions = {
   directFields: true,
   genFunctions: true,
   tailFlat: true,
+  fewSuspend: true,
   annElision: true,
   methodFlatness: true,
   importedMethodFlat: true,
