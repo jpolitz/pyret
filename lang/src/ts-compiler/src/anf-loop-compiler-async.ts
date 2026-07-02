@@ -311,6 +311,14 @@ export function getDictField(obj: J.JExprT, field: J.JExprT): J.JExprT {
   return jBracket(jDot(obj, 'dict'), field);
 }
 
+// Direct method dispatch: `obj.dict["m"].full_meth(obj, ...args)`. Sound only when
+// `m` is statically known to be a genuine method in obj's dict (see type-flow
+// directMethodOk); obj must be a JId (evaluated once). Mirrors what
+// maybeMethodCall's isMethod branch does, without the runtime-helper funnel.
+function directMethodDispatch(obj: J.JExprT, methname: string, args: CList<J.JExprT>): J.JExprT {
+  return jApp(jDot(getDictField(obj, jStr(methname)), 'full_meth'), clCons(obj, args));
+}
+
 // Use when we're sure the field will exist
 export function getFieldUnsafe(obj: J.JExprT, field: J.JExprT, locExpr: J.JExprT): J.JExprT {
   return jApp(getFieldLoc, clist(obj, field, locExpr));
@@ -967,7 +975,12 @@ export function compileAppAsync(compiler: CompilerVisitor, l: Loc, f: N.AVal, ar
       compiler.tokenCell.set('minted', true);
       const token = rtMethod('tailCall', clist<J.JExprT>(fCe.exp, jList(false, compiledArgs)));
       return clAppend(pre, clAppend(fnCheck, clSing(jReturn(token))));
-    } else if (isFlat) {
+    } else if (isFlat || (compiler.tailFlatMode === true && compiler.tailPos)) {
+      // Flat callee: direct call, no await. Tail-flat mode, tail position: the
+      // callee's result (flat value or thenable) is returned DIRECTLY -- the
+      // Awaitable ABI permits both, the caller's conditional await handles
+      // either, and every intermediate tail frame returns the SAME promise, so
+      // a synchronous tail chain collapses to O(1) heap when it suspends.
       const callBase = app(l, fCe.exp, compiledArgs);
       return clAppend(pre, clAppend(fnCheck, compiler.complete(callBase)));
     } else {
@@ -996,7 +1009,31 @@ export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.
   // a tail token (the call is bounded). maybeMethodCall still does the dynamic
   // dispatch; only the await is elided.
   const isFlatMeth = node !== undefined && compiler.flatMethodApps.has(node);
-  if (isFlatMeth) {
+  // Direct method dispatch (de-funnelled): `obj.dict["m"].full_meth(obj, args)`
+  // instead of `maybeMethodCall(obj, "m", ...)`. Fires when type-flow proved the
+  // receiver is a data value on which `m` is a genuine method (node.directMethod),
+  // so we skip the getColonFieldLoc/isMethod/isFunction funnel and give V8 a
+  // per-site constant-key call it can build an IC for. Handles every non-tail
+  // shape uniformly (flat -> no await; else conditional await); the safe-for-space
+  // tail-token path below still routes through maybeMethodTail.
+  if (node !== undefined && node.directMethod && !(compiler.mintsTokens && compiler.tailPos)) {
+    let objExpr = compiledObj;
+    let preDecls: CList<J.JStmt> = clEmpty;
+    if (!J.isJId(compiledObj)) {
+      const objId = freshId(compilerName('obj'));
+      preDecls = clSing<J.JStmt>(jVar(objId, compiledObj));
+      objExpr = jId(objId);
+    }
+    const call = wrapWithSrcnode(l, directMethodDispatch(objExpr, methname, compiledArgs));
+    if (isFlatMeth || (compiler.tailFlatMode === true && compiler.tailPos)) {
+      // Flat method: no await. Tail-flat tail position: return the result
+      // (value or thenable) directly -- see the compile-app-async analogue.
+      return clAppend(pre, clAppend(preDecls, compiler.complete(call)));
+    }
+    const t = freshId(compilerName('mans'));
+    return clAppend(pre, clAppend(preDecls, clAppend(callAndMaybeAwait(t, call), compiler.complete(jId(t)))));
+  }
+  if (isFlatMeth || (compiler.tailFlatMode === true && compiler.tailPos)) {
     let objExpr = compiledObj;
     let preDecls: CList<J.JStmt> = clEmpty;
     if (!J.isJId(compiledObj)) {
@@ -1263,7 +1300,13 @@ export function compileFunBody(
   _shouldReportErrorFrame: boolean,
   isFlat: boolean,
   isMethod: boolean,
-  canMintTokens: boolean
+  canMintTokens: boolean,
+  // When provided (generator-based compilation), the arity check is NOT emitted
+  // into the body but handed back to the caller, which places it in the sync
+  // wrapper function -- the check reads `arguments.length`, which inside the
+  // generator would count the wrapper's fixed-arity forwarding call, never the
+  // user's actual argument count.
+  arityOut?: { stmts: CList<J.JStmt> }
 ): J.JBlockT {
   // Detect whether a formal argument is captured by an inner lambda; if so we
   // cannot do explicit-loop TCO (the loop would clobber the captured binding).
@@ -1345,19 +1388,40 @@ export function compileFunBody(
   const copyFormalsToArgs: CList<J.JStmt> =
     noRealArgs ? clEmpty
       : CL.map_list2((formalArg: N.ABind, arg: N.ABind) => jVar(jsIdOf(arg.id), jId(formalArg.id)) as J.JStmt, formalArgs, args);
-  const arityStmts: CList<J.JStmt> =
+  let arityStmts: CList<J.JStmt> =
     optArity !== undefined
       ? (noRealArgs ? clEmpty : arityCheck(localCompiler.getLoc(l), optArity, isMethod))
       : clEmpty;
+  if (arityOut !== undefined) {
+    arityOut.stmts = arityStmts;
+    arityStmts = clEmpty;
+  }
   const profileEnter: CList<J.JStmt> =
     localCompiler.options.shouldProfile
       ? clSing<J.JStmt>(jExpr(rtMethod('profileEnter', clist(localCompiler.getLoc(l)))))
       : clEmpty;
   // The fast-path fuel check: only await (and unwind the JS stack) when needed.
+  // In tail-flat mode the function is synchronous, so instead of awaiting it
+  // RETURNS checkPause().then(re-enter): the whole sync tail chain unwinds by
+  // returning the same promise through every frame (O(1) heap for the bounce),
+  // and the .then re-enters this function with the CURRENT argument values
+  // (the real arg vars, which the explicit TCO loop may have reassigned).
+  // Re-entry re-runs the (idempotent) arity/ann checks; needsPause() consumed
+  // the fuel, so the re-entered call proceeds.
+  const tailFlatMode = compiler.tailFlatMode === true && !isFlat;
+  const reEnterArgs: CList<J.JExprT> = noRealArgs
+    ? CL.map_list((fa: N.ABind) => jId(fa.id) as J.JExprT, formalArgs)
+    : CL.from_list(args.map((a) => jId(jsIdOf(a.id)) as J.JExprT));
   const fuelCheck: CList<J.JStmt> =
     isFlat ? clEmpty
-      : clSing<J.JStmt>(jIf1(rtMethod('needsPause', clEmpty),
-        jBlock1(jExpr(jAwait(rtMethod('checkPause', clEmpty))))));
+      : tailFlatMode
+        ? clSing<J.JStmt>(jIf1(rtMethod('needsPause', clEmpty),
+          jBlock1(jReturn(jMethod(rtMethod('checkPause', clEmpty), 'then',
+            clSing<J.JExprT>(jFun(J.nextJFunId(), '',
+              clEmpty as CList<A.Name>,
+              jBlock1(jReturn(jApp(jId(constId(makeFunName(compiler, l))), reEnterArgs))))))))))
+        : clSing<J.JStmt>(jIf1(rtMethod('needsPause', clEmpty),
+          jBlock1(jExpr(jAwait(rtMethod('checkPause', clEmpty))))));
   // Argument annotation contracts. Emitted at the top of the loop body so they run
   // on initial entry AND on every explicit-loop TCO re-entry — the cont backend
   // resets step to 0 on a tail self-call, so it re-checks args too (parity). A flat
@@ -1841,7 +1905,7 @@ export function* compileCasesBranch(
       : jList(false, clEmpty);
     const compiledBranchFun =
       compileFunBody(branch.body.l, step, tempBranch,
-        ext(compiler, { allowTco: false, options: { ...compiler.options, shouldProfile: false } }),
+        ext(compiler, { allowTco: false, tailFlatMode: false, options: { ...compiler.options, shouldProfile: false } }),
         branchArgs, undefined, branch.body, true, false, false, false);
     const preamble = casesPreamble(compiler, compiledVal, branch, casesLoc);
     const derefFields = jExpr(jAssign(compiler.curAns, jMethod(compiledVal, '$app_fields', clist<J.JExprT>(jId(tempBranch), refBindsMask))));
@@ -2045,6 +2109,309 @@ export function* compileAApp(
   return yield* appCompiler(l, compiler, b, f, args, optBody, appInfo, isFn);
 }
 
+// ---------- Generator-based maybe-promise compilation of non-flat functions ----------
+//
+// An `async function` ALWAYS returns a Promise, even on the (overwhelmingly
+// common) dynamic path where its body never actually suspends -- so every call
+// to a non-flat callee costs a Promise allocation plus a microtask hop at the
+// caller's conditional await, cascading up the whole call chain. Instead we
+// compile the body as a `function*` (each former `await` becomes a `yield` of
+// the thenable) and emit a plain synchronous wrapper that drives it: when
+// nothing suspends, the wrapper returns the flat result directly -- no Promise,
+// no microtask, and the caller's `R.iT` check falls through, transitively
+// keeping the entire chain synchronous. On a genuine suspension (fuel pause or
+// a suspending callee) the body yields a thenable and the wrapper returns a
+// Promise via R.driveGen, which preserves the async ABI (functions return
+// Awaitables), the fuel-based JS-stack unwinding, interruptibility, and
+// `await` error semantics (a rejected thenable is thrown back into the body at
+// the yield point) exactly. The try/catch keeps the async-function guarantee
+// that a non-flat compiled function never throws synchronously -- arity and
+// contract failures reject instead (R.rejP), exactly as before.
+
+// Rewrite this function body's awaits into yields. Nested function exprs are
+// already fully compiled (inner lambdas/methods converted when built), so the
+// visitor does not descend into them. jLabel/jSourcenode/jRawCode/jBlock1 need
+// explicit handlers: the default map visitor lacks (or mis-implements) them.
+const awaitToYieldVisitor: any = ext(J.defaultMapVisitor as any, {
+  jAwait(node: J.JAwait): J.JExprT { return new J.JYield(node.expr.visit(this)); },
+  jFun(node: J.JFun): J.JExprT { return node; },
+  jAsyncFun(node: J.JAsyncFun): J.JExprT { return node; },
+  jGenFun(node: J.JGenFun): J.JExprT { return node; },
+  jSourcenode(node: J.JSourcenode): J.JExprT { return new J.JSourcenode(node.loc, node.uri, node.expr.visit(this)); },
+  jRawCode(node: J.JRawCode): J.JExprT { return node; },
+  jLabel(node: J.JLabel): J.JExprT { return node; },
+  jBlock1(node: J.JBlock1): J.JBlockT { return jBlock1(node.stmt.visit(this)); },
+});
+
+export function awaitsToYields(body: J.JBlockT): J.JBlockT {
+  return body.visit(awaitToYieldVisitor);
+}
+
+// Scan a compiled function body for any remaining JAwait. Used by the
+// tail-flat attempt: a body that compiled with zero awaits is a legal plain
+// synchronous function. Skips nested JAsyncFun/JGenFun (awaits/yields are
+// legal there) but DOES descend into nested sync JFun exprs -- an await inside
+// one is a would-be SyntaxError, and finding it forces the safe fallback.
+let awaitScanFound = false;
+const awaitScanVisitor: any = ext(J.defaultMapVisitor as any, {
+  jAwait(node: J.JAwait): J.JExprT { awaitScanFound = true; return node; },
+  jAsyncFun(node: J.JAsyncFun): J.JExprT { return node; },
+  jGenFun(node: J.JGenFun): J.JExprT { return node; },
+  jSourcenode(node: J.JSourcenode): J.JExprT { node.expr.visit(this); return node; },
+  jRawCode(node: J.JRawCode): J.JExprT { return node; },
+  jLabel(node: J.JLabel): J.JExprT { return node; },
+  jBlock1(node: J.JBlock1): J.JBlockT { node.stmt.visit(this); return node; },
+});
+
+export function hasAwaits(body: J.JBlockT): boolean {
+  awaitScanFound = false;
+  body.visit(awaitScanVisitor);
+  return awaitScanFound;
+}
+
+// ---------- Few-suspend tier: sync compilation of small mid-body-suspend functions ----------
+//
+// A non-flat function whose only suspension points are a FEW mid-body
+// conditional awaits (the hot shape of tiny dict/list callbacks: one or two
+// polymorphic ops on untyped values) still pays a generator + IteratorResult
+// allocation per call in the generator tier, which dominates its cost. This
+// tier rewrites the (failed) tail-flat attempt's body -- whose only remaining
+// awaits are exactly those mid-body sites -- into a PLAIN SYNCHRONOUS function:
+// each suspend site becomes `if (R.iT(t)) return t.then(<continuation over the
+// live vars>)`, with the synchronous path falling through to the SAME
+// continuation statements in place. Zero allocation unless a suspension
+// actually happens; on suspension, the `.then` mirrors `await` semantics
+// exactly (a rejected thenable skips the continuation and rejects the result,
+// which is rethrow-at-the-suspend-point for a body with no try/catch; a throw
+// inside the continuation rejects, matching driveGen's onF discipline; a
+// continuation returning a thenable is flattened by `.then`).
+//
+// The continuation statements are ALIASED, not deep-copied: the J AST is
+// immutable and printing is pure, so the same statement nodes appearing on
+// both the fall-through path and inside the resume closure is safe (the
+// js-dag-utils per-JFun caches key on fun id with identical bodies, so even
+// they stay consistent). Exactly one of the two paths executes at runtime.
+// `var` declarations inside an aliased continuation become locals of the
+// closure on the resume path and (hoisted) locals of the function on the sync
+// path; both copies are self-contained, and vars declared BEFORE the suspend
+// site are shared via ordinary closure capture, so assignments to them (e.g. a
+// captured accumulator) behave identically on either path.
+//
+// Membership is decided BY CONSTRUCTION, like tail-flat: take the tail-flat
+// attempt's compiled body (tail calls already return their result directly;
+// the fuel check is already the sync `return checkPause().then(re-enter)`
+// form), attempt this rewrite, and fall back to the generator tier unless
+//   - every remaining await matches a recognized pattern (below),
+//   - at most FS_MAX_SUSPENDS continuation-capturing sites (the "manual
+//     promise.then appraisal" bound: more than that, write it async),
+//   - at most FS_MAX_BRANCHES branches interacting with suspension (branches
+//     containing no awaits are opaque, freely-aliased units and don't count),
+//   - every captured continuation is expressible as statements: no bare
+//     `continue`/`break` (the TCO loop back-edge), no await inside a
+//     try/catch/switch/for (a resume `return` would escape the construct),
+//   - the rewritten body scans await-free (the same safety net tail-flat uses).
+//
+// Recognized await patterns:
+//   A. `if (R.iT(t)) { t = await t; }`   (callAndMaybeAwait residue)
+//        -> `if (R.iT(t)) return t.then(function(t) { <rest> });`
+//   B. `x = await E;`                    (non-flat ann checks, method funnel)
+//        -> `var f = E; if (R.iT(f)) return f.then(function(f) { x = f; <rest> }); x = f;`
+//   C. `return await E;`                 (tail awaits outside tail-flat's cases)
+//        -> `return E;` -- the Awaitable ABI permits returning the thenable
+//        directly (the caller conditional-awaits it), exactly like tail-flat's
+//        tail calls. No continuation is captured, so C doesn't count toward
+//        FS_MAX_SUSPENDS.
+const FS_MAX_SUSPENDS = 2;
+const FS_MAX_BRANCHES = 1;
+
+function fsStmtsOf(b: J.JBlockT): J.JStmt[] {
+  return b instanceof J.JBlock1 ? [b.stmt] : (b as J.JBlock).stmts.toList();
+}
+
+function fsStmtHasAwait(s: J.JStmt): boolean {
+  return hasAwaits(jBlock1(s));
+}
+
+// Would this statement, if reached, never fall through to the one after it?
+function fsTerminal(s: J.JStmt): boolean {
+  if (s instanceof J.JReturn || s instanceof J.JThrow
+    || s instanceof J.JContinue || s instanceof J.JBreak) { return true; }
+  if (s instanceof J.JIf) { return fsBlockTerminal(s.consq) && fsBlockTerminal(s.alt); }
+  return false;
+}
+function fsBlockTerminal(b: J.JBlockT): boolean {
+  const st = fsStmtsOf(b);
+  return st.length > 0 && fsTerminal(st[st.length - 1]);
+}
+
+// May these statements be aliased into a resume closure? A bare `continue` or
+// `break` would rebind to (or escape) the wrong construct there; a whole
+// while/for is self-contained, and breaks inside a switch are switch-local
+// (but a `continue` inside a switch still targets the enclosing loop).
+function fsCopyableStmt(s: J.JStmt, breakOk: boolean): boolean {
+  if (s instanceof J.JContinue) { return false; }
+  if (s instanceof J.JBreak) { return breakOk; }
+  if (s instanceof J.JIf1) { return fsCopyableBlock(s.consq, breakOk); }
+  if (s instanceof J.JIf) { return fsCopyableBlock(s.consq, breakOk) && fsCopyableBlock(s.alt, breakOk); }
+  if (s instanceof J.JTryCatch) { return fsCopyableBlock(s.body, breakOk) && fsCopyableBlock(s.catch, breakOk); }
+  if (s instanceof J.JSwitch) {
+    return s.branches.toList().every((c: J.JCaseT) => fsCopyableBlock(c.body, true));
+  }
+  return true; // JWhile/JFor are self-contained; JVar/JExpr/JReturn/JThrow are plain
+}
+function fsCopyableBlock(b: J.JBlockT, breakOk: boolean): boolean {
+  return fsStmtsOf(b).every((s) => fsCopyableStmt(s, breakOk));
+}
+
+// Pattern A matcher: `if (R.iT(t)) { t = await t; }` for a single name t.
+function fsMatchAwaitIf(s: J.JStmt): { t: A.Name; cond: J.JExprT } | undefined {
+  if (!(s instanceof J.JIf1)) { return undefined; }
+  const st = fsStmtsOf(s.consq);
+  if (st.length !== 1) { return undefined; }
+  const inner = st[0];
+  if (!(inner instanceof J.JExpr) || !(inner.expr instanceof J.JAssign)) { return undefined; }
+  const asgn = inner.expr;
+  if (!(asgn.rhs instanceof J.JAwait) || !(asgn.rhs.expr instanceof J.JId)) { return undefined; }
+  const t = asgn.name;
+  if (asgn.rhs.expr.id.key() !== t.key()) { return undefined; }
+  const cond = s.cond;
+  if (!(cond instanceof J.JMethod) || cond.meth !== 'iT'
+    || !(cond.obj instanceof J.JId) || cond.obj.id.key() !== RUNTIME.id.key()) { return undefined; }
+  const condArgs = cond.args.toList();
+  if (condArgs.length !== 1 || !(condArgs[0] instanceof J.JId)
+    || (condArgs[0] as J.JId).id.key() !== t.key()) { return undefined; }
+  return { t: t, cond: cond };
+}
+
+export function tryFewSuspend(body: J.JBlockT): J.JBlockT | undefined {
+  let suspends = 0;
+  let branches = 0;
+  let failed = false;
+
+  function resumeClosure(param: A.Name, contStmts: J.JStmt[]): J.JExprT {
+    return jFun(J.nextJFunId(), '', clist<A.Name>(param), jBlock(CL.from_list(contStmts)));
+  }
+
+  function contOk(tail: J.JStmt[] | null): tail is J.JStmt[] {
+    return tail !== null && tail.length > 0 && tail.every((s) => fsCopyableStmt(s, false));
+  }
+
+  // Rewrite one statement given `tail`, the (already-rewritten) statements
+  // that execute after it -- or null when that continuation is not
+  // expressible (it reaches a loop back-edge or an unknown join).
+  function rwStmt(s: J.JStmt, tail: J.JStmt[] | null): J.JStmt[] {
+    const pa = fsMatchAwaitIf(s);
+    if (pa !== undefined) {
+      suspends = suspends + 1;
+      if (!contOk(tail)) { failed = true; return [s]; }
+      return [jIf1(pa.cond, jBlock1(jReturn(
+        jMethod(jId(pa.t), 'then', clist<J.JExprT>(resumeClosure(pa.t, tail))))))];
+    }
+    if (s instanceof J.JExpr && s.expr instanceof J.JAssign && s.expr.rhs instanceof J.JAwait) {
+      suspends = suspends + 1;
+      if (!contOk(tail)) { failed = true; return [s]; }
+      const x = s.expr.name;
+      const tmp = freshId(compilerName('fs'));
+      return [
+        jVar(tmp, s.expr.rhs.expr),
+        jIf1(jIsThenable(tmp), jBlock1(jReturn(jMethod(jId(tmp), 'then',
+          clist<J.JExprT>(resumeClosure(tmp, [jExpr(jAssign(x, jId(tmp))) as J.JStmt, ...tail])))))),
+        jExpr(jAssign(x, jId(tmp))),
+      ];
+    }
+    if (s instanceof J.JReturn && s.expr instanceof J.JAwait) {
+      return [jReturn(s.expr.expr)];
+    }
+    if (!fsStmtHasAwait(s)) { return [s]; }
+    if (s instanceof J.JIf1) {
+      branches = branches + 1;
+      return [jIf1(s.cond, rwBlock(s.consq, tail))];
+    }
+    if (s instanceof J.JIf) {
+      branches = branches + 1;
+      return [jIf(s.cond, rwBlock(s.consq, tail), rwBlock(s.alt, tail))];
+    }
+    if (s instanceof J.JWhile) {
+      // The (sole, function-level) TCO loop: awaits inside have no statement-
+      // expressible continuation past the back-edge, so they must locally
+      // terminate (ANF branch arms end in return) or the rewrite bails.
+      return [jWhile(s.cond, rwBlock(s.body, null))];
+    }
+    // An await inside any other construct (switch/try/for/var/return-expr
+    // shapes we don't recognize): a resume `return` would escape it. Bail.
+    failed = true;
+    return [s];
+  }
+
+  function rwStmts(stmts: J.JStmt[], cont: J.JStmt[] | null): J.JStmt[] {
+    let tail: J.JStmt[] | null = cont;
+    let out: J.JStmt[] = [];
+    for (let i = stmts.length - 1; i >= 0; i--) {
+      const rs = rwStmt(stmts[i], tail);
+      out = [...rs, ...out];
+      if (rs.length > 0 && fsTerminal(rs[rs.length - 1])) {
+        // Nothing after this statement is reachable from before it; trimming
+        // keeps resume closures minimal and drops unreachable back-edges.
+        tail = [...rs];
+      } else if (tail !== null) {
+        tail = [...rs, ...tail];
+      }
+      // else: tail stays null (continuation still not expressible)
+    }
+    return out;
+  }
+
+  function rwBlock(b: J.JBlockT, cont: J.JStmt[] | null): J.JBlockT {
+    return jBlock(CL.from_list(rwStmts(fsStmtsOf(b), cont)));
+  }
+
+  const result = rwBlock(body, []);
+  if (failed || suspends > FS_MAX_SUSPENDS || branches > FS_MAX_BRANCHES) {
+    return undefined;
+  }
+  if (hasAwaits(result)) { return undefined; }
+  return result;
+}
+
+// Build the generator + sync-wrapper pair for a non-flat function body.
+// Returns the statements declaring both (the wrapper is bound to `temp`, which
+// is what gets wrapped by makeFunction/makeMethod etc.). Shape:
+//   var $gen = function* NAME($a, $b) { <body, awaits->yields> };
+//   var <temp> = function NAME($a, $b) {
+//     var $g = undefined; var $r = undefined;
+//     try { <arity stmts>; $g = $gen($a, $b); $r = $g.next(); }
+//     catch($e) { return R.rejP($e); }
+//     if($r.done) { return $r.value; }
+//     return R.driveGen($g, $r.value);
+//   };
+function genFunStmts(
+  compiler: CompilerVisitor,
+  l: Loc,
+  temp: A.Name,
+  funArgs: CList<A.Name>,
+  funBody: J.JBlockT,
+  arityStmts: CList<J.JStmt>
+): CList<J.JStmt> {
+  const genId = freshId(compilerName('gen'));
+  const gVar = freshId(compilerName('g'));
+  const rVar = freshId(compilerName('gr'));
+  const eVar = freshId(compilerName('ge'));
+  const funName = makeFunName(compiler, l);
+  const theGen = new J.JGenFun(J.nextJFunId(), funName, funArgs, awaitsToYields(funBody));
+  const tryBody = jBlock(clAppend(arityStmts, clist<J.JStmt>(
+    jExpr(jAssign(gVar, jApp(jId(genId), funArgs.map((a: A.Name) => jId(a) as J.JExprT)))),
+    jExpr(jAssign(rVar, jMethod(jId(gVar), 'next', clEmpty))))));
+  const catchBody = jBlock1(jReturn(rtMethod('rejP', clist<J.JExprT>(jId(eVar)))));
+  const wrapperBody = jBlock(clist<J.JStmt>(
+    jVar(gVar, jUndefined),
+    jVar(rVar, jUndefined),
+    new J.JTryCatch(tryBody, eVar, catchBody),
+    jIf1(jDot(jId(rVar), 'done'), jBlock1(jReturn(jDot(jId(rVar), 'value')))),
+    jReturn(rtMethod('driveGen', clist<J.JExprT>(jId(gVar), jDot(jId(rVar), 'value'))))));
+  const theWrapper = jFun(J.nextJFunId(), funName, funArgs, wrapperBody);
+  return clist<J.JStmt>(jVar(genId, theGen), jVar(temp, theWrapper));
+}
+
 export function compileALam(
   compiler: CompilerVisitor,
   l: Loc,
@@ -2070,18 +2437,66 @@ export function compileALam(
   // A fresh cell records whether this body actually minted a bounce token at some
   // tail position; if so the function value needs the driving `.app` wrapper
   // (makeTailFunction), otherwise it keeps app === appBody for zero overhead.
-  const tokenCell: Map<string, boolean> = new Map();
-  const funBody = compileFunBody(l, newStep, temp, ext(compiler, { allowTco: true, tokenCell: tokenCell }), effectiveArgs, len, body, true, isFlat, false, true);
   const funArgs = CL.map_list((arg: N.ABind) => formalShadowName(arg.id), effectiveArgs);
-  // Flat functions stay synchronous; everything else is an async function so its
-  // body can `await` non-flat calls and the fuel check.
-  const theFun = isFlat
-    ? jFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, funBody)
-    : jAsyncFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, funBody);
+  // Tail-flat attempt: compile with tail calls returning the callee's result
+  // directly and a .then-re-entering fuel check; if NO awaits remain (mid-body
+  // suspension points), the function is a legal plain synchronous function --
+  // no generator, no wrapper, zero hot-path allocation. Sound by construction:
+  // any body this can't express keeps an await and falls through to the
+  // generator compilation. canMintTokens=false (a sync body never mints; the
+  // returned-promise pass-through IS the O(1) bounce). Fail-safe on any
+  // internal error.
+  if (!isFlat && compiler.options.genFunctions && (compiler.options.tailFlat || compiler.options.fewSuspend)) {
+    try {
+      const tfBody = compileFunBody(l, freshId(compilerName('step')), temp,
+        ext(compiler, { allowTco: true, tokenCell: new Map(), tailFlatMode: true }),
+        effectiveArgs, len, body, true, false, false, false);
+      if (!hasAwaits(tfBody)) {
+        if (compiler.options.tailFlat) {
+          const theFun = jFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, tfBody);
+          return cExp(
+            rtMethod('makeFunction', clist<J.JExprT>(jId(temp), jStr(name))),
+            clist<J.JStmt>(jVar(temp, theFun)));
+        }
+      } else if (compiler.options.fewSuspend) {
+        // Few-suspend tier (see tryFewSuspend): the residual awaits become
+        // sync `if (R.iT(t)) return t.then(<rest>)` resume sites.
+        const fsBody = tryFewSuspend(tfBody);
+        if (fsBody !== undefined) {
+          const theFun = jFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, fsBody);
+          return cExp(
+            rtMethod('makeFunction', clist<J.JExprT>(jId(temp), jStr(name))),
+            clist<J.JStmt>(jVar(temp, theFun)));
+        }
+      }
+    } catch (e) {
+      // fall through to the generator compilation
+    }
+  }
+  const tokenCell: Map<string, boolean> = new Map();
+  const useGen = !isFlat && compiler.options.genFunctions;
+  const arityOut = useGen ? { stmts: clEmpty as CList<J.JStmt> } : undefined;
+  // NOTE: tailFlatMode is explicitly cleared -- ext() would otherwise inherit
+  // it from an enclosing tail-flat ATTEMPT, giving this (generator) body the
+  // tail-flat fuel check, whose self-re-enter would call the generator
+  // function directly and leak a raw generator object as a Pyret value.
+  const funBody = compileFunBody(l, newStep, temp, ext(compiler, { allowTco: true, tokenCell: tokenCell, tailFlatMode: false }), effectiveArgs, len, body, true, isFlat, false, true, arityOut);
+  // Flat functions stay synchronous; everything else compiles to a generator body
+  // plus a synchronous driving wrapper (see genFunStmts) so a non-suspending call
+  // returns its value flat -- or, with -no-gen-functions, to an async function.
+  let funStmts: CList<J.JStmt>;
+  if (useGen) {
+    funStmts = genFunStmts(compiler, l, temp, funArgs, funBody, arityOut!.stmts);
+  } else {
+    const theFun = isFlat
+      ? jFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, funBody)
+      : jAsyncFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, funBody);
+    funStmts = clist<J.JStmt>(jVar(temp, theFun));
+  }
   const maker = tokenCell.has('minted') ? 'makeTailFunction' : 'makeFunction';
   return cExp(
     rtMethod(maker, clist<J.JExprT>(jId(temp), jStr(name))),
-    clist<J.JStmt>(jVar(temp, theFun)));
+    funStmts);
 }
 
 export function* compileSplitPrimApp(
@@ -2369,6 +2784,11 @@ export class CompilerVisitor {
   mintsTokens!: boolean;
   tokenCell!: Map<string, boolean>;
   curLetBind!: BindType | undefined;
+  // Tail-flat compilation attempt (see compile-a-lam): tail calls return the
+  // callee's result directly and the fuel check re-enters via .then, so the
+  // function can be a plain sync function IF no awaits remain (verified by
+  // hasAwaits after compilation; fall back to the generator compilation else).
+  tailFlatMode?: boolean;
 
   aModule(node: N.AModule): DAG.CExp {
     const l = node.l;
@@ -2559,7 +2979,16 @@ export class CompilerVisitor {
 
   aObj(node: N.AObj): DAG.CExp {
     const visitFields = node.fields.map((f) => f.visit(this) as DAG.CField);
-    return cExp(rtMethod('makeObject', clist<J.JExprT>(jObj(CL.map_list(oGetField, visitFields)))), clEmpty);
+    // Emit the dict as an adopt-ready `{__proto__: R.$dictProto, …}` literal:
+    // the runtime's PObject constructor recognizes the shared dict prototype
+    // and adopts the (always fresh) literal without its normalizing copy, and
+    // V8 gives literals with a non-null prototype fast shape-tracked
+    // properties, where the old null-proto copy target was permanently
+    // dictionary-mode. `__proto__` is a reserved name in Pyret (cannot be a
+    // record key), so the marker field can never collide, and the quoted
+    // `"__proto__"` key is still the prototype-setting literal form per spec.
+    const protoField = jField('__proto__', rtField('$dictProto'));
+    return cExp(rtMethod('makeObject', clist<J.JExprT>(jObj(clCons(protoField as J.JFieldT, CL.map_list(oGetField, visitFields))))), clEmpty);
   }
 
   aGetBang(node: N.AGetBang): DAG.CExp {
@@ -2576,7 +3005,13 @@ export class CompilerVisitor {
 
   aDot(node: N.ADot): DAG.CExp {
     const visitObj: DAG.CExp = node.obj.visit(this);
-    const baseRead = getFieldSafe(node.l, visitObj.exp, jStr(node.field), this.getLoc(node.l));
+    // A type-flow-proven plain data field (`directField`) reads straight from the
+    // dict -- no getField call, method-curry check, or missing/non-object guard,
+    // and each site is its own low-polymorphism access instead of the megamorphic
+    // getField funnel. Same soundness basis as directCases.
+    const baseRead = node.directField
+      ? getDictField(visitObj.exp, jStr(node.field))
+      : getFieldSafe(node.l, visitObj.exp, jStr(node.field), this.getLoc(node.l));
     const stmts = clSnoc(visitObj.otherStmts, jExpr(jAssign(this.curApploc, this.getLoc(node.l))) as J.JStmt);
     if (node.cacheVar !== undefined) {
       // Cross-iteration write-once memoization of a loop-invariant immutable
@@ -2611,21 +3046,51 @@ export class CompilerVisitor {
     // path. Otherwise the method participates in safe-for-space bouncing: a tail
     // call inside the body mints a token and the body is wrapped with makeTailMethod.
     const isFlat = this.flatMethods.has(node);
-    const tokenCell: Map<string, boolean> = new Map();
-    const fullInner =
-      compileFunBody(node.l, step, tempFull, ext(this, { allowTco: true, tokenCell: tokenCell }), node.args, len, node.body, true, isFlat, true, true);
     const funArgs = CL.map_list((a: N.ABind) => formalShadowName(a.id), node.args);
-    const fullVar =
-      jVar(tempFull, isFlat
-        ? jFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, fullInner)
-        : jAsyncFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, fullInner));
+    // Tail-flat attempt for methods -- same scheme as compile-a-lam.
+    if (!isFlat && this.options.genFunctions && (this.options.tailFlat || this.options.fewSuspend)) {
+      try {
+        const tfInner = compileFunBody(node.l, freshId(compilerName('step')), tempFull,
+          ext(this, { allowTco: true, tokenCell: new Map(), tailFlatMode: true }),
+          node.args, len, node.body, true, false, true, false);
+        let syncInner: J.JBlockT | undefined = undefined;
+        if (!hasAwaits(tfInner)) {
+          if (this.options.tailFlat) { syncInner = tfInner; }
+        } else if (this.options.fewSuspend) {
+          // Few-suspend tier (see tryFewSuspend) -- same scheme as compile-a-lam.
+          syncInner = tryFewSuspend(tfInner);
+        }
+        if (syncInner !== undefined) {
+          const fullVar = jVar(tempFull, jFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, syncInner));
+          const methodExpr = len < 9
+            ? rtMethod('makeMethod' + String(len - 1), clist<J.JExprT>(jId(tempFull), jStr(node.name)))
+            : rtMethod('makeMethodN', clist<J.JExprT>(jId(tempFull), jStr(node.name)));
+          return cExp(methodExpr, clist<J.JStmt>(fullVar));
+        }
+      } catch (e) {
+        // fall through to the generator compilation
+      }
+    }
+    const tokenCell: Map<string, boolean> = new Map();
+    const useGen = !isFlat && this.options.genFunctions;
+    const arityOut = useGen ? { stmts: clEmpty as CList<J.JStmt> } : undefined;
+    const fullInner =
+      compileFunBody(node.l, step, tempFull, ext(this, { allowTco: true, tokenCell: tokenCell, tailFlatMode: false }), node.args, len, node.body, true, isFlat, true, true, arityOut);
+    // Non-flat methods get the same generator + sync-wrapper compilation as
+    // lambdas (see genFunStmts); flat methods stay plain synchronous functions.
+    const fullStmts: CList<J.JStmt> = useGen
+      ? genFunStmts(this, node.l, tempFull, funArgs, fullInner, arityOut!.stmts)
+      : clist<J.JStmt>(
+        jVar(tempFull, isFlat
+          ? jFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, fullInner)
+          : jAsyncFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, fullInner)));
     // A flat method never mints a token (isFlat forces mintsTokens=false), so
     // makeMethod is always correct for it.
     const maker = tokenCell.has('minted') ? 'makeTailMethod' : 'makeMethod';
     const methodExpr = len < 9
       ? rtMethod(maker + String(len - 1), clist<J.JExprT>(jId(tempFull), jStr(node.name)))
       : rtMethod(maker + 'N', clist<J.JExprT>(jId(tempFull), jStr(node.name)));
-    return cExp(methodExpr, clist<J.JStmt>(fullVar));
+    return cExp(methodExpr, fullStmts);
   }
 
   aVal(node: N.AVal$): DAG.CaseResults {

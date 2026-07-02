@@ -57,6 +57,457 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-02 — fast-mode dicts via shared dictProto: geomean 0.82, JSC-checked)
+
+V8 keeps null-prototype objects in dictionary mode ("used as a map"), so every
+record dict — `Object.create(null)` — paid hash-table reads and NameDictionary
+construction. All dicts now share `dictProto`, one EMPTY null-proto prototype
+object: the chain contributes nothing (`in`/for-in/keys/missing-read identical),
+but V8's heuristic keys on a *null* prototype specifically, so dicts get fast
+shape-tracked properties. Records additionally compile to adopt-ready
+`{__proto__: R.$dictProto, …}` literals that the PObject constructor takes
+without its normalizing copy (sound: dicts are immutable post-construction —
+brandClone already aliases them; `__proto__` is reserved in Pyret so no record
+key can collide). Runtime allocation sites use `Object.create(dictProto)`, which
+measured fast on BOTH engines; data-value dicts (`Object.create(variant base)`)
+were already fast-mode on V8 and are untouched.
+
+**Engine-specificity check (bun 1.3 / JSC):** JSC has no dictionary-mode
+penalty (reads identical either way) and allocates dynamic-`__proto__` literals
+~3.5× slower than Object.create — hence the Object.create choice for runtime
+sites. Interleaved pre-vs-post A/B under bun: NEUTRAL (orbital medians equal,
+boids-data slightly better). And promise beats frozen cont under JSC too:
+orbital 0.97, plagiarism 0.82, boids-data 0.58, dtree 0.88. The optimization is
+V8-targeted but nowhere V8-regressive.
+
+N=5 table (node22, all 16 parity OK): geomean ≈ **0.82**, every bench ≤ 1.01 —
+orbital-compute **0.78**, plagiarism 0.67, matrix 0.80, dtree 0.84, spell 0.81,
+orbital-render 0.87, boids-data 0.69, vec-methods 0.47. Suites 13346 + 12914
+green; exec wall-clock ~178s med (holds).
+
+## Results (2026-07-02 — flat-dict object extension: ALL 16 BENCHES ≤ 1.01, geomean 0.84)
+
+Runtime-side follow-on to the few-suspend profile finding (orbital's residual =
+`extendWith` + for-in machinery, not call machinery). `extendWith` used to build
+the extended dict as a prototype layer (`Object.create(this.dict)`) and let the
+PObject constructor's normalizing for-in flatten it — every `.{ }` record update
+paid a shadow-filtering for-in over a two-level chain, a second full copy, and an
+intermediate object. It now builds the flat null-proto dict in one merged pass
+and `updateDict` adopts it without re-copying; `.brand()` also stops making a
+dict copy that brandClone immediately discarded. Enumeration order, brand
+keep/strip, ref-field errors, and the updateDict dispatch are preserved exactly
+(suite pins all of them). Promise runtime only — frozen cont keeps the old path.
+
+| benchmark | cont med | prom med | p/c | prior p/c |
+|---|---|---|---|---|
+| spell              | 3.15 | 2.58 | **0.82** | 0.86 |
+| car-compute        | 2.72 | 2.05 | **0.75** | 0.73 |
+| car-render         | 2.72 | 2.57 | **0.94** | 0.96 |
+| lander             | 2.56 | 2.58 | 1.01 | 0.98 |
+| **orbital-compute**| 2.39 | 2.01 | **0.84** | **1.12** |
+| orbital-ems        | 1.71 | 1.72 | 1.01 | 1.04 |
+| orbital-render     | 3.03 | 2.86 | **0.94** | 1.02 |
+| boids-compute      | 2.67 | 2.60 | **0.97** | 0.93 |
+| boids-compute-data | 2.79 | 1.93 | **0.69** | 0.68 |
+| boids-raster       | 2.69 | 2.49 | **0.93** | 0.99 |
+| vec-methods        | 2.82 | 1.34 | **0.48** | 0.48 |
+| matrix             | 3.21 | 2.65 | **0.83** | 0.80 |
+| dtree              | 1.25 | 1.02 | **0.82** | 0.91 |
+| kmeans             | 1.79 | 1.60 | **0.89** | 0.93 |
+| plagiarism         | 1.37 | 0.95 | **0.69** | 0.74 |
+| seam               | 2.16 | 2.13 | **0.99** | 0.97 |
+
+**Geomean p/c ≈ 0.84 (was 0.87); ALL 16 benches ≤ 1.01 — the curated table has
+no non-parity bench left.** orbital-compute (the last holdout) 1.12 → 0.84.
+Suites: 13346 + exec 12914 green on rebuilt jarrs (runtime is EMBEDDED in
+standalones — every promise jarr was rebuilt); exec wall-clock med 185.3s →
+180.9s. Possible future lever in the same bucket: null-proto record dicts are
+dictionary-mode in V8 (the megamorphic Keyed*IC ticks); codegen-emitted
+`{__proto__: null, …}` literals or an own-property `in`-free representation
+could de-megamorphize reads, but that's a codegen + whole-runtime `in`-semantics
+audit, not a runtime patch.
+
+## Results (2026-07-02 — few-suspend tier: PLAGIARISM CRACKED, 1.22 → 0.74; geomean 0.87)
+
+The third compilation tier between tail-flat and the generator (`-no-few-suspend`
+to disable): a non-flat function whose tail-flat attempt leaves at most 2 mid-body
+conditional awaits and at most 1 suspension-relevant branch is emitted as a PLAIN
+synchronous function. Each suspend site becomes
+`if (R.iT(t)) return t.then(<continuation over the live vars>)` with the sync path
+falling through to the same (aliased, not copied) statements in place — zero
+allocation unless a suspension actually happens. This removes the per-call
+generator + IteratorResult allocation that dominated tiny hot callbacks (the
+plagiarism dict-update and dot-product lambdas: 1–2 polymorphic ops on untyped
+dict values, exactly this shape). In the exec-suite jarr, 54% of generator-tier
+functions moved to the sync tier (6087 → 2800 `function*`, 5971 resume sites).
+
+Full table (N=5 medians, frozen cont vs promise, all 16 parity OK):
+
+| benchmark | cont med | prom med | p/c | prior p/c |
+|---|---|---|---|---|
+| spell              | 3.12 | 2.67 | **0.86** | 0.87 |
+| car-compute        | 2.84 | 2.08 | **0.73** | 0.74 |
+| car-render         | 2.86 | 2.75 | **0.96** | — |
+| lander             | 2.68 | 2.62 | **0.98** | — |
+| orbital-compute    | 2.23 | 2.49 | 1.12 | 1.03–1.11 |
+| orbital-ems        | 1.70 | 1.77 | 1.04 | — |
+| orbital-render     | 3.01 | 3.06 | 1.02 | — |
+| boids-compute      | 2.87 | 2.68 | **0.93** | 0.97 |
+| boids-compute-data | 2.84 | 1.94 | **0.68** | 0.73 |
+| boids-raster       | 2.73 | 2.69 | **0.99** | — |
+| vec-methods        | 2.77 | 1.33 | **0.48** | 0.50 |
+| matrix             | 3.27 | 2.60 | **0.80** | 0.94 |
+| dtree              | 1.17 | 1.07 | **0.91** | 0.94 |
+| kmeans             | 1.74 | 1.61 | **0.93** | 0.90 |
+| **plagiarism**     | 1.34 | 0.99 | **0.74** | **1.36–1.41** |
+| seam               | 2.17 | 2.11 | **0.97** | — |
+
+**Geomean p/c ≈ 0.87** (was 0.92). Plagiarism — the last bench above 1.1 —
+goes from 22–41% slower to 26% FASTER than frozen cont. Suites: full promise
+main2 13346 green, exec 12914 green, all fresh-codegen-verified. Whole-suite
+exec wall-clock A/B (interleaved N=3, few-suspend ON vs OFF, same box/hour):
+ON med 185.3s vs OFF med 186.1s, ranges fully overlapping — holds.
+
+The ≤2/≤1 bound was validated empirically: an FS_MAX_SUSPENDS=3 experiment
+(isolated cache, interleaved N=5/N=3) was a WASH on orbital-compute (med 2.48
+vs 2.51, overlapping) and consistently ~6% WORSE on plagiarism (med 1.09 vs
+1.02 — the extra continuation duplication costs more than the saved generator
+allocs). Reverted to 2; loosen only with new data.
+
+Orbital-compute's residual (1.12, its historical band) is NOT generator
+allocation: `--prof` shows `CreateGeneratorObject` at only 1.9% while
+`extendWith`/`extendObj` (the per-tick `target.{pos:…, vel:…}` functional
+record extend) plus megamorphic Load/KeyedLoad/KeyedStore ICs dominate. The
+next lever for orbital is the record-extend path / object shape, a different
+bucket than call machinery.
+
+## Results (2026-07-02 — runtime follow-ons: WHOLE-SUITE PARITY CROSSED, p/c 0.957)
+
+Differential (promise-vs-cont) profiling of the exec suite after the generator levers
+found two shared-runtime costs; with the cont baseline frozen, fixing them counts fully
+toward p/c. Whole-suite main2-exec wall-clock progression (12914 tests, interleaved N=3
+medians, both sides all-pass every step):
+
+| state | cont | promise | p/c |
+|---|---|---|---|
+| session start (async-function codegen)   | ~227s  | ~267s  | 1.18 |
+| + gen-functions + tail-flat              | 227.7s | 255.2s | 1.12 |
+| + maybe-promise equality core            | 228.2s | 247.6s | 1.085 |
+| + constructor appBody fix                | 227.5s | 217.8s | 0.957 |
+| + Map-based equal3 seen-pairs cache      | 229.2s | 174.9s | **0.763** |
+
+(The Map cache replaces a linear findPair scan over a cache that instrumented
+counters showed growing to ~38k pairs inside a single equal3 call — O(pairs²),
+paid by BOTH backends but credited to promise under the frozen-cont rule. The
+counters also showed both backends do IDENTICAL equality work — ~6.7M worklist
+iterations, ~433k user _equals dispatches per suite run — so the earlier
+"promise equality is 4× cont" profile reading was attribution illusion from
+inlining + microtask-root frames. Curated benches barely move (their caches
+stay small); plagiarism holds ~1.41, confirming per-callback generator
+allocation as its true residual.)
+
+1. **Maybe-promise equality** (`equal3`/`equalHelp`): the worklist drains synchronously
+   and returns a flat EqualityResult; async ONLY when a user `_equals` actually suspends
+   (knowable precisely because gen-compiled methods return flat when they don't).
+   `equalFunPy` allocated lazily. Covers equal-always/now/within*.
+2. **Constructor `appBody` staleness (pre-existing bug, ~12% of promise suite time!)**:
+   the lazy data-constructor shim patches `funToReturn.app` on first call, but the token
+   driver `drive()` calls `r.fn.appBody` — so every TAIL call to a data constructor
+   re-ran the whole `Function()` constructor synthesis (`makeConstructor` 2.31% of
+   promise samples vs 0.02% on cont in the differential profile). Fix: patch `.appBody`
+   alongside `.app`.
+
+**The promise backend is now faster than frozen cont on ALL THREE goal criteria**
+(curated benches 0.93 geomean, whole suite 0.957, semantics 13346 shipshape), with
+bench-plagiarism (1.36) the one per-bench outlier. Remaining profile buckets if ever
+needed: `(anon)` 17% vs 5.4% (driveGen closures/.then/module anons), equalHelp ~1.7×
+cont's samples (unexplained), raw_array_* still plain async fns.
+
+**Final curated table with the runtime fixes embedded (N=5 medians, all parity-OK):**
+
+| benchmark | cont | prom | p/c |
+|---|---|---|---|
+| vec-methods        | 2.70 | 1.35 | **0.50** |
+| boids-compute-data | 2.70 | 1.97 | **0.73** |
+| car-compute        | 2.72 | 2.02 | **0.74** |
+| spell              | 3.20 | 2.77 | **0.87** |
+| matrix             | 3.09 | 2.92 | **0.94** |
+| dtree              | 1.14 | 1.07 | **0.94** |
+| kmeans             | 1.69 | 1.62 | 0.96 |
+| boids-compute      | 2.60 | 2.52 | **0.97** |
+| boids-raster       | 2.61 | 2.54 | 0.97 |
+| seam               | 2.17 | 2.11 | 0.97 |
+| lander             | 2.61 | 2.56 | 0.98 |
+| car-render         | 2.78 | 2.74 | 0.99 |
+| orbital-render     | 2.95 | 2.97 | 1.01 |
+| orbital-ems        | 1.66 | 1.69 | 1.02 |
+| orbital-compute    | 2.19 | 2.43 | 1.11 |
+| plagiarism         | 1.31 | 1.85 | **1.41** |
+
+**Geomean 0.92; 14/16 at ≤1.02.** orbital-compute has ranged 1.03/1.07/1.11 across
+tables (cont's own median swung 2.19–2.29) — honest read: ~5–10% behind, physics
+integrator with polymorphic arithmetic on record fields. plagiarism holds 1.36–1.41.
+
+**2026-07-02 addendum — library-level pass on string-dict (commit 9189cf473),
+"users won't notice" strategy:** freeze() snapshots entries into a `$fastDict`
+native object so get/get-value/has-key on frozen dicts are one property read
+(HAMT untouched for set/remove and ALL enumeration → key order unchanged);
+typeof-gated arg checks on the hot ops; keys-list memoized on immutable dicts.
+**plagiarism p/c 1.41 → ~1.22** (1.85s → 1.64s, parity-identical output),
+dtree 0.96; suite 13346 shipshape. Remaining plagiarism residual: per-callback
+generator allocation (GC ~21%) + freeze()'s eager HAMT build + the per-lookup
+`some()` allocation that the get-now API mandates. Cont also gains this when
+its jarrs are ever rebuilt — the frozen baseline on disk is unchanged.
+
+## Results (2026-07-01 — generator machinery: gen-functions + tail-flat; promise beats frozen cont)
+
+The two machinery levers that finally moved the backend gap itself (not the static opts):
+
+1. **gen-functions** (`-no-gen-functions`): every non-flat function/method compiles as a
+   `function*` body (awaits → yields) plus a plain synchronous wrapper that drives it. A call
+   that never actually suspends returns its value FLAT — no Promise allocation, no microtask
+   hop — and since callers already `R.iT`-guard, whole call chains stay synchronous. A genuine
+   suspension converts each frame's suspended generator into a Promise (`R.driveGen`),
+   preserving the Awaitable ABI, fuel-based stack unwinding, interruptibility, and await error
+   semantics (rejections are `gen.throw`n into the body). Measured machinery cost per
+   non-suspending call: async-fn shape ~48ns → generator shape ~24ns → sync ~3.7ns.
+2. **tail-flat** (`-no-tail-flat`): a non-flat function whose only suspension points sit in
+   tail position skips the generator entirely — plain sync function, tail calls return the
+   callee's result (value OR thenable) directly, fuel check becomes
+   `if (needsPause()) return checkPause().then(re-enter)`. Zero hot-path allocation; a
+   suspended sync tail chain collapses to O(1) heap (every frame returns the same promise).
+   Verified by construction: compile in tail-flat mode, scan for leftover awaits, fall back
+   to the generator form if any remain.
+
+**Criterion 1 — curated bench table (N=5 medians, node22, all 16 outputs parity-OK):**
+
+| benchmark | result | cont | prom | p/c |
+|---|---|---|---|---|
+| vec-methods         | 250590    | 2.67 | 1.37 | **0.51** |
+| boids-compute-data  | 236561    | 2.77 | 1.85 | **0.67** |
+| car-compute         | 14829840  | 2.69 | 2.05 | **0.76** |
+| spell               | 73        | 3.09 | 2.73 | **0.88** |
+| matrix              | 640615    | 3.29 | 3.01 | **0.91** |
+| boids-compute       | 236561    | 2.63 | 2.42 | **0.92** |
+| kmeans              | 40568     | 1.68 | 1.60 | 0.95 |
+| dtree               | 829       | 1.15 | 1.13 | 0.98 |
+| car-render          | 400000    | 2.66 | 2.68 | 1.01 |
+| lander              | 4800000   | 2.63 | 2.66 | 1.01 |
+| boids-raster        | 250       | 2.59 | 2.62 | 1.01 |
+| orbital-render      | 180000    | 2.88 | 3.02 | 1.05 |
+| seam                | 478707    | 2.06 | 2.16 | 1.05 |
+| orbital-ems         | 390000    | 1.67 | 1.77 | 1.06 |
+| orbital-compute     | 2959      | 2.29 | 2.45 | 1.07 |
+| plagiarism          | 583869000 | 1.29 | 1.76 | **1.36** |
+
+**Geomean p/c = 0.93** — the promise backend is now FASTER than frozen cont overall,
+including **boids-compute at 0.92** (the headline bench that sat at 1.15–1.22 all effort).
+The orbital/render 1.01–1.07 cluster swings ±0.05 run-to-run (boids-raster measured 0.97 and
+1.01 in back-to-back tables). **plagiarism 1.36 is the one genuine outlier**: its hot
+callbacks (`old-value + 1` on dict values, `n + (get * get)`) carry mid-body polymorphic ops
+on `Any`-typed dict values — REPL-unsound to weaken statically — so they stay
+generator-compiled, and the per-word/per-key generator+IteratorResult allocation shows as
+~17.5% GC (vs cont's 7.6%).
+
+**Criterion 2 — whole-suite wall-clock (main2-exec, 12914 tests, interleaved N=3):**
+cont median 227.7s vs promise median 255.2s → **p/c ≈ 1.12** (was ~1.18 before the levers).
+Both all-pass. The residual is spread across the runtime's own async helpers (checker /
+equality machinery) and gen-alloc on tiny calls — the next lever if pursued.
+
+**Criterion 3 — full promise main2 suite: 13346/13346 shipshape** on all-fresh codegen.
+
+**Two operational lessons (cost: several hours):**
+- The suite jarrs build from `tests/ts-compiled-promise/`, NOT `compiled-ts-promise/` —
+  clean BOTH after codegen changes, or the suite validates stale codegen (the first
+  "shipshape" runs after gen-functions had rebuilt only a handful of modules).
+- Generator resume frames (`at NAME.next (<anonymous>)`) crashed the error renderer's
+  parseFrame (no line/col); fixed in exn-stack-parser.js by dropping location-less frames.
+  ALSO: `ext()` inherits `tailFlatMode` — a nested lambda's generator falling back inside a
+  tail-flat attempt got the tail-flat fuel check, whose self-re-enter called the generator
+  function directly and leaked a raw generator as a Pyret value (caught by bench-matrix).
+
+Reproduce: `*.ts.jarr` (frozen cont) vs `*.ts.p.jarr` (promise, defaults = both levers on);
+rm -rf compiled-ts-promise/* tests/ts-compiled-promise/* after any codegen change.
+
+## Results (2026-07-01 — three-backend table: frozen cont vs cont-opt vs promise-opt, with direct-access)
+
+The state after the direct-access work (static `obj.dict["field"]` reads + `obj.dict["m"].full_meth`
+method dispatch, in-module AND cross-module — see the direct-fields commits). Three columns, each
+the **best _sound_ config** for its backend:
+- **cont** — frozen baseline (`*.ts.jarr`).
+- **cont-opt** — `-cont-optimize -no-method-flatness` (the sound cont config: method-flatness × weakening
+  is the AVL-set soundness bug on cont, so it's dropped).
+- **prom** — default promise (`*.ts.p.jarr`); **method-flatness is ON** here (it's sound on promise).
+
+N=5 median LOOP-seconds, `node22`, isolated, all outputs parity-OK across all three.
+`co/c` = cont-opt/frozen-cont, `p/c` = promise/cont, `co/p` = cont-opt/promise.
+
+| benchmark | result | cont | cont-opt | prom | co/c | p/c | co/p |
+|---|---|---|---|---|---|---|---|
+| vec-methods         | 250590    | 2.77 | 1.97 | 1.70 | **0.71** | 0.61 | 1.16 |
+| car-compute         | 14829840  | 2.85 | 2.19 | 2.15 | **0.77** | 0.75 | 1.02 |
+| boids-compute-data  | 236561    | 2.82 | 2.26 | 2.90 | **0.80** | 1.03 | 0.78 |
+| boids-compute       | 236561    | 2.70 | 2.40 | 3.29 | **0.89** | 1.22 | **0.73** |
+| orbital-compute     | 2959      | 2.33 | 2.16 | 2.41 | 0.93 | 1.03 | 0.90 |
+| lander              | 4800000   | 2.79 | 2.69 | 2.68 | 0.96 | 0.96 | 1.00 |
+| boids-raster        | 250       | 2.60 | 2.53 | 2.93 | 0.97 | 1.13 | 0.86 |
+| car-render          | 400000    | 2.84 | 2.79 | 2.84 | 0.98 | 1.00 | 0.98 |
+| orbital-render      | 180000    | 3.05 | 3.00 | 3.02 | 0.98 | 0.99 | 0.99 |
+| matrix              | 640615    | 3.10 | 3.05 | 2.95 | 0.98 | 0.95 | 1.03 |
+| seam                | 478707    | 2.27 | 2.23 | 2.21 | 0.98 | 0.97 | 1.01 |
+| spell               | 73        | 3.17 | 3.18 | 2.52 | 1.00 | 0.79 | 1.26 |
+| kmeans              | 40568     | 1.75 | 1.75 | 1.67 | 1.00 | 0.95 | 1.05 |
+| plagiarism          | 583869000 | 1.39 | 1.41 | 1.96 | 1.01 | 1.41 | 0.72 |
+| dtree               | 829       | 1.22 | 1.27 | 1.21 | 1.04 | 0.99 | 1.05 |
+| orbital-ems         | 390000    | 1.69 | 1.78 | 1.74 | 1.05 | 1.03 | 1.02 |
+
+**Geomeans: co/c = 0.935, p/c = 0.972, co/p = 0.962.**
+
+**Takeaways.**
+1. **Cont-opt is the fastest backend overall** (co/p 0.96 geomean) and ~6.5% over frozen cont, fully
+   sound (promise suite 13346, cont-opt-safe suite 13354, all parity-OK).
+2. **The boids reversal** — cont-opt beats *promise* 22–27% on both boids variants (co/p 0.73/0.78),
+   the benches promise never cracked; direct method dispatch de-funnels the list/closure calls so it
+   beats frozen cont there too.
+3. **Big singles**: vec-methods 0.71, car-compute 0.77 (arithmetic weakening/LICM + in-module typed
+   field/method dispatch stacking).
+4. **plagiarism ~parity with frozen cont (co/c 1.01)** — cross-module StringDict dispatch cancels the
+   inlining bloat; promise stays 1.41 behind (async floor on native-dict work). Compiler still can't
+   beat the HAMT — the data structure is the cost.
+5. Neutral on render / physics-integrator / dict benches (no hot arithmetic or typed field/method access).
+
+**CAVEAT — the columns don't share the method-flatness pass.** promise has method-flatness ON (sound
+there); cont-opt has it OFF (the AVL bug on cont). So it's each backend's best *shippable* config, not a
+controlled single-lever comparison. The main place it shows is **matrix**: promise flattens `Matrix.get`
+(p/c 0.95) while cont-opt relies on direct dispatch instead (co/c 0.98). For an apples-to-apples "what
+does the optimizer machinery buy" comparison, re-time promise with `-no-method-flatness` too.
+
+Reproduce: build `*.ts.jarr` (cont), `-cont-optimize -no-method-flatness` (cont-opt), `*.ts.p.jarr`
+(promise); N=5 median LOOP-seconds.
+
+## Results (2026-07-01 — cont-optimized experiment: un-gate the promise-only opts for cont)
+
+**The flip side.** All the optimization work in this repo was gated to the **promise**
+backend, because the point was to claw back promise's async overhead and *match cont*.
+But flatness/weakening were originally cont ideas — flatness lets cont skip state-machine
+steps and `isCont()` checks, and monomorphic operator weakening (`_plus`→`_plus_nums`)
+is a fast path in both runtimes. So: what if we un-gate them for cont and let cont be
+*optimized* too? How fast does cont go?
+
+**What's un-gated** (new `-cont-optimize` flag → `contOptimize` option; separate
+`compiled-ts-co/` cache; `*.ts.co.jarr` build target). Three ANF-level passes that were
+`isPromise`-only in `js-of-pyret.ts` now also run on cont:
+- **optimizer middle-end** (`optimize-anf.ts`: inliner + CSE + LICM field-read caching),
+- **typed operator weakening** (`type-flow.ts weakenOperators`: monomorphic `_*_nums`/
+  `_*_strings`/`raise_flat` — these globals already exist in `runtime.js`, not just
+  `runtime-async.js`), which then feeds
+- the **method-flatness pre-pass** into the shared flatness env that **cont already
+  consumes** (`compileFlatApp` vs `compileSplitApp`, gas-check + `isCont` elision).
+
+The LICM `cacheVar` codegen (`cacheVar ?? (cacheVar = getField(...))`) was promise-only;
+ported the identical form into cont's `aDot` (`anf-loop-compiler.ts`). The cache cell is
+declared at the ANF level (backend-agnostic), so it's a JS closure var reset per
+loop-invocation — exception-order sound, same as promise. NOT un-gated: redundant-ann
+elision (its `redundantAnnChecks` set is only threaded to the promise splitting compiler;
+cont would need codegen work to consume it) — a candidate for a follow-up.
+
+This **deliberately breaks the cont byte-parity oracle** (fresh atoms + weakened ops), so
+it lives on its own compiled cache and jarr suffix.
+
+Full table, `run-bench-table-co.sh 5` (median LOOP-seconds, `node22`, isolated).
+`cont` = frozen baseline, `co` = cont-optimized, `prom` = promise.
+`co/c` = optimized-vs-frozen cont, `p/c` = promise-vs-cont, `co/p` = optimized-cont-vs-promise.
+
+| benchmark | result | cont | co | prom | co/c | p/c | co/p | parity |
+|---|---|---|---|---|---|---|---|---|
+| matrix              | 640615    | 3.02 | 2.39 | 2.85 | **0.79** | 0.94 | 0.84 | OK |
+| boids-compute-data  | 236561    | 2.85 | 2.21 | 2.95 | **0.78** | 1.04 | 0.75 | OK |
+| car-compute         | 14829840  | 2.76 | 2.35 | 2.20 | **0.85** | 0.80 | 1.07 | OK |
+| boids-compute       | 236561    | 2.63 | 2.27 | 3.19 | **0.86** | 1.21 | 0.71 | OK |
+| vec-methods         | 250590    | 2.57 | 2.27 | 2.06 | **0.88** | 0.80 | 1.10 | OK |
+| boids-raster        | 250       | 2.56 | 2.37 | 2.76 | **0.93** | 1.08 | 0.86 | OK |
+| orbital-compute     | 2959      | 2.25 | 2.18 | 2.29 | 0.97 | 1.02 | 0.95 | OK |
+| seam                | 478707    | 2.22 | 2.16 | 2.15 | 0.97 | 0.97 | 1.00 | OK |
+| spell               | 73        | 3.22 | 3.18 | 2.49 | 0.99 | 0.77 | 1.28 | OK |
+| kmeans              | 40568     | 1.69 | 1.68 | 1.75 | 0.99 | 1.04 | 0.96 | OK |
+| orbital-ems         | 390000    | 1.66 | 1.65 | 1.72 | 0.99 | 1.04 | 0.96 | OK |
+| orbital-render      | 180000    | 2.94 | 2.92 | 2.98 | 0.99 | 1.01 | 0.98 | OK |
+| lander              | 4800000   | 2.58 | 2.59 | 2.61 | 1.00 | 1.01 | 0.99 | OK |
+| car-render          | 400000    | 2.85 | 2.84 | 2.59 | 1.00 | 0.91 | 1.10 | OK |
+| dtree               | 829       | 1.16 | 1.22 | 1.13 | 1.05 | 0.97 | 1.08 | OK |
+| plagiarism          | 583869000 | 1.36 | 1.45 | 2.01 | 1.07 | 1.48 | 0.72 | OK |
+
+**Geomean: co/c = 0.940, p/c = 0.993, co/p = 0.947.** All 16 outputs parity-OK
+(frozen-cont ≡ cont-optimized ≡ promise).
+
+**Takeaways.**
+1. **Optimized cont is the fastest backend on this suite** (co/p 0.947 geomean): the
+   very ANF passes built to help promise help cont *more in aggregate*, because cont has
+   no async floor to pay back. Un-gating claws ~6% geomean over frozen cont.
+2. **Wins concentrate exactly where promise's did** — arithmetic/method-bound hot loops:
+   matrix 0.79, boids-compute-data 0.78, car-compute 0.85, boids-compute 0.86,
+   vec-methods 0.88. Weakening turns polymorphic dispatch into monomorphic fast-path
+   calls that cont then flat-compiles (skips state-machine splitting); LICM caches the
+   loop-invariant field reads.
+3. **The boids reversal is the headline pair.** `boids-compute` co/p **0.71** and
+   `boids-compute-data` co/p **0.75**: the benches promise *never cracked* (its async
+   list-combinator floor), optimized cont just wins — no awaits to amortize, and it still
+   gets the weakening. The long-standing "boids is an honest async floor" story is a
+   promise-only story; cont-optimized sidesteps it.
+4. **Two minor regressions** — dtree 1.05, plagiarism 1.07 — are `StringDict`/`Table`
+   -heavy with little arithmetic to weaken, so only the inliner's **size bloat**
+   (~11% bigger jarr, e.g. car-compute 9.73→10.79 MB) shows and no flat-op payoff offsets
+   it. Same shape as the promise finding that inlining is net-positive on numeric loops,
+   invisible-to-slightly-negative on dict/heterogeneous code.
+5. Render/physics-integrator benches (lander, car-render, orbital-*, seam, spell, kmeans)
+   are ~neutral: already call-/render-bound, not arithmetic-bound, so neither weakening
+   nor LICM has a hot target.
+
+### Soundness: the broad suite un-gates a latent cont-codegen bug
+
+The 16-bench table is **all-parity-OK** (frozen-cont ≡ cont-optimized ≡ promise), but the
+broad oracle isn't clean. `make ts-pyret-test-co` (main2, ~13.3k tests, `-cont-optimize`,
+run under **node22** — `$(NODE)`=node18 can't `require()` the now-ESM `vega`, unrelated to
+this experiment) gives **13344 passed / 9 failed / 1 error** vs frozen cont's **13354 / 0 /
+0**. All 9 failures are AVL-tree set operations:
+`Expected AVLTree ... but got: <a small Number>` at `sets.arr` `rebalance`/`leaf.insert` —
+a `branch(value, h::Number, left, right)` construction yielding its Number height instead
+of the object.
+
+Bisected (each `-no-*` flag with the rest on, repro = `test-sets.arr` standalone,
+deterministic 6/170):
+- `-no-optimize` (inliner/CSE/LICM off): **still fails** → not the optimizer middle-end.
+- `-no-licm`, `-no-imported-method-flat`: still fail → not those.
+- **`-no-op-weakening`: passes.  `-no-method-flatness`: passes.** → it needs **both**
+  operator weakening **and** the method-flatness pre-pass on. The trigger is
+  `mkbranch = branch(val, num-max(left.height(), right.height()) + 1, left, right)`: flat
+  `.height()` method calls (method-flatness) inside a weakened `+1` (weakening) as a data
+  constructor argument.
+
+**This is a cont-codegen gap, not an ANF-pass bug.** Promise compiles the same enriched
+flatness for `sets.arr` correctly (its suite passes 13343). Method-flatness was *only ever
+fed to the promise backend* before this experiment, so cont's flat-method-call codegen
+path was never exercised with these facts — the interaction with weakened arithmetic in a
+constructor argument is the untested corner. A minimal in-module `data Tree` mimic did
+*not* reproduce (needs `sets.arr`'s recursive imported-data-method shape), so root-causing
+the exact cont codegen site is follow-up work.
+
+**Sound subset — `-cont-optimize -no-method-flatness`.** Because `-no-op-weakening` and
+`-no-method-flatness` *each* fix the bug, dropping method-flatness gives a sound
+cont-optimize that keeps weakening + optimizer/LICM. **Validated: full main2 suite
+13354/13354, 0 failed / 0 errored** (identical to frozen cont). The **arithmetic-bound wins
+survive nearly intact** — car-compute 0.84 (vs 0.83 aggressive), boids-compute 0.89 (vs
+0.91), vec-methods 0.85 (vs 0.89) — because those come from weakening + LICM, not
+method-flatness. The one bench that *loses* is **matrix: 0.93 sound vs 0.76 aggressive** —
+its big win *was* method-flatness flattening `Matrix.get`, i.e. exactly the buggy pass. So:
+ship the sound config (loses only method-dispatch-bound wins); the aggressive all-passes
+table above is fastest but **not sound as-is** — safe only for the compute benches, which
+don't hit the flat-method-in-constructor pattern.
+
+Reproduce: `make tests/async-opt/<bench>.ts.co.jarr` then
+`tests/async-opt/run-bench-table-co.sh 5`. Broad soundness oracle:
+`make ts-pyret-test-co` (main2 exec suite compiled `-cont-optimize`; runs under node22).
+
 ## Results (2026-07-01 — cross-module method flatness)
 
 Method flatness now crosses module boundaries (commit `cadcd0ade`): a call to an

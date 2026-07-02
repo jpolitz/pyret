@@ -52,20 +52,35 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
        @return {!PBase} the extended object
     */
     function extendWith(fields) {
+      // Build the extended dict FLAT in one pass instead of layering a
+      // prototype level (Object.create(this.dict)) and letting the PObject
+      // constructor re-flatten it: that paid a shadow-filtering for-in over
+      // the two-level chain plus a second full copy per extension (hot in
+      // record-update loops, e.g. per-tick physics `o.{pos: …, vel: …}`).
+      // Enumeration order is preserved exactly: the old path's final dict was
+      // populated own-props-first-then-unshadowed-proto, which is the same
+      // extension-fields-then-remaining-old-fields sequence built here (torepr
+      // / cross-backend parity pin that order).
+      var oldDict = this.dict;
       /**@type {!Object}*/
-      var newDict = Object.create(this.dict);
+      var newDict = Object.create(dictProto);
       /**@type {!boolean}*/
       var allNewFields = true;
 
       for(var field in fields) {
-        if(hasProperty(this.dict, field)) {
+        if(hasProperty(oldDict, field)) {
           allNewFields = false;
-          if(isRef(this.dict[field])) {
+          if(isRef(oldDict[field])) {
             thisRuntime.ffi.throwMessageException("Cannot update ref field " + field);
           }
         }
 
         newDict[field] = fields[field];
+      }
+      for(var field in oldDict) {
+        if(!hasProperty(newDict, field)) {
+          newDict[field] = oldDict[field];
+        }
       }
 
       var newObj = this.updateDict(newDict, allNewFields);
@@ -208,7 +223,30 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return fields;
     }
 
-    var emptyDict = Object.create(null);
+    // The shared prototype of every Pyret object dict. V8 keeps null-PROTO
+    // objects in dictionary mode (they read as "used as a map"), which makes
+    // every field read a hash lookup and every dict allocation build a
+    // NameDictionary; an object whose prototype is this EMPTY null-proto
+    // object gets fast (shape-tracked) properties instead, while `in`,
+    // for-in, Object.keys, and missing-read-is-undefined behave exactly as
+    // they did with null-proto dicts because the chain contributes nothing.
+    // getFields' chain walk sees one extra empty level and terminates at
+    // null as before, and the structural-equality fast path
+    // (getProto(l) === getProto(r)) keeps firing for all dict pairs.
+    // NOTHING may ever add a property to this object.
+    //
+    // Engine notes (measured, node22 V8 12.x / bun 1.3 JSC): V8's
+    // dictionary-mode heuristic keys on a NULL prototype specifically, so
+    // both Object.create(dictProto)+assigns and `{__proto__: dictProto, …}`
+    // literals get fast properties. JSC has no such penalty for reads, but
+    // dynamic-`__proto__` LITERALS take a slow allocation path (~3.5x
+    // Object.create). So runtime allocation sites use Object.create(dictProto)
+    // (fast on both engines); only codegen-emitted adopt-ready literals use
+    // the `{__proto__: R.$dictProto, …}` form, where the adopted copy it
+    // saves costs about the same as JSC's slower literal allocation.
+    var dictProto = Object.create(null);
+
+    var emptyDict = Object.create(dictProto);
 
     /**Tests whether an object is a PBase
        @param {Object} obj the item to test
@@ -840,17 +878,48 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     // entries. The TailCall (function) branch is checked first — it is the hot path
     // (function-only mutual recursion never produces a method token), and when it
     // matches the second `instanceof` is short-circuited away.
-    async function drive(r) {
+    // Maybe-promise: the loop runs SYNCHRONOUSLY while each appBody returns a
+    // flat token/value (the common case now that non-flat bodies are generator
+    // compiled and return flat results when nothing suspends); a thenable step
+    // re-enters the same loop from its .then, so a mixed sync/async chain still
+    // pumps in O(1) heap. Returns a flat value when the whole chain was
+    // synchronous, else a Promise.
+    function drive(r) {
       while (true) {
         if (r instanceof TailCall) {
-          r = await r.fn.appBody.apply(r.fn, r.args);
+          r = r.fn.appBody.apply(r.fn, r.args);
         } else if (r instanceof TailMethodCall) {
-          r = await r.m.full_methBody(r.obj, ...r.args);
+          r = r.m.full_methBody(r.obj, ...r.args);
+        } else if (isThenable(r)) {
+          return r.then(drive);
         } else {
           return r;
         }
       }
     }
+    // Drive a compiled generator body (see the anf-loop-compiler-async
+    // gen-function wrapper) after its first suspension; `v` is the first yielded
+    // value. Mirrors `await` semantics exactly: a fulfilled thenable resumes the
+    // body with its value; a rejected one is THROWN INTO the body at the yield
+    // point (gen.throw), so error control flow matches async/await; a yielded
+    // non-thenable (an unconditional former-await of a flat value) resumes after
+    // a microtask, exactly like `await <non-thenable>` -- which also keeps the
+    // resume stack-bounded.
+    function driveGen(gen, v) {
+      return new Promise(function(resolve, reject) {
+        function onF(w) { var r; try { r = gen.next(w); } catch(e) { reject(e); return; } step(r); }
+        function onR(e) { var r; try { r = gen.throw(e); } catch(e2) { reject(e2); return; } step(r); }
+        function step(r) {
+          if (r.done) { resolve(r.value); return; }
+          var y = r.value;
+          if (isThenable(y)) { y.then(onF, onR); } else { Promise.resolve(y).then(onF, onR); }
+        }
+        if (isThenable(v)) { v.then(onF, onR); } else { Promise.resolve(v).then(onF, onR); }
+      });
+    }
+    // The gen-function wrapper's catch path: preserve the async-function
+    // guarantee that a compiled non-flat function never throws synchronously.
+    function rejP(e) { return Promise.reject(e); }
     // Like makeFunction, but `fun` is the token-minting body (kept as `appBody`)
     // and the public `.app` drives any bounce chain to a value. Used by the
     // compiler for functions whose body can end in a non-self tail call. Non-token
@@ -866,8 +935,16 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     function makeTailFunction(fun, name) {
       var f = new PFunction(fun, fun.length, name);
       // f.appBody stays === fun (set by the PFunction constructor)
-      f.app = async function() {
-        return drive(await fun.apply(this, arguments));
+      // Maybe-promise driver: returns a flat value when the whole bounce chain
+      // ran synchronously. The try/catch keeps the old async-function guarantee
+      // (a driven .app never throws synchronously): an FFI appBody in the chain
+      // can throw, which must surface as a rejection as before.
+      f.app = function() {
+        try {
+          return drive(fun.apply(this, arguments));
+        } catch(e) {
+          return Promise.reject(e);
+        }
       };
       return f;
     }
@@ -1104,8 +1181,13 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     function makeTailMethod(fullBody, name) {
       var m = new PMethod(appN, fullBody, name);
       // m.full_methBody === fullBody (set by the PMethod constructor)
-      m['full_meth'] = async function() {
-        return drive(await fullBody.apply(this, arguments));
+      // Maybe-promise driver, same shape as makeTailFunction's .app.
+      m['full_meth'] = function() {
+        try {
+          return drive(fullBody.apply(this, arguments));
+        } catch(e) {
+          return Promise.reject(e);
+        }
       };
       return m;
     }
@@ -1350,10 +1432,21 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
        @extends {PBase}
     */
     function PObject(dict, brands) {
-      /**@type {!Object.<string, !PBase>}*/
-      this.dict = Object.create(null);
-      for (var prop in dict)
-        this.dict[prop] = dict[prop];
+      // A dict whose prototype is ALREADY dictProto is one of ours -- either
+      // a codegen-emitted `{__proto__: R.$dictProto, …}` literal (always
+      // fresh) or an existing object's dict (safe to alias: dicts are never
+      // mutated after construction; brandClone already shares them). Adopt it
+      // and skip the normalizing copy. Anything else (FFI/trove literals with
+      // Object.prototype, null from the internal shell constructors) gets the
+      // classic copy onto a fresh fast-mode dict.
+      if (dict !== null && getProto(dict) === dictProto) {
+        /**@type {!Object.<string, !PBase>}*/
+        this.dict = dict;
+      } else {
+        this.dict = Object.create(dictProto);
+        for (var prop in dict)
+          this.dict[prop] = dict[prop];
+      }
 
       /**@type {!Object.<string, Boolean>}*/
       this.brands = brands;
@@ -1361,6 +1454,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     //PObject.prototype = Object.create(PBase.prototype);
 
     PObject.prototype.updateDict = function(dict, keepBrands) {
+      // extendWith hands over a fresh dictProto-based flat dict; the
+      // constructor's adopt path takes it without a copy.
       var newObj = new PObject(dict, keepBrands ? this.brands : noBrands);
       return newObj;
     }
@@ -1369,7 +1464,10 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
        @return {!PObject} With same dict
     */
     PObject.prototype.brand = function(b) {
-      var newObj = makeObject(this.dict);
+      // brandClone shares this.dict on the clone, so the old
+      // makeObject(this.dict) here did a full dict copy that was immediately
+      // discarded. Allocate an empty shell instead.
+      var newObj = new PObject(null, noBrands);
       return brandClone(newObj, this, b);
     };
 
@@ -2064,39 +2162,92 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       if(tol === undefined) { // means that we aren't doing any kind of within
         var isIdentical = identical3(left, right);
         if (!thisRuntime.ffi.isNotEqual(isIdentical)) { return isIdentical; } // if Equal or Unknown...
+        // SCALAR FAST PATH: two primitives decide without building the worklist
+        // machinery below (per-call closures + caches), which otherwise runs
+        // even for "cat" == "dog". identical3 already returned Equal for ===
+        // primitives (JS === is value equality for string/boolean), and it fully
+        // decided exact-exact numbers -- so a same-typeof string/boolean pair
+        // here is definitively not equal, and numbers only need the
+        // roughnum/equals split. Answers match the worklist's first-iteration
+        // results exactly (incl. the "the-value" path and Roughnums reasons).
+        var tLeft = typeof left;
+        if (tLeft === typeof right && (tLeft === "string" || tLeft === "boolean")) {
+          return thisRuntime.ffi.notEqual.app("the-value", left, right);
+        }
+        if (isNumber(left) && isNumber(right)) {
+          if (jsnums.isRoughnum(left) || jsnums.isRoughnum(right)) {
+            return thisRuntime.ffi.unknown.app(
+              fromWithin ? "RoughnumZeroTolerances" : "Roughnums", left, right);
+          } else if (jsnums.equals(left, right)) {
+            return thisRuntime.ffi.equal;
+          } else {
+            return thisRuntime.ffi.notEqual.app("the-value", left, right);
+          }
+        }
+      } else if (isNumber(left) && isNumber(right)) {
+        // within(...) on two numbers: replicate the worklist number branch for
+        // the initial pair VERBATIM -- including its `if (tol)` TRUTHINESS
+        // test: a falsy tolerance (within(0)) takes the roughnum/Unknown path
+        // ("RoughnumZeroTolerances"), NOT the comparison.
+        if (tol) {
+          var fcomp;
+          if (rel === TOL_IS_REL) {
+            fcomp = jsnums.roughlyEqualsRel(left, right, tol, false);
+          } else if (rel === TOL_IS_SMOOTH) {
+            fcomp = jsnums.roughlyEqualsRel(left, right, tol, true);
+          } else {
+            fcomp = jsnums.roughlyEquals(left, right, tol);
+          }
+          if (fcomp) { return thisRuntime.ffi.equal; }
+          return thisRuntime.ffi.notEqual.app("the-value", left, right);
+        } else if (jsnums.isRoughnum(left) || jsnums.isRoughnum(right)) {
+          return thisRuntime.ffi.unknown.app(
+            fromWithin ? "RoughnumZeroTolerances" : "Roughnums", left, right);
+        } else if (jsnums.equals(left, right)) {
+          return thisRuntime.ffi.equal;
+        } else {
+          return thisRuntime.ffi.notEqual.app("the-value", left, right);
+        }
       }
 
       var stackOfToCompare = [];
       var toCompare = { stack: [], curAns: thisRuntime.ffi.equal };
-      var cache = {left: [], right: [], equal: []};
+      // Seen-pairs cache. The old form was three parallel arrays with a LINEAR
+      // findPair scan -- measured growing to ~38k pairs inside a single equal3
+      // call on the test suite, making pair lookup O(pairs^2) overall (the
+      // dominant equality cost). Now a Map(left -> Map(right -> record)) with
+      // records also kept in insertion order (cache.list) so the index-based
+      // setCache protocol and the settle loop are unchanged. Records start at
+      // the optimistic Equal, exactly like the old cache.equal entries, which
+      // is what terminates cycles.
+      var cache = {map: new Map(), list: []};
       function findPair(obj1, obj2) {
-        for (var i = 0; i < cache.left.length; i++) {
-          if (cache.left[i] === obj1 && cache.right[i] === obj2)
-            return cache.equal[i];
-        }
-        return false;
-      }
-      function setCachePair(obj1, obj2, val) {
-        for (var i = 0; i < cache.left.length; i++) {
-          if (cache.left[i] === obj1 && cache.right[i] === obj2) {
-            cache.equal[i] = val;
-            return;
-          }
-        }
-// throw new Error("Internal error: tried to
+        var m = cache.map.get(obj1);
+        if (m === undefined) { return false; }
+        var rec = m.get(obj2);
+        if (rec === undefined) { return false; }
+        return rec.val;
       }
       function cachePair(obj1, obj2) {
-        cache.left.push(obj1);
-        cache.right.push(obj2);
-        cache.equal.push(thisRuntime.ffi.equal);
-        return cache.equal.length;
+        var rec = { val: thisRuntime.ffi.equal };
+        var m = cache.map.get(obj1);
+        if (m === undefined) { m = new Map(); cache.map.set(obj1, m); }
+        m.set(obj2, rec);
+        cache.list.push(rec);
+        return cache.list.length;
       }
-      async function equalHelp() {
+      // Maybe-promise equality (same discipline as the gen-compiled code and
+      // the arithmetic ops): the worklist drains SYNCHRONOUSLY and returns a
+      // flat EqualityResult -- no Promise, no microtask -- going async ONLY
+      // when a user _equals method actually suspends (returns a thenable),
+      // which gen-compiled methods only do on genuine suspension. This is the
+      // hot path of every `is` test on compound values.
+      function equalHelp() {
         var current, curLeft, curRight;
         while (toCompare.stack.length > 0 && !thisRuntime.ffi.isNotEqual(toCompare.curAns)) {
           current = toCompare.stack.pop();
           if(current.setCache) {
-            cache.equal[current.index - 1] = toCompare.curAns;
+            cache.list[current.index - 1].val = toCompare.curAns;
             continue;
           }
           curLeft = current.left;
@@ -2202,8 +2353,18 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
                 }
                 else if (isObject(curLeft) && curLeft.dict["_equals"]) {
                   /* Two objects with the same brands and the left has an _equals method */
-                  // _equals may run user code (async); await it.
-                  var newAns = await getColonField(curLeft, "_equals").full_meth(curLeft, curRight, equalFunPy);
+                  // _equals may run user code; a gen-compiled method returns a
+                  // flat result unless it genuinely suspends. equalFunPy is
+                  // allocated lazily -- only comparisons that dispatch to a
+                  // user _equals need the PFunction at all.
+                  if (equalFunPy === undefined) { equalFunPy = makeFunction(reenterEqualFun, "equalFun"); }
+                  var newAns = getColonField(curLeft, "_equals").full_meth(curLeft, curRight, equalFunPy);
+                  if (isThenable(newAns)) {
+                    return newAns.then(function(a) {
+                      toCompare.curAns = combineEquality(toCompare.curAns, a);
+                      return equalHelp();
+                    });
+                  }
                   toCompare.curAns = combineEquality(toCompare.curAns, newAns);
                 }
                 else if (isDataValue(curLeft) && isDataValue(curRight)) {
@@ -2245,24 +2406,28 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         }
         return toCompare.curAns;
       }
-      // Async-native equality (replaces the equalFun/reenterEqualFun trampoline).
-      // equalHelp drains the worklist, awaiting any user _equals method. Returns
-      // an EqualityResult. equalFunPy is handed to user _equals for recursion.
-      async function reenterEqualFun(left, right) {
+      // equalHelp drains the worklist (sync unless a user _equals suspends).
+      // Returns an EqualityResult or a thenable of one. equalFunPy (lazily
+      // created above) is handed to user _equals for recursion.
+      function reenterEqualFun(left, right) {
         stackOfToCompare.push(toCompare);
         toCompare = {stack: [{left: left, right: right, path: "the-value"}], curAns: thisRuntime.ffi.equal};
-        var ans = await equalHelp();
-        // If the loop short-circuited on NotEqual, settle any pending cache markers.
-        for(var i = 0; i < toCompare.stack.length; i++) {
-          var current = toCompare.stack[i];
-          if(current.setCache) {
-            cache.equal[current.index - 1] = ans;
+        function settle(ans) {
+          // If the loop short-circuited on NotEqual, settle any pending cache markers.
+          for(var i = 0; i < toCompare.stack.length; i++) {
+            var current = toCompare.stack[i];
+            if(current.setCache) {
+              cache.list[current.index - 1].val = ans;
+            }
           }
+          toCompare = stackOfToCompare.pop();
+          return ans;
         }
-        toCompare = stackOfToCompare.pop();
-        return ans;
+        var ans = equalHelp();
+        if (isThenable(ans)) { return ans.then(settle); }
+        return settle(ans);
       }
-      var equalFunPy = makeFunction(reenterEqualFun, "equalFun");
+      var equalFunPy = undefined;
       return reenterEqualFun(left, right);
     }
 
@@ -3469,11 +3634,21 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return after(funRes);
     }
 
-    async function eachLoop(fun, start, stop) {
-      for(var i = start; i < stop; i++) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+    // Maybe-promise (see the raw_array_* loops): sync unless the callback or
+    // the fuel check actually suspends.
+    function eachLoop(fun, start, stop) {
+      var i = start;
+      while (i < stop) {
+        if(thisRuntime.needsPause()) {
+          var i0 = i;
+          return thisRuntime.checkPause().then(function() { return eachLoop(fun, i0, stop); });
+        }
         var res = fun.app(i);
-        if(isThenable(res)) { await res; }
+        if (isThenable(res)) {
+          var i1 = i;
+          return res.then(function() { return eachLoop(fun, i1 + 1, stop); });
+        }
+        i++;
       }
       return thisRuntime.nothing;
     }
@@ -4357,35 +4532,63 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return arr;
     };
 
-    var raw_array_build = async function(f, len) {
+    // Maybe-promise raw-array helpers (same pattern as raw_list_map_loop below):
+    // a NON-async loop that returns the result synchronously when nothing
+    // suspends, and a resumable Promise only on a fuel pause or a suspending
+    // callback. The loop's whole continuation is (backing array, index), so a
+    // suspension returns `<thenable>.then(resume-from-index)`. Cooperative
+    // yield preserved exactly.
+    function raw_array_build_loop(f, len, arr, curIdx) {
+      while (curIdx < len) {
+        if(thisRuntime.needsPause()) {
+          var i0 = curIdx;
+          return thisRuntime.checkPause().then(function() { return raw_array_build_loop(f, len, arr, i0); });
+        }
+        var res = f.app(curIdx);
+        if (isThenable(res)) {
+          var i1 = curIdx;
+          return res.then(function(v) { arr.push(v); return raw_array_build_loop(f, len, arr, i1 + 1); });
+        }
+        arr.push(res);
+        curIdx++;
+      }
+      return arr;
+    }
+    var raw_array_build = function(f, len) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-build"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-build",
         f, thisRuntime.Function, len, thisRuntime.Number);
       check_array_size("raw-array-build", len);
-      var arr = new Array();
-      for (var curIdx = 0; curIdx < len; curIdx++) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        var res = f.app(curIdx);
-        arr.push(isThenable(res) ? await res : res);
-      }
-      return arr;
+      return raw_array_build_loop(f, len, new Array(), 0);
     };
 
-    var raw_array_build_opt = async function(f, len) {
+    function raw_array_build_opt_loop(f, len, arr, curIdx) {
+      while (curIdx < len) {
+        if(thisRuntime.needsPause()) {
+          var i0 = curIdx;
+          return thisRuntime.checkPause().then(function() { return raw_array_build_opt_loop(f, len, arr, i0); });
+        }
+        var res = f.app(curIdx);
+        if (isThenable(res)) {
+          var i1 = curIdx;
+          return res.then(function(v) {
+            if (thisRuntime.ffi.isSome(v)) { arr.push(thisRuntime.getField(v, "value")); }
+            return raw_array_build_opt_loop(f, len, arr, i1 + 1);
+          });
+        }
+        if (thisRuntime.ffi.isSome(res)) {
+          arr.push(thisRuntime.getField(res, "value"));
+        }
+        curIdx++;
+      }
+      return arr;
+    }
+    var raw_array_build_opt = function(f, len) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-build-opt"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-build-opt",
         f, thisRuntime.Function, len, thisRuntime.Number);
       check_array_size("raw-array-build-opt", len);
-      var arr = new Array();
-      for (var curIdx = 0; curIdx < len; curIdx++) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        var res = f.app(curIdx);
-        if(isThenable(res)) { res = await res; }
-        if (thisRuntime.ffi.isSome(res)) {
-          arr.push(thisRuntime.getField(res, "value"));
-        }
-      }
-      return arr;
+      return raw_array_build_opt_loop(f, len, new Array(), 0);
     };
 
     var raw_array_get = function(arr, ix) {
@@ -4486,34 +4689,57 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       make5: makeFunction(function(a, b, c, d, e) { return [a, b, c, d, e]; }, "raw-array:make5"),
     });
 
-    var raw_array_fold = async function(f, init, arr, start) {
+    function raw_array_fold_loop(f, arr, start, currentAcc, currentIndex) {
+      var length = arr.length;
+      while (currentIndex < length) {
+        if(thisRuntime.needsPause()) {
+          var a0 = currentAcc, i0 = currentIndex;
+          return thisRuntime.checkPause().then(function() { return raw_array_fold_loop(f, arr, start, a0, i0); });
+        }
+        var res = f.app(currentAcc, arr[currentIndex], currentIndex + start);
+        if (isThenable(res)) {
+          var i1 = currentIndex;
+          return res.then(function(v) { return raw_array_fold_loop(f, arr, start, v, i1 + 1); });
+        }
+        currentAcc = res;
+        currentIndex++;
+      }
+      return currentAcc;
+    }
+    var raw_array_fold = function(f, init, arr, start) {
       if (arguments.length !== 4) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-fold"], 4, $a, false); }
       thisRuntime.checkArgsInternalInline("RawArrays", "raw-array-fold",
         f, thisRuntime.Function, init, thisRuntime.Any, arr, thisRuntime.RawArray, start, thisRuntime.Number);
-      var currentAcc = init;
-      var length = arr.length;
-      for(var currentIndex = 0; currentIndex < length; currentIndex++) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        var res = f.app(currentAcc, arr[currentIndex], currentIndex + start);
-        currentAcc = isThenable(res) ? await res : res;
-      }
-      return currentAcc;
+      return raw_array_fold_loop(f, arr, start, init, 0);
     };
 
 
     var raw_array_bool_mapper = function(name, good, bad) {
-      return async function(f, arr, start) {
+      function loop(f, arr, currentIndex) {
+        var length = arr.length;
+        while (currentIndex < length) {
+          if(thisRuntime.needsPause()) {
+            var i0 = currentIndex;
+            return thisRuntime.checkPause().then(function() { return loop(f, arr, i0); });
+          }
+          var res = f.app(arr[currentIndex], currentIndex);
+          if (isThenable(res)) {
+            var i1 = currentIndex;
+            return res.then(function(v) {
+              if (v === bad) { return v; }
+              return loop(f, arr, i1 + 1);
+            });
+          }
+          if (res === bad) { return res; }
+          currentIndex++;
+        }
+        return good;
+      }
+      return function(f, arr, start) {
         if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC([name], 3, $a, false); }
         thisRuntime.checkArgsInternal3("RawArrays", name,
           f, thisRuntime.Function, arr, thisRuntime.RawArray, start, thisRuntime.Number);
-        var length = arr.length;
-        for(var currentIndex = start; currentIndex < length; currentIndex++) {
-          if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-          var res = f.app(arr[currentIndex], currentIndex);
-          if(isThenable(res)) { res = await res; }
-          if(res === bad) { return res; }
-        }
-        return good;
+        return loop(f, arr, start);
       };
     };
 
@@ -4521,45 +4747,75 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     var raw_array_or_mapi = raw_array_bool_mapper("raw-array-or-mapi", false, true);
 
 
-    var raw_array_map = async function(f, arr) {
+    function raw_array_map_loop(f, arr, newArray, currentIndex) {
+      var length = arr.length;
+      while (currentIndex < length) {
+        if(thisRuntime.needsPause()) {
+          var i0 = currentIndex;
+          return thisRuntime.checkPause().then(function() { return raw_array_map_loop(f, arr, newArray, i0); });
+        }
+        var res = f.app(arr[currentIndex]);
+        if (isThenable(res)) {
+          var i1 = currentIndex;
+          return res.then(function(v) { newArray[i1] = v; return raw_array_map_loop(f, arr, newArray, i1 + 1); });
+        }
+        newArray[currentIndex] = res;
+        currentIndex++;
+      }
+      return newArray;
+    }
+    var raw_array_map = function(f, arr) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-map"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-map",
         f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var length = arr.length;
-      var newArray = new Array(length);
-      for(var currentIndex = 0; currentIndex < length; currentIndex++) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        var res = f.app(arr[currentIndex]);
-        newArray[currentIndex] = isThenable(res) ? await res : res;
-      }
-      return newArray;
+      return raw_array_map_loop(f, arr, new Array(arr.length), 0);
     };
 
-    var raw_array_each = async function(f, arr) {
+    function raw_array_each_loop(f, arr, currentIndex) {
+      var length = arr.length;
+      while (currentIndex < length) {
+        if(thisRuntime.needsPause()) {
+          var i0 = currentIndex;
+          return thisRuntime.checkPause().then(function() { return raw_array_each_loop(f, arr, i0); });
+        }
+        var res = f.app(arr[currentIndex]);
+        if (isThenable(res)) {
+          var i1 = currentIndex;
+          return res.then(function() { return raw_array_each_loop(f, arr, i1 + 1); });
+        }
+        currentIndex++;
+      }
+      return nothing;
+    }
+    var raw_array_each = function(f, arr) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-each"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-each",
         f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var length = arr.length;
-      for(var currentIndex = 0; currentIndex < length; currentIndex++) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        var res = f.app(arr[currentIndex]);
-        if(isThenable(res)) { await res; }
-      }
-      return nothing;
+      return raw_array_each_loop(f, arr, 0);
     };
 
-    var raw_array_mapi = async function(f, arr) {
+    function raw_array_mapi_loop(f, arr, newArray, currentIndex) {
+      var length = arr.length;
+      while (currentIndex < length) {
+        if(thisRuntime.needsPause()) {
+          var i0 = currentIndex;
+          return thisRuntime.checkPause().then(function() { return raw_array_mapi_loop(f, arr, newArray, i0); });
+        }
+        var res = f.app(arr[currentIndex], currentIndex);
+        if (isThenable(res)) {
+          var i1 = currentIndex;
+          return res.then(function(v) { newArray[i1] = v; return raw_array_mapi_loop(f, arr, newArray, i1 + 1); });
+        }
+        newArray[currentIndex] = res;
+        currentIndex++;
+      }
+      return newArray;
+    }
+    var raw_array_mapi = function(f, arr) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-mapi"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-mapi",
         f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var length = arr.length;
-      var newArray = new Array(length);
-      for(var currentIndex = 0; currentIndex < length; currentIndex++) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        var res = f.app(arr[currentIndex], currentIndex);
-        newArray[currentIndex] = isThenable(res) ? await res : res;
-      }
-      return newArray;
+      return raw_array_mapi_loop(f, arr, new Array(arr.length), 0);
     };
 
     // CPS / maybe-promise raw-list-map (EXPERIMENT): a NON-async loop that returns the
@@ -4593,83 +4849,129 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     };
 
 
-    var raw_list_join_str_last = async function(lst, sep, lastSep) {
-      if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-join-str-last"], 3, $a, false); }
-      thisRuntime.checkArgsInternal3("Lists", "raw-list-join-str-last",
-        lst, thisRuntime.List, sep, thisRuntime.String, lastSep, thisRuntime.String);
-      var currentAcc = [];
-      var currentLst = lst;
+    function raw_list_join_str_last_loop(currentAcc, currentLst, sep, lastSep) {
       while(thisRuntime.ffi.isLink(currentLst)) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        if(thisRuntime.needsPause()) {
+          var c0 = currentLst;
+          return thisRuntime.checkPause().then(function() { return raw_list_join_str_last_loop(currentAcc, c0, sep, lastSep); });
+        }
         var currentFst = thisRuntime.getColonField(currentLst, "first");
         currentLst = thisRuntime.getColonField(currentLst, "rest");
         var res = tostring.app(currentFst);
-        currentAcc.push(isThenable(res) ? await res : res);
+        if (isThenable(res)) {
+          var c1 = currentLst;
+          return res.then(function(v) { currentAcc.push(v); return raw_list_join_str_last_loop(currentAcc, c1, sep, lastSep); });
+        }
+        currentAcc.push(res);
       }
       if (currentAcc.length <= 1) { return currentAcc.join(sep); }
       var lastElem = currentAcc.pop();
       return currentAcc.join(sep) + lastSep + lastElem;
+    }
+    var raw_list_join_str_last = function(lst, sep, lastSep) {
+      if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-join-str-last"], 3, $a, false); }
+      thisRuntime.checkArgsInternal3("Lists", "raw-list-join-str-last",
+        lst, thisRuntime.List, sep, thisRuntime.String, lastSep, thisRuntime.String);
+      return raw_list_join_str_last_loop([], lst, sep, lastSep);
     };
 
     /**
      * Similar to `raw_array_map`, but applies a specific function to
      * the first item in the array
      */
-    var raw_array_map1 = async function(f1, f, arr) {
+    function raw_array_map1_loop(f1, f, arr, newArray, currentIndex) {
+      var length = arr.length;
+      while (currentIndex < length) {
+        if(thisRuntime.needsPause()) {
+          var i0 = currentIndex;
+          return thisRuntime.checkPause().then(function() { return raw_array_map1_loop(f1, f, arr, newArray, i0); });
+        }
+        var toCall = currentIndex === 0 ? f1 : f;
+        var res = toCall.app(arr[currentIndex]);
+        if (isThenable(res)) {
+          var i1 = currentIndex;
+          return res.then(function(v) { newArray[i1] = v; return raw_array_map1_loop(f1, f, arr, newArray, i1 + 1); });
+        }
+        newArray[currentIndex] = res;
+        currentIndex++;
+      }
+      return newArray;
+    }
+    var raw_array_map1 = function(f1, f, arr) {
       if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-map1"], 3, $a, false); }
       thisRuntime.checkArgsInternal3("RawArrays", "raw-array-map1",
         f1, thisRuntime.Function, f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var length = arr.length;
-      var newArray = new Array(length);
-      for(var currentIndex = 0; currentIndex < length; currentIndex++) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        var toCall = currentIndex === 0 ? f1 : f;
-        var res = toCall.app(arr[currentIndex]);
-        newArray[currentIndex] = isThenable(res) ? await res : res;
-      }
-      return newArray;
+      return raw_array_map1_loop(f1, f, arr, new Array(arr.length), 0);
     };
 
-    var raw_list_filter = async function(f, lst) {
-      if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-filter"], 2, $a, false); }
-      thisRuntime.checkArgsInternal2("Lists", "raw-list-filter",
-        f, thisRuntime.Function, lst, thisRuntime.List);
-      var currentAcc = [];
-      var currentLst = lst;
+    function raw_list_filter_step(res, currentFst, currentAcc) {
+      if(!(isBoolean(res))) {
+        return thisRuntime.ffi.throwNonBooleanCondition(["raw-list-filter"], "Boolean", res);
+      }
+      if(isPyretTrue(res)){
+        currentAcc.push(currentFst);
+      }
+    }
+    function raw_list_filter_loop(f, currentAcc, currentLst) {
       while(thisRuntime.ffi.isLink(currentLst)) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        if(thisRuntime.needsPause()) {
+          var c0 = currentLst;
+          return thisRuntime.checkPause().then(function() { return raw_list_filter_loop(f, currentAcc, c0); });
+        }
         var currentFst = thisRuntime.getColonField(currentLst, "first");
         currentLst = thisRuntime.getColonField(currentLst, "rest");
         var res = f.app(currentFst);
-        if(isThenable(res)) { res = await res; }
-        if(!(isBoolean(res))) {
-          return thisRuntime.ffi.throwNonBooleanCondition(["raw-list-filter"], "Boolean", res);
+        if (isThenable(res)) {
+          var c1 = currentLst, fst1 = currentFst;
+          return res.then(function(v) {
+            raw_list_filter_step(v, fst1, currentAcc);
+            return raw_list_filter_loop(f, currentAcc, c1);
+          });
         }
-        if(isPyretTrue(res)){
-          currentAcc.push(currentFst);
-        }
+        raw_list_filter_step(res, currentFst, currentAcc);
       }
       return thisRuntime.ffi.makeList(currentAcc);
+    }
+    var raw_list_filter = function(f, lst) {
+      if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-filter"], 2, $a, false); }
+      thisRuntime.checkArgsInternal2("Lists", "raw-list-filter",
+        f, thisRuntime.Function, lst, thisRuntime.List);
+      return raw_list_filter_loop(f, [], lst);
     };
 
-    var raw_array_filter = async function(f, arr) {
+    function raw_array_filter_step(res, elt, newArray) {
+      if(!(isBoolean(res))) {
+        return thisRuntime.ffi.throwNonBooleanCondition(["raw-array-filter"], "Boolean", res);
+      }
+      if(isPyretTrue(res)){
+        newArray.push(elt);
+      }
+    }
+    function raw_array_filter_loop(f, arr, newArray, currentIndex) {
+      var length = arr.length;
+      while (currentIndex < length) {
+        if(thisRuntime.needsPause()) {
+          var i0 = currentIndex;
+          return thisRuntime.checkPause().then(function() { return raw_array_filter_loop(f, arr, newArray, i0); });
+        }
+        var res = f.app(arr[currentIndex]);
+        if (isThenable(res)) {
+          var i1 = currentIndex;
+          return res.then(function(v) {
+            raw_array_filter_step(v, arr[i1], newArray);
+            return raw_array_filter_loop(f, arr, newArray, i1 + 1);
+          });
+        }
+        raw_array_filter_step(res, arr[currentIndex], newArray);
+        currentIndex++;
+      }
+      return newArray;
+    }
+    var raw_array_filter = function(f, arr) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-filter"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-filter",
         f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var length = arr.length;
-      var newArray = new Array();
-      for(var currentIndex = 0; currentIndex < length; currentIndex++) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        var res = f.app(arr[currentIndex]);
-        if(isThenable(res)) { res = await res; }
-        if(!(isBoolean(res))) {
-          return thisRuntime.ffi.throwNonBooleanCondition(["raw-array-filter"], "Boolean", res);
-        }
-        if(isPyretTrue(res)){
-          newArray.push(arr[currentIndex]);
-        }
-      }
-      return newArray;
+      return raw_array_filter_loop(f, arr, [], 0);
     };
 
     // CPS / maybe-promise raw-list-fold (EXPERIMENT; see raw_list_map_loop). The
@@ -5550,6 +5852,13 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var funToReturn = makeFunction(function() {
         var theFun = makeConstructor();
         funToReturn.app = theFun;
+        // ALSO patch appBody: the safe-for-space token driver (drive()) calls
+        // r.fn.appBody, not .app -- without this, every TAIL call to a data
+        // constructor bypassed the .app patch and re-synthesized the
+        // constructor through Function() (measured ~5% of the whole exec
+        // suite). app === appBody also keeps PFunction.brand on the plain
+        // makeFunction path, which is right (constructors mint no tokens).
+        funToReturn.appBody = theFun;
         //CONSOLE.log("Calling constructor ", quote(reflName), arguments);
         //CONSOLE.trace();
         var res = theFun.apply(null, arguments)
@@ -5952,6 +6261,10 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       // after the nameMap short-name pass runs.
       'isThenable': isThenable,
       'iT': isThenable,
+      // Generator-compiled non-flat functions: slow-path driver + sync-throw
+      // rejection shim (see the gen-function wrapper in anf-loop-compiler-async).
+      'driveGen': driveGen,
+      'rejP': rejP,
       // Lets shared trove .js files (string-dict, etc.) pick the async code path.
       'stackBackend': 'promise',
       'runThunk': runThunk,
@@ -6026,6 +6339,10 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       'getTuple'         : getTuple,
       'checkTupleBind'   : checkTupleBind,
       'extendObj'        : extendObj,
+      // The shared dict prototype, exported ONLY so codegen can emit
+      // adopt-ready `{__proto__: R.$dictProto, …}` dict literals (see
+      // PObject); not part of the FFI surface.
+      '$dictProto'       : dictProto,
 
       'hasBrand' : hasBrand,
       'getMaker' : getMaker,

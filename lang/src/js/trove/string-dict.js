@@ -797,10 +797,29 @@
 
 
     //////////////////////////////////////////////////
+    // READ FAST PATH: a frozen dict (freezeMSD) carries $fastDict, a
+    // prototype-less native-object snapshot of the entries, so get/get-value/
+    // has-key are one property read instead of a HAMT hash+walk. `undefined`
+    // means absent (Pyret values are never undefined -- the same convention
+    // the mutable dict's $underlyingDict paths already rely on). Dicts built
+    // by functional set/remove/merge have no $fastDict and use the HAMT as
+    // before; key ENUMERATION (keys/keys-list/each-key/...) always uses the
+    // HAMT so ordering is byte-identical to the pre-fast-path behavior.
+    // The typeof guard doubles as the arg check: checkArgsInternal1 is a
+    // no-op for actual strings, so it only needs to run (and throw its
+    // canonical error) on the non-string path.
     var getISD = runtime.makeMethod1(function(self, key) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw runtime.ffi.throwArityErrorC(['get'], 2, $a, true); }
-      runtime.checkArgsInternal1("string-dict", "get",
-        key, runtime.String);
+      if (typeof key === "string") {
+        var fd = self.$fastDict;
+        if (fd !== undefined) {
+          var fval = fd[key];
+          return fval === undefined ? runtime.ffi.makeNone() : runtime.ffi.makeSome(fval);
+        }
+      } else {
+        runtime.checkArgsInternal1("string-dict", "get",
+          key, runtime.String);
+      }
       var missing_value = {};
       var val = self.$underlyingMap.get(key, missing_value);
       if (val === missing_value) {
@@ -812,8 +831,19 @@
 
     var getValueISD = runtime.makeMethod1(function(self, key) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw runtime.ffi.throwArityErrorC(['get-value'], 2, $a, true); }
-      runtime.checkArgsInternal1("string-dict", "get-value",
-        key, runtime.String);
+      if (typeof key === "string") {
+        var fd = self.$fastDict;
+        if (fd !== undefined) {
+          var fval = fd[key];
+          if (fval === undefined) {
+            runtime.ffi.throwMessageException('Key ' + key + ' not found');
+          }
+          return fval;
+        }
+      } else {
+        runtime.checkArgsInternal1("string-dict", "get-value",
+          key, runtime.String);
+      }
       var missing_value = {};
       var val = self.$underlyingMap.get(key, missing_value);
       if (val === missing_value) {
@@ -854,8 +884,15 @@
 
     var hasKeyISD = runtime.makeMethod1(function(self, key) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw runtime.ffi.throwArityErrorC(['has-key'], 2, $a, true); }
-      runtime.checkArgsInternal1("string-dict", "has-key",
-        key, runtime.String);
+      if (typeof key === "string") {
+        var fd = self.$fastDict;
+        if (fd !== undefined) {
+          return runtime.makeBoolean(fd[key] !== undefined);
+        }
+      } else {
+        runtime.checkArgsInternal1("string-dict", "has-key",
+          key, runtime.String);
+      }
       var missing_value = {};
       var val = self.$underlyingMap.get(key, missing_value);
       if (val === missing_value) {
@@ -899,10 +936,18 @@
 
     var keysListISD = runtime.makeMethod0(function(self) {
       if (arguments.length !== 1) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw runtime.ffi.throwArityErrorC(['keys-list'], 1, $a, true); }
+      // The dict is immutable and Pyret lists are immutable, so the keys list
+      // can be built once and returned by identity thereafter (loops that call
+      // .keys-list() per iteration otherwise rebuild an n-element list each
+      // time). Same HAMT enumeration order as before, just memoized.
+      var cached = self.$keysList;
+      if (cached !== undefined) { return cached; }
       var keys = self.$underlyingMap.keys();
-      return runtime.ffi.makeList(keys.map(function(key) {
+      var lst = runtime.ffi.makeList(keys.map(function(key) {
         return runtime.makeString(key);
       }));
+      self.$keysList = lst;
+      return lst;
     });
 
     var countISD = runtime.makeMethod0(function(self) {
@@ -952,7 +997,7 @@
       return makeMutableStringDict(dict);
     });
 
-    function makeImmutableStringDict(underlyingMap) {
+    function makeImmutableStringDict(underlyingMap, fastDict) {
       var obj = O({
         get: getISD,
         'get-value': getValueISD,
@@ -972,14 +1017,21 @@
       });
       obj = applyBrand(brandImmutable, obj);
       obj.$underlyingMap = underlyingMap;
+      // Present only on freeze()-built dicts: a native-object snapshot of the
+      // entries for the get/get-value/has-key fast path (see getISD).
+      obj.$fastDict = fastDict;
       return obj;
     }
 
     //////////////////////////////////////////////////
     var getMSD = runtime.makeMethod1(function(self, key) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw runtime.ffi.throwArityErrorC(['get-now'], 2, $a, true); }
-      runtime.checkArgsInternal1("string-dict", "get-now",
-        key, runtime.String);
+      // checkArgsInternal1 is a no-op for actual strings; only run it (for its
+      // canonical error) on the non-string path. Same idiom as getISD.
+      if (typeof key !== "string") {
+        runtime.checkArgsInternal1("string-dict", "get-now",
+          key, runtime.String);
+      }
       var val = self.$underlyingDict[key];
       if (val === undefined) {
         return runtime.ffi.makeNone();
@@ -990,8 +1042,10 @@
 
     var getValueMSD = runtime.makeMethod1(function(self, key) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw runtime.ffi.throwArityErrorC(["get-value-now"], 2, $a, true); }
-      runtime.checkArgsInternal1("string-dict", "get-value-now",
-        key, runtime.String);
+      if (typeof key !== "string") {
+        runtime.checkArgsInternal1("string-dict", "get-value-now",
+          key, runtime.String);
+      }
       var val = self.$underlyingDict[key];
       if (val === undefined) {
         runtime.ffi.throwMessageException("Key " + key + " not found");
@@ -1001,8 +1055,10 @@
 
     var setMSD = runtime.makeMethod2(function(self, key, val) {
       if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw runtime.ffi.throwArityErrorC(["set-now"], 3, $a, true); }
-      runtime.checkArgsInternal2("string-dict", "set-now",
-        key, runtime.String, val, runtime.Any);
+      if (typeof key !== "string") {
+        runtime.checkArgsInternal2("string-dict", "set-now",
+          key, runtime.String, val, runtime.Any);
+      }
       if (self.$sealed) {
         runtime.ffi.throwMessageException("Cannot modify sealed string dict");
       }
@@ -1157,10 +1213,16 @@
     var freezeMSD = runtime.makeMethod0(function(self) {
       if (arguments.length !== 1) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw runtime.ffi.throwArityErrorC(['freeze'], 1, $a, true); }
       var map = emptyMap();
+      // Snapshot the entries for the frozen dict's read fast path; must be a
+      // copy (the mutable dict can keep changing) and prototype-less (key
+      // names like "toString" must behave as plain keys, matching
+      // $underlyingDict's own Object.create(null) convention).
+      var fast = Object.create(null);
       for (var key in self.$underlyingDict) {
         map = map.set(key, self.$underlyingDict[key]);
+        fast[key] = self.$underlyingDict[key];
       }
-      return makeImmutableStringDict(map);
+      return makeImmutableStringDict(map, fast);
     });
 
     var sealMSD = runtime.makeMethod0(function(self) {

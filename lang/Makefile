@@ -474,6 +474,46 @@ tests/pyret/main2-ts.jarr: ts-compiler tests/pyret/main2.arr $(TEST_FILES)
 ts-pyret-test: tests/pyret/main2-ts.jarr
 	$(NODE) tests/pyret/main2-ts.jarr
 
+# EXPERIMENT: main2 exec suite compiled cont-optimized (-cont-optimize), its own
+# tests/ts-compiled-co/ cache so the optimized builtins never mix with the frozen
+# cont ones. Broad correctness oracle for the cont-optimize experiment: this suite
+# must still pass ~13k tests. Cont byte-parity is deliberately broken here.
+tests/pyret/main2-ts-co.jarr: ts-compiler tests/pyret/main2.arr $(TEST_FILES)
+	$(TS_PYRET) \
+		--builtin-js-dir src/js/trove/ \
+		--builtin-arr-dir src/arr/trove/ \
+		--require-config src/scripts/standalone-configA.json \
+		--compiled-dir tests/ts-compiled-co/ \
+		--stack-backend cont \
+		-cont-optimize \
+		--outfile tests/pyret/main2-ts-co.jarr \
+		--build-runnable tests/pyret/main2.arr \
+		-check-all
+
+.PHONY : ts-pyret-test-co
+ts-pyret-test-co: tests/pyret/main2-ts-co.jarr
+	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-ts-co.jarr
+
+# Sound cont-optimize: same as above but -no-method-flatness (the pass whose
+# interaction with weakening exposes a cont flat-method-app codegen bug on AVL
+# sets). This config passes the full suite; keeps the weakening + optimizer/LICM
+# wins. Own cache so it never mixes with the aggressive co cache.
+tests/pyret/main2-ts-co-safe.jarr: ts-compiler tests/pyret/main2.arr $(TEST_FILES)
+	$(TS_PYRET) \
+		--builtin-js-dir src/js/trove/ \
+		--builtin-arr-dir src/arr/trove/ \
+		--require-config src/scripts/standalone-configA.json \
+		--compiled-dir tests/ts-compiled-co-safe/ \
+		--stack-backend cont \
+		-cont-optimize -no-method-flatness \
+		--outfile tests/pyret/main2-ts-co-safe.jarr \
+		--build-runnable tests/pyret/main2.arr \
+		-check-all
+
+.PHONY : ts-pyret-test-co-safe
+ts-pyret-test-co-safe: tests/pyret/main2-ts-co-safe.jarr
+	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-ts-co-safe.jarr
+
 .PHONY : ts-test
 ts-test: ts-unit-test ts-parity-test ts-repl-test ts-pyret-test ts-type-check-test ts-regression-test ts-io-test ts-effect-tail-test
 
@@ -512,6 +552,23 @@ ts-clean:
                       --builtin-js-dir src/js/trove/ \
                       --builtin-arr-dir src/arr/trove/ \
                       --compiled-dir compiled-ts/ \
+                      $(EXTRA_FLAGS) \
+                      --require-config src/scripts/standalone-configA.json
+
+# EXPERIMENT: cont-optimized. Same as %.ts.jarr (cont backend) but with
+# -cont-optimize, which runs the normally promise-only ANF optimizations
+# (optimizer middle-end + operator weakening + method-flatness pre-pass) on the
+# cont backend. Uses a SEPARATE compiled-ts-co/ cache so the optimized builtins
+# never contaminate the frozen-cont compiled-ts/ modules. Breaks the cont
+# byte-parity oracle by design.
+%.ts.co.jarr: $(TS_COMP_OUT)/pyret.js %.arr
+	$(TS_PYRET) --outfile $*.ts.co.jarr \
+                      --build-runnable $*.arr \
+                      --builtin-js-dir src/js/trove/ \
+                      --builtin-arr-dir src/arr/trove/ \
+                      --compiled-dir compiled-ts-co/ \
+                      --stack-backend cont \
+                      -cont-optimize \
                       $(EXTRA_FLAGS) \
                       --require-config src/scripts/standalone-configA.json
 

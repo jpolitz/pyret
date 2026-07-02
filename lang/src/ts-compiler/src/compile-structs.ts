@@ -1104,6 +1104,48 @@ export interface CompileOptions {
   // making the static names sound. It's a codegen choice in the async backend,
   // independent of `optimize`.
   directCases: boolean;
+  // Direct (static) field access for `obj.field` reads (type-flow tagDirectFields;
+  // both backends, but only fires under -cont-optimize on cont). On by default;
+  // -no-direct-fields disables it for A/B. When the receiver's upper-bound type
+  // resolves to a data type carrying `field` on every variant, the read becomes a
+  // direct `obj.dict["field"]` instead of the reflective/megamorphic getField call.
+  // Same soundness basis as directCases (self-disables unless valueIsTyped).
+  directFields: boolean;
+  // Generator-based maybe-promise compilation of non-flat functions (promise
+  // backend codegen only). On by default; -no-gen-functions falls back to plain
+  // `async function` emission for A/B. A non-flat body compiles to a `function*`
+  // (awaits become yields) driven by a synchronous wrapper, so a call that never
+  // actually suspends returns its value flat -- no Promise allocation, no
+  // microtask hop -- while a genuine suspension still returns a Promise
+  // (R.driveGen), preserving the Awaitable ABI, fuel-based stack unwinding, and
+  // await error semantics exactly.
+  genFunctions: boolean;
+  // Tail-flat compilation attempt (promise backend codegen only; requires
+  // genFunctions). On by default; -no-tail-flat disables for A/B. A non-flat
+  // function whose body compiles with NO awaits outside tail-position calls
+  // (verified by construction: compile in tail-flat mode, scan for leftover
+  // awaits, fall back to the generator compilation if any remain) is emitted as
+  // a PLAIN synchronous function: tail calls return the callee's result
+  // (value or thenable) directly -- the Awaitable ABI allows both -- and the
+  // fuel check becomes `if (needsPause()) return checkPause().then(re-enter)`,
+  // which also unwinds sync tail chains (all frames return the same promise, so
+  // a bounce collapses to O(1) heap). Zero per-call allocation on the hot path.
+  tailFlat: boolean;
+  // Few-suspend compilation attempt (promise backend codegen only; requires
+  // genFunctions; the third tier between tail-flat and the generator). On by
+  // default; -no-few-suspend disables for A/B. A non-flat function whose
+  // tail-flat attempt leaves only a FEW mid-body conditional awaits (at most 2
+  // suspend sites and 1 suspension-relevant branch -- the "could I write this
+  // as a manual promise.then" bound) is emitted as a PLAIN synchronous
+  // function: each suspend site becomes `if (R.iT(t)) return t.then(<the rest
+  // of the body>)`, with the synchronous path falling through to the same
+  // statements in place. Zero per-call allocation unless a suspension actually
+  // happens -- this removes the generator + IteratorResult allocation that
+  // dominates tiny hot callbacks (dict-update / fold lambdas doing one or two
+  // polymorphic ops). Decided by construction (attempt the rewrite, fall back
+  // to the generator tier if the body doesn't fit); fuel is charged on entry
+  // via the same needsPause/checkPause protocol as tail-flat.
+  fewSuspend: boolean;
   // Redundant annotation-check elimination driven by the upper-bound type-flow
   // analysis (type-flow.ts; promise backend only). On by default; -no-ann-elision
   // disables it for A/B measurement. When the analysis proves an `:: T` bind's
@@ -1145,6 +1187,14 @@ export interface CompileOptions {
   // elision (the ub facts rest on the runtime annotation checks), so it self-
   // disables unless runtimeAnnotations && userAnnotations. Independent of `optimize`.
   opWeakening: boolean;
+  // EXPERIMENT (-cont-optimize): run the normally promise-only ANF-level
+  // optimizations (optimizer middle-end, operator weakening, method-flatness
+  // pre-pass feeding the shared flatness env) on the CONT backend too. These
+  // enrich the flatness facts cont uses to skip state-machine steps / isCont
+  // checks and let it call monomorphic fast-path globals. Off by default; when
+  // on it breaks the cont byte-parity oracle by design, so it lives on its own
+  // compiled cache. See js-of-pyret.ts.
+  contOptimize: boolean;
   stackBackend: StackBackend;
   inlineCaseBodyLimit: number;
   moduleEval: boolean;
@@ -1190,10 +1240,15 @@ export const defaultCompileOptions: CompileOptions = {
   inlineComments: false,
   unboxVars: true,
   directCases: true,
+  directFields: true,
+  genFunctions: true,
+  tailFlat: true,
+  fewSuspend: true,
   annElision: true,
   methodFlatness: true,
   importedMethodFlat: true,
   opWeakening: true,
+  contOptimize: false,
   stackBackend: compiledStackBackend,
   inlineCaseBodyLimit: 5,
   moduleEval: true,

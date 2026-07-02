@@ -120,10 +120,17 @@ export function traceMakeCompiledPyret(
   options: C.CompileOptions
 ): [C.Provides, C.CompileResult<CompiledCodePrinter>] {
   const anfedRaw = addPhase('ANFed', N.anfProgram(programAst));
-  // ANF-to-ANF optimization middle-end (inliner/LICM/...). Promise backend
-  // only: it mints fresh atoms, which the cont backend's byte-parity oracle
-  // would notice, and the cont codegen stays frozen by design.
-  const anfedOpt = C.isPromise(options.stackBackend) && options.optimize
+  // Normally the ANF-level optimizations below are promise-only: they mint fresh
+  // atoms / rewrite ops, which the cont backend's byte-parity oracle would notice,
+  // so cont codegen stays frozen by design. The `-cont-optimize` experiment opts
+  // the cont backend into them too (breaking that oracle deliberately) to measure
+  // how much the shared ANF passes -- inliner/CSE/LICM, operator weakening, and the
+  // method-flatness pre-pass that feeds the flatness env cont uses to skip
+  // state-machine steps -- speed up cont. `optForBackend` is true whenever a pass
+  // should run: for promise always, for cont only under the experiment flag.
+  const optForBackend = C.isPromise(options.stackBackend) || options.contOptimize;
+  // ANF-to-ANF optimization middle-end (inliner/LICM/...).
+  const anfedOpt = optForBackend && options.optimize
     ? addPhase('Optimized ANF', OPT.optimizeProgram(anfedRaw, options.inlineComments, options.licm))
     : anfedRaw;
   // Typed operator weakening (promise backend only): rewrite polymorphic operator
@@ -132,11 +139,23 @@ export function traceMakeCompiledPyret(
   // flattens the arithmetic (no numeric special-casing in flatness.ts). Runs BEFORE
   // the method-receiver pre-pass so that pass keys method-app node identity off the
   // weakened ANF. Gated like ann elision: the ub facts rest on the runtime ann checks.
-  const anfed =
-    (C.isPromise(options.stackBackend) && options.opWeakening
+  const anfedWeak =
+    (optForBackend && options.opWeakening
       && options.runtimeAnnotations && options.userAnnotations)
       ? addPhase('Operator weakening', TF.weakenOperators(anfedOpt, postEnv, env, provides.fromUri))
       : anfedOpt;
+  // Direct static field access: tag each `obj.field` whose receiver's upper-bound
+  // type resolves to a data type carrying `field` on every variant, so codegen
+  // emits `obj.dict["field"]` instead of the reflective/megamorphic getField call.
+  // Both backends benefit (cont only under -cont-optimize). Gated like directCases:
+  // the type facts rest on the runtime `_checkAnn` (or the static type proof), so
+  // self-disable unless annotations are intact or type-checking is on.
+  const valueIsTyped = options.typeCheck
+    || (options.runtimeAnnotations && options.userAnnotations);
+  const anfed =
+    (optForBackend && options.directFields && valueIsTyped)
+      ? addPhase('Direct field tagging', TF.tagDirectFields(anfedWeak, postEnv, env, provides.fromUri, options.importedMethodFlat))
+      : anfedWeak;
   if (process.env.PYRET_DUMP_ANF) {
     process.stderr.write('===ANF[' + (programAst.l && (programAst.l as any).source) + ']===\n');
     process.stderr.write((anfed as any).tosource().pretty(100).join('\n') + '\n===END ANF===\n');
@@ -146,7 +165,7 @@ export function traceMakeCompiledPyret(
   // flatness pass so it can analyze that type's methods. Gated like the type-flow
   // ann elision (the ub facts rest on the annotation/constructor checks that run).
   const methodInfo =
-    (C.isPromise(options.stackBackend) && options.methodFlatness
+    (optForBackend && options.methodFlatness
       && options.runtimeAnnotations && options.userAnnotations)
       ? addPhase('Method receiver info', TF.makeProgMethodInfo(anfed, postEnv, env, provides.fromUri))
       : undefined;

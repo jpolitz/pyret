@@ -90,6 +90,14 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Disable function-local var box elimination (promise backend; keep all vars boxed, for A/B measurement)')],
     ['no-direct-cases',
       C.flag(C.once, 'Disable static field access for cases (promise backend; use the reflective $fieldNames/$mut_fields_mask chain, for A/B measurement)')],
+    ['no-direct-fields',
+      C.flag(C.once, 'Disable static field access for obj.field reads (both backends when the receiver type is known; use the reflective getField call, for A/B measurement)')],
+    ['no-gen-functions',
+      C.flag(C.once, 'Disable generator-based maybe-promise compilation of non-flat functions (promise backend; emit plain async functions instead, for A/B measurement)')],
+    ['no-tail-flat',
+      C.flag(C.once, 'Disable the tail-flat synchronous compilation attempt for non-flat functions whose only suspension points are tail calls (promise backend; for A/B measurement)')],
+    ['no-few-suspend',
+      C.flag(C.once, 'Disable the few-suspend synchronous compilation attempt for non-flat functions with at most 2 mid-body suspension points (promise backend; keep them generator-compiled, for A/B measurement)')],
     ['no-ann-elision',
       C.flag(C.once, 'Disable redundant annotation-check elimination (promise backend; keep every _checkAnn the type-flow analysis proved dead, for A/B measurement)')],
     ['no-method-flatness',
@@ -98,6 +106,8 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Disable cross-module method flatness (promise backend; keep the conditional-await wrapper on calls to an imported flat method -- both a Pyret module method proven flat and a native builtin dict method -- for A/B measurement)')],
     ['no-op-weakening',
       C.flag(C.once, 'Disable typed operator weakening (promise backend; keep polymorphic _plus etc. instead of monomorphic _plus_nums, for A/B measurement)')],
+    ['cont-optimize',
+      C.flag(C.once, 'EXPERIMENT: run the normally promise-only ANF optimizations (optimizer middle-end, operator weakening, method-flatness pre-pass) on the CONT backend too, to measure how fast optimized cont goes. Breaks the cont byte-parity oracle by design; use a separate compiled cache.')],
     ['collect-times',
       C.flag(C.once, 'Collect timing information about compilation')],
     ['type-check',
@@ -145,10 +155,15 @@ export function main(args: string[]): number {
     const inlineComments = r.has('inline-comments');
     const unboxVars = !r.has('no-unbox-vars');
     const directCases = !r.has('no-direct-cases');
+    const directFields = !r.has('no-direct-fields');
+    const genFunctions = !r.has('no-gen-functions');
+    const tailFlat = !r.has('no-tail-flat');
+    const fewSuspend = !r.has('no-few-suspend');
     const annElision = !r.has('no-ann-elision');
     const methodFlatness = !r.has('no-method-flatness');
     const importedMethodFlat = !r.has('no-imported-method-flat');
     const opWeakening = !r.has('no-op-weakening');
+    const contOptimize = r.has('cont-optimize');
     const compiledDir = r.get('compiled-dir');
     const standaloneFile = r.get('standalone-file');
     const addProfiling = r.has('profile');
@@ -229,10 +244,15 @@ export function main(args: string[]): number {
           inlineComments: inlineComments,
           unboxVars: unboxVars,
           directCases: directCases,
+          directFields: directFields,
+          genFunctions: genFunctions,
+          tailFlat: tailFlat,
+          fewSuspend: fewSuspend,
           annElision: annElision,
           methodFlatness: methodFlatness,
           importedMethodFlat: importedMethodFlat,
           opWeakening: opWeakening,
+          contOptimize: contOptimize,
           stackBackend: stackBackend,
           compiledCache: compiledDir,
           compiledReadOnly: r.has('compiled-read-only-dir') ? r.get('compiled-read-only-dir') : [],
@@ -273,10 +293,15 @@ export function main(args: string[]): number {
         inlineComments: inlineComments,
         unboxVars: unboxVars,
         directCases: directCases,
+        directFields: directFields,
+        genFunctions: genFunctions,
+        tailFlat: tailFlat,
+        fewSuspend: fewSuspend,
         annElision: annElision,
         methodFlatness: methodFlatness,
         importedMethodFlat: importedMethodFlat,
         opWeakening: opWeakening,
+        contOptimize: contOptimize,
         stackBackend: stackBackend,
         compileModule: false,
         displayProgress: displayProgress
