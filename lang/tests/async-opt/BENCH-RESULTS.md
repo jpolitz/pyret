@@ -60,6 +60,25 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-02 — Stage 3a: type-flow ann elision + operator-globals registration)
+
+Two commits measured together (the second is behaviorally inert): the
+upper-bound type-flow pass with redundant-`_checkAnn` elision
+(`-no-ann-elision`), and the 21 flat operator globals registered in all four
+sources of truth (no consumer yet — the weakening pass lands next).
+
+- Feature A/B on bench-anns (fully-typed cases workload): 17 → 11 emitted
+  `R._cA` checks, output identical with `-no-ann-elision`. (`R._cA` is the
+  emitted-check signature to grep for — `_checkAnn` only appears in the
+  runtime.)
+- O1 cont byte-parity 16/16 PASS. O3 13203 green, O4 12771 green (suites grew
+  by the new ann-elision/refinement/#1532 pins).
+- O5 N=5: parity 16/16, geomean **1.117** (from 1.133): matrix 1.33 → 1.27,
+  vec-methods 1.08; annotation-light benches unmoved (plagiarism/boids wobble
+  within the day's noise band).
+- O6 interleaved N=3 medians: cont 231.1 s vs promise 249.0 s → p/c 1.08
+  (statistically flat vs Stage 2's 1.07).
+
 ## Results (2026-07-02 — Stage 2: appBody patch in the lazy data-constructor shim)
 
 Runtime-only fix (see the commit): the safe-for-space token driver calls
