@@ -57,6 +57,60 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-02 — few-suspend tier: PLAGIARISM CRACKED, 1.22 → 0.74; geomean 0.87)
+
+The third compilation tier between tail-flat and the generator (`-no-few-suspend`
+to disable): a non-flat function whose tail-flat attempt leaves at most 2 mid-body
+conditional awaits and at most 1 suspension-relevant branch is emitted as a PLAIN
+synchronous function. Each suspend site becomes
+`if (R.iT(t)) return t.then(<continuation over the live vars>)` with the sync path
+falling through to the same (aliased, not copied) statements in place — zero
+allocation unless a suspension actually happens. This removes the per-call
+generator + IteratorResult allocation that dominated tiny hot callbacks (the
+plagiarism dict-update and dot-product lambdas: 1–2 polymorphic ops on untyped
+dict values, exactly this shape). In the exec-suite jarr, 54% of generator-tier
+functions moved to the sync tier (6087 → 2800 `function*`, 5971 resume sites).
+
+Full table (N=5 medians, frozen cont vs promise, all 16 parity OK):
+
+| benchmark | cont med | prom med | p/c | prior p/c |
+|---|---|---|---|---|
+| spell              | 3.12 | 2.67 | **0.86** | 0.87 |
+| car-compute        | 2.84 | 2.08 | **0.73** | 0.74 |
+| car-render         | 2.86 | 2.75 | **0.96** | — |
+| lander             | 2.68 | 2.62 | **0.98** | — |
+| orbital-compute    | 2.23 | 2.49 | 1.12 | 1.03–1.11 |
+| orbital-ems        | 1.70 | 1.77 | 1.04 | — |
+| orbital-render     | 3.01 | 3.06 | 1.02 | — |
+| boids-compute      | 2.87 | 2.68 | **0.93** | 0.97 |
+| boids-compute-data | 2.84 | 1.94 | **0.68** | 0.73 |
+| boids-raster       | 2.73 | 2.69 | **0.99** | — |
+| vec-methods        | 2.77 | 1.33 | **0.48** | 0.50 |
+| matrix             | 3.27 | 2.60 | **0.80** | 0.94 |
+| dtree              | 1.17 | 1.07 | **0.91** | 0.94 |
+| kmeans             | 1.74 | 1.61 | **0.93** | 0.90 |
+| **plagiarism**     | 1.34 | 0.99 | **0.74** | **1.36–1.41** |
+| seam               | 2.17 | 2.11 | **0.97** | — |
+
+**Geomean p/c ≈ 0.87** (was 0.92). Plagiarism — the last bench above 1.1 —
+goes from 22–41% slower to 26% FASTER than frozen cont. Suites: full promise
+main2 13346 green, exec 12914 green, all fresh-codegen-verified. Whole-suite
+exec wall-clock A/B (interleaved N=3, few-suspend ON vs OFF, same box/hour):
+ON med 185.3s vs OFF med 186.1s, ranges fully overlapping — holds.
+
+The ≤2/≤1 bound was validated empirically: an FS_MAX_SUSPENDS=3 experiment
+(isolated cache, interleaved N=5/N=3) was a WASH on orbital-compute (med 2.48
+vs 2.51, overlapping) and consistently ~6% WORSE on plagiarism (med 1.09 vs
+1.02 — the extra continuation duplication costs more than the saved generator
+allocs). Reverted to 2; loosen only with new data.
+
+Orbital-compute's residual (1.12, its historical band) is NOT generator
+allocation: `--prof` shows `CreateGeneratorObject` at only 1.9% while
+`extendWith`/`extendObj` (the per-tick `target.{pos:…, vel:…}` functional
+record extend) plus megamorphic Load/KeyedLoad/KeyedStore ICs dominate. The
+next lever for orbital is the record-extend path / object shape, a different
+bucket than call machinery.
+
 ## Results (2026-07-02 — runtime follow-ons: WHOLE-SUITE PARITY CROSSED, p/c 0.957)
 
 Differential (promise-vs-cont) profiling of the exec suite after the generator levers
