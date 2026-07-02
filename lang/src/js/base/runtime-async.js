@@ -2112,28 +2112,29 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
 
       var stackOfToCompare = [];
       var toCompare = { stack: [], curAns: thisRuntime.ffi.equal };
-      var cache = {left: [], right: [], equal: []};
+      // Seen-pairs cache. The old form was three parallel arrays with a LINEAR
+      // findPair scan -- measured growing to ~38k pairs inside a single equal3
+      // call on the test suite, making pair lookup O(pairs^2) overall (the
+      // dominant equality cost). Now a Map(left -> Map(right -> record)) with
+      // records also kept in insertion order (cache.list) so the index-based
+      // setCache protocol and the settle loop are unchanged. Records start at
+      // the optimistic Equal, exactly like the old cache.equal entries, which
+      // is what terminates cycles.
+      var cache = {map: new Map(), list: []};
       function findPair(obj1, obj2) {
-        for (var i = 0; i < cache.left.length; i++) {
-          if (cache.left[i] === obj1 && cache.right[i] === obj2)
-            return cache.equal[i];
-        }
-        return false;
-      }
-      function setCachePair(obj1, obj2, val) {
-        for (var i = 0; i < cache.left.length; i++) {
-          if (cache.left[i] === obj1 && cache.right[i] === obj2) {
-            cache.equal[i] = val;
-            return;
-          }
-        }
-// throw new Error("Internal error: tried to
+        var m = cache.map.get(obj1);
+        if (m === undefined) { return false; }
+        var rec = m.get(obj2);
+        if (rec === undefined) { return false; }
+        return rec.val;
       }
       function cachePair(obj1, obj2) {
-        cache.left.push(obj1);
-        cache.right.push(obj2);
-        cache.equal.push(thisRuntime.ffi.equal);
-        return cache.equal.length;
+        var rec = { val: thisRuntime.ffi.equal };
+        var m = cache.map.get(obj1);
+        if (m === undefined) { m = new Map(); cache.map.set(obj1, m); }
+        m.set(obj2, rec);
+        cache.list.push(rec);
+        return cache.list.length;
       }
       // Maybe-promise equality (same discipline as the gen-compiled code and
       // the arithmetic ops): the worklist drains SYNCHRONOUSLY and returns a
@@ -2146,7 +2147,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         while (toCompare.stack.length > 0 && !thisRuntime.ffi.isNotEqual(toCompare.curAns)) {
           current = toCompare.stack.pop();
           if(current.setCache) {
-            cache.equal[current.index - 1] = toCompare.curAns;
+            cache.list[current.index - 1].val = toCompare.curAns;
             continue;
           }
           curLeft = current.left;
@@ -2316,7 +2317,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
           for(var i = 0; i < toCompare.stack.length; i++) {
             var current = toCompare.stack[i];
             if(current.setCache) {
-              cache.equal[current.index - 1] = ans;
+              cache.list[current.index - 1].val = ans;
             }
           }
           toCompare = stackOfToCompare.pop();
