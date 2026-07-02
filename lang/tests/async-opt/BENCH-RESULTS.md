@@ -60,6 +60,25 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-02 — Stage 2: appBody patch in the lazy data-constructor shim)
+
+Runtime-only fix (see the commit): the safe-for-space token driver calls
+`.appBody`, which the lazy constructor shim left pointing at the Function()
+synthesizer, so every tail call to a data constructor re-synthesized it.
+Embedded-runtime landmine drill: `make build/phaseA/js/runtime-async.js`,
+`build/ts-compiler/js/runtime-async.js` refreshed, all 16 promise jarrs +
+suite jarrs rebuilt (freshness pinned by grepping the new comment in a jarr
+and its absence in frozen cont).
+
+- O1 cont byte-parity 16/16 PASS; O3 13176 green; O4 12751 green.
+- O5 N=5: parity 16/16, geomean **1.133** (flat vs 1.130 — expected: the
+  curated benches barely tail-call constructors; plagiarism 1.25).
+- O6 interleaved N=3 medians: cont 229.1 s vs promise 244.5 s →
+  **p/c 1.19 → 1.07**. The whole-suite constructor traffic is where this bug
+  lived (on the discovery branch it was measured at 2.31% of samples via
+  makeConstructor alone, post-gen-levers; here, pre-tiers, the tail-token
+  driver is hot everywhere, so the payoff is larger).
+
 ## Results (2026-07-02 — Stage 1: string-dict library pass)
 
 `string-dict.js` read fast path on frozen dicts + typeof-gated arg checks +
