@@ -69,6 +69,41 @@ check "should work for refinements":
   end
 end
 
+check "refinements across module boundaries (issue #1532)":
+  # https://github.com/brownplt/pyret-lang/issues/1532 (filed by jpolitz; root cause
+  # diagnosed by Dylan Hu): an exported refinement type alias loses its predicate when
+  # reached through `include` (a bare type name), but is enforced correctly through a
+  # qualified `import` reference. mod1's source is embedded via `import file(<source>)`,
+  # which the test harness's dfind compiles as a separate module (real provides boundary).
+  mod1 = "provide *\nprovide-types *\n"
+    + "is-odd = lam(n): num-modulo(n, 2) == 1 end\n"
+    + "type FetchNum = Number%(is-odd)\n"
+    + "fun must-odd(x :: Number%(is-odd)) -> Number: x end\n"
+  imp = lam(body :: String): "import file(" + torepr(mod1) + ") as M\n" + body end
+
+  # (1) Qualified IMPORT reference -- the refinement IS enforced across the boundary.
+  run-str(imp("x :: M.FetchNum = 6\nx")) is%(output) contract-error  # 6 even -> is-odd false
+  run-str(imp("x :: M.FetchNum = 5\nx")) is%(output) success
+
+  # (2) Embedded in an exported function annotation -- also enforced (the _checkAnn is
+  # compiled into mod1's body; the importer just calls it).
+  run-str(imp("M.must-odd(6)")) is%(output) contract-error
+  run-str(imp("M.must-odd(5)")) is%(output) success
+
+  # (3) THE BUG (#1532): reached through `include` as a bare type name -- the predicate
+  # is DROPPED (`include` desugaring aliases the type directly to its base `Number`), so
+  # an even value wrongly passes. This pins current behavior; when #1532 is fixed the
+  # first of these flips to contract-error (match (1)) -- update this test then.
+  run-str(imp("include from M: type FetchNum end\nx :: FetchNum = 6\nx")) is%(output) success
+  run-str(imp("include from M: type FetchNum end\nx :: FetchNum = 5\nx")) is%(output) success
+
+  # Control: same-module the alias IS enforced -- the gap is the cross-module `include`
+  # path, not the refinement itself.
+  run-str("is-odd = lam(n): num-modulo(n, 2) == 1 end\n"
+    + "type FetchNum = Number%(is-odd)\n"
+    + "x :: FetchNum = 6\nx") is%(output) contract-error
+end
+
 check "should work for records":
   contract-errors = [list:
     { p: "x :: { x :: Number } = { x : 'foo' }", f: [list: "x"] },

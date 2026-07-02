@@ -13,6 +13,7 @@ import * as AAL from './anf-loop-compiler-async';
 import * as C from './compile-structs';
 import * as CL from './concat-lists';
 import * as FL from './flatness';
+import * as TF from './type-flow';
 import * as J from './js-ast';
 import * as PP from './pprint';
 
@@ -120,11 +121,21 @@ export function traceMakeCompiledPyret(
   const anfed = addPhase('ANFed', N.anfProgram(programAst));
   const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env));
   const flatProvides = addPhase('Get flat-provides', FL.getFlatProvides(provides, env, postEnv, flatnessEnv, anfed));
+  // Upper-bound type-flow: bind keys whose `:: T` annotation check is provably
+  // redundant. Promise backend only (cont codegen stays frozen for the byte-parity
+  // oracle, and this set is never consulted there). Self-disables unless runtime
+  // annotations are intact -- the ub facts rest on the checks that actually run.
+  const redundantAnnChecks =
+    (C.isPromise(options.stackBackend) && options.annElision
+      && options.runtimeAnnotations && options.userAnnotations)
+      ? addPhase('Type-flow ann elision',
+        TF.makeProgTypeFlowEnv(anfed, postEnv, env, flatnessEnv, flatProvides.fromUri))
+      : new Set<string>();
   // Dispatch to the requested control-flow backend. `auto` is resolved to a
   // concrete promise|cont before reaching here (see compile-structs / the CLI),
   // but is defended to cont in case a caller passes it through.
   const compiled = C.isPromise(options.stackBackend)
-    ? anfed.visit(AAL.splittingCompiler(env, addPhase, flatnessEnv, flatProvides, postEnv, options))
+    ? anfed.visit(AAL.splittingCompiler(env, addPhase, flatnessEnv, flatProvides, postEnv, options, redundantAnnChecks))
     : anfed.visit(AL.splittingCompiler(env, addPhase, flatnessEnv, flatProvides, postEnv, options));
   return [flatProvides, addPhase('Generated JS', C.ok(new CCPDict(compiled)))];
 }
