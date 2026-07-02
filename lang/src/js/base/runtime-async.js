@@ -2108,6 +2108,52 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       if(tol === undefined) { // means that we aren't doing any kind of within
         var isIdentical = identical3(left, right);
         if (!thisRuntime.ffi.isNotEqual(isIdentical)) { return isIdentical; } // if Equal or Unknown...
+        // SCALAR FAST PATH: two primitives decide without building the worklist
+        // machinery below (per-call closures + caches), which otherwise runs
+        // even for "cat" == "dog". identical3 already returned Equal for ===
+        // primitives (JS === is value equality for string/boolean), and it fully
+        // decided exact-exact numbers -- so a same-typeof string/boolean pair
+        // here is definitively not equal, and numbers only need the
+        // roughnum/equals split. Answers match the worklist's first-iteration
+        // results exactly (incl. the "the-value" path and Roughnums reasons).
+        var tLeft = typeof left;
+        if (tLeft === typeof right && (tLeft === "string" || tLeft === "boolean")) {
+          return thisRuntime.ffi.notEqual.app("the-value", left, right);
+        }
+        if (isNumber(left) && isNumber(right)) {
+          if (jsnums.isRoughnum(left) || jsnums.isRoughnum(right)) {
+            return thisRuntime.ffi.unknown.app(
+              fromWithin ? "RoughnumZeroTolerances" : "Roughnums", left, right);
+          } else if (jsnums.equals(left, right)) {
+            return thisRuntime.ffi.equal;
+          } else {
+            return thisRuntime.ffi.notEqual.app("the-value", left, right);
+          }
+        }
+      } else if (isNumber(left) && isNumber(right)) {
+        // within(...) on two numbers: replicate the worklist number branch for
+        // the initial pair VERBATIM -- including its `if (tol)` TRUTHINESS
+        // test: a falsy tolerance (within(0)) takes the roughnum/Unknown path
+        // ("RoughnumZeroTolerances"), NOT the comparison.
+        if (tol) {
+          var fcomp;
+          if (rel === TOL_IS_REL) {
+            fcomp = jsnums.roughlyEqualsRel(left, right, tol, false);
+          } else if (rel === TOL_IS_SMOOTH) {
+            fcomp = jsnums.roughlyEqualsRel(left, right, tol, true);
+          } else {
+            fcomp = jsnums.roughlyEquals(left, right, tol);
+          }
+          if (fcomp) { return thisRuntime.ffi.equal; }
+          return thisRuntime.ffi.notEqual.app("the-value", left, right);
+        } else if (jsnums.isRoughnum(left) || jsnums.isRoughnum(right)) {
+          return thisRuntime.ffi.unknown.app(
+            fromWithin ? "RoughnumZeroTolerances" : "Roughnums", left, right);
+        } else if (jsnums.equals(left, right)) {
+          return thisRuntime.ffi.equal;
+        } else {
+          return thisRuntime.ffi.notEqual.app("the-value", left, right);
+        }
       }
 
       var stackOfToCompare = [];
@@ -3534,11 +3580,21 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return after(funRes);
     }
 
-    async function eachLoop(fun, start, stop) {
-      for(var i = start; i < stop; i++) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+    // Maybe-promise (see the raw_array_* loops): sync unless the callback or
+    // the fuel check actually suspends.
+    function eachLoop(fun, start, stop) {
+      var i = start;
+      while (i < stop) {
+        if(thisRuntime.needsPause()) {
+          var i0 = i;
+          return thisRuntime.checkPause().then(function() { return eachLoop(fun, i0, stop); });
+        }
         var res = fun.app(i);
-        if(isThenable(res)) { await res; }
+        if (isThenable(res)) {
+          var i1 = i;
+          return res.then(function() { return eachLoop(fun, i1 + 1, stop); });
+        }
+        i++;
       }
       return thisRuntime.nothing;
     }
@@ -4422,35 +4478,63 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return arr;
     };
 
-    var raw_array_build = async function(f, len) {
+    // Maybe-promise raw-array helpers (same pattern as raw_list_map_loop below):
+    // a NON-async loop that returns the result synchronously when nothing
+    // suspends, and a resumable Promise only on a fuel pause or a suspending
+    // callback. The loop's whole continuation is (backing array, index), so a
+    // suspension returns `<thenable>.then(resume-from-index)`. Cooperative
+    // yield preserved exactly.
+    function raw_array_build_loop(f, len, arr, curIdx) {
+      while (curIdx < len) {
+        if(thisRuntime.needsPause()) {
+          var i0 = curIdx;
+          return thisRuntime.checkPause().then(function() { return raw_array_build_loop(f, len, arr, i0); });
+        }
+        var res = f.app(curIdx);
+        if (isThenable(res)) {
+          var i1 = curIdx;
+          return res.then(function(v) { arr.push(v); return raw_array_build_loop(f, len, arr, i1 + 1); });
+        }
+        arr.push(res);
+        curIdx++;
+      }
+      return arr;
+    }
+    var raw_array_build = function(f, len) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-build"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-build",
         f, thisRuntime.Function, len, thisRuntime.Number);
       check_array_size("raw-array-build", len);
-      var arr = new Array();
-      for (var curIdx = 0; curIdx < len; curIdx++) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        var res = f.app(curIdx);
-        arr.push(isThenable(res) ? await res : res);
-      }
-      return arr;
+      return raw_array_build_loop(f, len, new Array(), 0);
     };
 
-    var raw_array_build_opt = async function(f, len) {
+    function raw_array_build_opt_loop(f, len, arr, curIdx) {
+      while (curIdx < len) {
+        if(thisRuntime.needsPause()) {
+          var i0 = curIdx;
+          return thisRuntime.checkPause().then(function() { return raw_array_build_opt_loop(f, len, arr, i0); });
+        }
+        var res = f.app(curIdx);
+        if (isThenable(res)) {
+          var i1 = curIdx;
+          return res.then(function(v) {
+            if (thisRuntime.ffi.isSome(v)) { arr.push(thisRuntime.getField(v, "value")); }
+            return raw_array_build_opt_loop(f, len, arr, i1 + 1);
+          });
+        }
+        if (thisRuntime.ffi.isSome(res)) {
+          arr.push(thisRuntime.getField(res, "value"));
+        }
+        curIdx++;
+      }
+      return arr;
+    }
+    var raw_array_build_opt = function(f, len) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-build-opt"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-build-opt",
         f, thisRuntime.Function, len, thisRuntime.Number);
       check_array_size("raw-array-build-opt", len);
-      var arr = new Array();
-      for (var curIdx = 0; curIdx < len; curIdx++) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        var res = f.app(curIdx);
-        if(isThenable(res)) { res = await res; }
-        if (thisRuntime.ffi.isSome(res)) {
-          arr.push(thisRuntime.getField(res, "value"));
-        }
-      }
-      return arr;
+      return raw_array_build_opt_loop(f, len, new Array(), 0);
     };
 
     var raw_array_get = function(arr, ix) {
@@ -4551,34 +4635,57 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       make5: makeFunction(function(a, b, c, d, e) { return [a, b, c, d, e]; }, "raw-array:make5"),
     });
 
-    var raw_array_fold = async function(f, init, arr, start) {
+    function raw_array_fold_loop(f, arr, start, currentAcc, currentIndex) {
+      var length = arr.length;
+      while (currentIndex < length) {
+        if(thisRuntime.needsPause()) {
+          var a0 = currentAcc, i0 = currentIndex;
+          return thisRuntime.checkPause().then(function() { return raw_array_fold_loop(f, arr, start, a0, i0); });
+        }
+        var res = f.app(currentAcc, arr[currentIndex], currentIndex + start);
+        if (isThenable(res)) {
+          var i1 = currentIndex;
+          return res.then(function(v) { return raw_array_fold_loop(f, arr, start, v, i1 + 1); });
+        }
+        currentAcc = res;
+        currentIndex++;
+      }
+      return currentAcc;
+    }
+    var raw_array_fold = function(f, init, arr, start) {
       if (arguments.length !== 4) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-fold"], 4, $a, false); }
       thisRuntime.checkArgsInternalInline("RawArrays", "raw-array-fold",
         f, thisRuntime.Function, init, thisRuntime.Any, arr, thisRuntime.RawArray, start, thisRuntime.Number);
-      var currentAcc = init;
-      var length = arr.length;
-      for(var currentIndex = 0; currentIndex < length; currentIndex++) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        var res = f.app(currentAcc, arr[currentIndex], currentIndex + start);
-        currentAcc = isThenable(res) ? await res : res;
-      }
-      return currentAcc;
+      return raw_array_fold_loop(f, arr, start, init, 0);
     };
 
 
     var raw_array_bool_mapper = function(name, good, bad) {
-      return async function(f, arr, start) {
+      function loop(f, arr, currentIndex) {
+        var length = arr.length;
+        while (currentIndex < length) {
+          if(thisRuntime.needsPause()) {
+            var i0 = currentIndex;
+            return thisRuntime.checkPause().then(function() { return loop(f, arr, i0); });
+          }
+          var res = f.app(arr[currentIndex], currentIndex);
+          if (isThenable(res)) {
+            var i1 = currentIndex;
+            return res.then(function(v) {
+              if (v === bad) { return v; }
+              return loop(f, arr, i1 + 1);
+            });
+          }
+          if (res === bad) { return res; }
+          currentIndex++;
+        }
+        return good;
+      }
+      return function(f, arr, start) {
         if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC([name], 3, $a, false); }
         thisRuntime.checkArgsInternal3("RawArrays", name,
           f, thisRuntime.Function, arr, thisRuntime.RawArray, start, thisRuntime.Number);
-        var length = arr.length;
-        for(var currentIndex = start; currentIndex < length; currentIndex++) {
-          if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-          var res = f.app(arr[currentIndex], currentIndex);
-          if(isThenable(res)) { res = await res; }
-          if(res === bad) { return res; }
-        }
-        return good;
+        return loop(f, arr, start);
       };
     };
 
@@ -4586,45 +4693,75 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     var raw_array_or_mapi = raw_array_bool_mapper("raw-array-or-mapi", false, true);
 
 
-    var raw_array_map = async function(f, arr) {
+    function raw_array_map_loop(f, arr, newArray, currentIndex) {
+      var length = arr.length;
+      while (currentIndex < length) {
+        if(thisRuntime.needsPause()) {
+          var i0 = currentIndex;
+          return thisRuntime.checkPause().then(function() { return raw_array_map_loop(f, arr, newArray, i0); });
+        }
+        var res = f.app(arr[currentIndex]);
+        if (isThenable(res)) {
+          var i1 = currentIndex;
+          return res.then(function(v) { newArray[i1] = v; return raw_array_map_loop(f, arr, newArray, i1 + 1); });
+        }
+        newArray[currentIndex] = res;
+        currentIndex++;
+      }
+      return newArray;
+    }
+    var raw_array_map = function(f, arr) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-map"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-map",
         f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var length = arr.length;
-      var newArray = new Array(length);
-      for(var currentIndex = 0; currentIndex < length; currentIndex++) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        var res = f.app(arr[currentIndex]);
-        newArray[currentIndex] = isThenable(res) ? await res : res;
-      }
-      return newArray;
+      return raw_array_map_loop(f, arr, new Array(arr.length), 0);
     };
 
-    var raw_array_each = async function(f, arr) {
+    function raw_array_each_loop(f, arr, currentIndex) {
+      var length = arr.length;
+      while (currentIndex < length) {
+        if(thisRuntime.needsPause()) {
+          var i0 = currentIndex;
+          return thisRuntime.checkPause().then(function() { return raw_array_each_loop(f, arr, i0); });
+        }
+        var res = f.app(arr[currentIndex]);
+        if (isThenable(res)) {
+          var i1 = currentIndex;
+          return res.then(function() { return raw_array_each_loop(f, arr, i1 + 1); });
+        }
+        currentIndex++;
+      }
+      return nothing;
+    }
+    var raw_array_each = function(f, arr) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-each"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-each",
         f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var length = arr.length;
-      for(var currentIndex = 0; currentIndex < length; currentIndex++) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        var res = f.app(arr[currentIndex]);
-        if(isThenable(res)) { await res; }
-      }
-      return nothing;
+      return raw_array_each_loop(f, arr, 0);
     };
 
-    var raw_array_mapi = async function(f, arr) {
+    function raw_array_mapi_loop(f, arr, newArray, currentIndex) {
+      var length = arr.length;
+      while (currentIndex < length) {
+        if(thisRuntime.needsPause()) {
+          var i0 = currentIndex;
+          return thisRuntime.checkPause().then(function() { return raw_array_mapi_loop(f, arr, newArray, i0); });
+        }
+        var res = f.app(arr[currentIndex], currentIndex);
+        if (isThenable(res)) {
+          var i1 = currentIndex;
+          return res.then(function(v) { newArray[i1] = v; return raw_array_mapi_loop(f, arr, newArray, i1 + 1); });
+        }
+        newArray[currentIndex] = res;
+        currentIndex++;
+      }
+      return newArray;
+    }
+    var raw_array_mapi = function(f, arr) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-mapi"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-mapi",
         f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var length = arr.length;
-      var newArray = new Array(length);
-      for(var currentIndex = 0; currentIndex < length; currentIndex++) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        var res = f.app(arr[currentIndex], currentIndex);
-        newArray[currentIndex] = isThenable(res) ? await res : res;
-      }
-      return newArray;
+      return raw_array_mapi_loop(f, arr, new Array(arr.length), 0);
     };
 
     // CPS / maybe-promise raw-list-map (EXPERIMENT): a NON-async loop that returns the
@@ -4658,83 +4795,129 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     };
 
 
-    var raw_list_join_str_last = async function(lst, sep, lastSep) {
-      if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-join-str-last"], 3, $a, false); }
-      thisRuntime.checkArgsInternal3("Lists", "raw-list-join-str-last",
-        lst, thisRuntime.List, sep, thisRuntime.String, lastSep, thisRuntime.String);
-      var currentAcc = [];
-      var currentLst = lst;
+    function raw_list_join_str_last_loop(currentAcc, currentLst, sep, lastSep) {
       while(thisRuntime.ffi.isLink(currentLst)) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        if(thisRuntime.needsPause()) {
+          var c0 = currentLst;
+          return thisRuntime.checkPause().then(function() { return raw_list_join_str_last_loop(currentAcc, c0, sep, lastSep); });
+        }
         var currentFst = thisRuntime.getColonField(currentLst, "first");
         currentLst = thisRuntime.getColonField(currentLst, "rest");
         var res = tostring.app(currentFst);
-        currentAcc.push(isThenable(res) ? await res : res);
+        if (isThenable(res)) {
+          var c1 = currentLst;
+          return res.then(function(v) { currentAcc.push(v); return raw_list_join_str_last_loop(currentAcc, c1, sep, lastSep); });
+        }
+        currentAcc.push(res);
       }
       if (currentAcc.length <= 1) { return currentAcc.join(sep); }
       var lastElem = currentAcc.pop();
       return currentAcc.join(sep) + lastSep + lastElem;
+    }
+    var raw_list_join_str_last = function(lst, sep, lastSep) {
+      if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-join-str-last"], 3, $a, false); }
+      thisRuntime.checkArgsInternal3("Lists", "raw-list-join-str-last",
+        lst, thisRuntime.List, sep, thisRuntime.String, lastSep, thisRuntime.String);
+      return raw_list_join_str_last_loop([], lst, sep, lastSep);
     };
 
     /**
      * Similar to `raw_array_map`, but applies a specific function to
      * the first item in the array
      */
-    var raw_array_map1 = async function(f1, f, arr) {
+    function raw_array_map1_loop(f1, f, arr, newArray, currentIndex) {
+      var length = arr.length;
+      while (currentIndex < length) {
+        if(thisRuntime.needsPause()) {
+          var i0 = currentIndex;
+          return thisRuntime.checkPause().then(function() { return raw_array_map1_loop(f1, f, arr, newArray, i0); });
+        }
+        var toCall = currentIndex === 0 ? f1 : f;
+        var res = toCall.app(arr[currentIndex]);
+        if (isThenable(res)) {
+          var i1 = currentIndex;
+          return res.then(function(v) { newArray[i1] = v; return raw_array_map1_loop(f1, f, arr, newArray, i1 + 1); });
+        }
+        newArray[currentIndex] = res;
+        currentIndex++;
+      }
+      return newArray;
+    }
+    var raw_array_map1 = function(f1, f, arr) {
       if (arguments.length !== 3) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-map1"], 3, $a, false); }
       thisRuntime.checkArgsInternal3("RawArrays", "raw-array-map1",
         f1, thisRuntime.Function, f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var length = arr.length;
-      var newArray = new Array(length);
-      for(var currentIndex = 0; currentIndex < length; currentIndex++) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        var toCall = currentIndex === 0 ? f1 : f;
-        var res = toCall.app(arr[currentIndex]);
-        newArray[currentIndex] = isThenable(res) ? await res : res;
-      }
-      return newArray;
+      return raw_array_map1_loop(f1, f, arr, new Array(arr.length), 0);
     };
 
-    var raw_list_filter = async function(f, lst) {
-      if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-filter"], 2, $a, false); }
-      thisRuntime.checkArgsInternal2("Lists", "raw-list-filter",
-        f, thisRuntime.Function, lst, thisRuntime.List);
-      var currentAcc = [];
-      var currentLst = lst;
+    function raw_list_filter_step(res, currentFst, currentAcc) {
+      if(!(isBoolean(res))) {
+        return thisRuntime.ffi.throwNonBooleanCondition(["raw-list-filter"], "Boolean", res);
+      }
+      if(isPyretTrue(res)){
+        currentAcc.push(currentFst);
+      }
+    }
+    function raw_list_filter_loop(f, currentAcc, currentLst) {
       while(thisRuntime.ffi.isLink(currentLst)) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
+        if(thisRuntime.needsPause()) {
+          var c0 = currentLst;
+          return thisRuntime.checkPause().then(function() { return raw_list_filter_loop(f, currentAcc, c0); });
+        }
         var currentFst = thisRuntime.getColonField(currentLst, "first");
         currentLst = thisRuntime.getColonField(currentLst, "rest");
         var res = f.app(currentFst);
-        if(isThenable(res)) { res = await res; }
-        if(!(isBoolean(res))) {
-          return thisRuntime.ffi.throwNonBooleanCondition(["raw-list-filter"], "Boolean", res);
+        if (isThenable(res)) {
+          var c1 = currentLst, fst1 = currentFst;
+          return res.then(function(v) {
+            raw_list_filter_step(v, fst1, currentAcc);
+            return raw_list_filter_loop(f, currentAcc, c1);
+          });
         }
-        if(isPyretTrue(res)){
-          currentAcc.push(currentFst);
-        }
+        raw_list_filter_step(res, currentFst, currentAcc);
       }
       return thisRuntime.ffi.makeList(currentAcc);
+    }
+    var raw_list_filter = function(f, lst) {
+      if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-list-filter"], 2, $a, false); }
+      thisRuntime.checkArgsInternal2("Lists", "raw-list-filter",
+        f, thisRuntime.Function, lst, thisRuntime.List);
+      return raw_list_filter_loop(f, [], lst);
     };
 
-    var raw_array_filter = async function(f, arr) {
+    function raw_array_filter_step(res, elt, newArray) {
+      if(!(isBoolean(res))) {
+        return thisRuntime.ffi.throwNonBooleanCondition(["raw-array-filter"], "Boolean", res);
+      }
+      if(isPyretTrue(res)){
+        newArray.push(elt);
+      }
+    }
+    function raw_array_filter_loop(f, arr, newArray, currentIndex) {
+      var length = arr.length;
+      while (currentIndex < length) {
+        if(thisRuntime.needsPause()) {
+          var i0 = currentIndex;
+          return thisRuntime.checkPause().then(function() { return raw_array_filter_loop(f, arr, newArray, i0); });
+        }
+        var res = f.app(arr[currentIndex]);
+        if (isThenable(res)) {
+          var i1 = currentIndex;
+          return res.then(function(v) {
+            raw_array_filter_step(v, arr[i1], newArray);
+            return raw_array_filter_loop(f, arr, newArray, i1 + 1);
+          });
+        }
+        raw_array_filter_step(res, arr[currentIndex], newArray);
+        currentIndex++;
+      }
+      return newArray;
+    }
+    var raw_array_filter = function(f, arr) {
       if (arguments.length !== 2) { var $a=new Array(arguments.length); for (var $i=0;$i<arguments.length;$i++) { $a[$i]=arguments[$i]; } throw thisRuntime.ffi.throwArityErrorC(["raw-array-filter"], 2, $a, false); }
       thisRuntime.checkArgsInternal2("RawArrays", "raw-array-filter",
         f, thisRuntime.Function, arr, thisRuntime.RawArray);
-      var length = arr.length;
-      var newArray = new Array();
-      for(var currentIndex = 0; currentIndex < length; currentIndex++) {
-        if(thisRuntime.needsPause()) { await thisRuntime.checkPause(); }
-        var res = f.app(arr[currentIndex]);
-        if(isThenable(res)) { res = await res; }
-        if(!(isBoolean(res))) {
-          return thisRuntime.ffi.throwNonBooleanCondition(["raw-array-filter"], "Boolean", res);
-        }
-        if(isPyretTrue(res)){
-          newArray.push(arr[currentIndex]);
-        }
-      }
-      return newArray;
+      return raw_array_filter_loop(f, arr, [], 0);
     };
 
     // CPS / maybe-promise raw-list-fold (EXPERIMENT; see raw_list_map_loop). The
