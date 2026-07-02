@@ -124,6 +124,17 @@ cont's samples (unexplained), raw_array_* still plain async fns.
 tables (cont's own median swung 2.19–2.29) — honest read: ~5–10% behind, physics
 integrator with polymorphic arithmetic on record fields. plagiarism holds 1.36–1.41.
 
+**2026-07-02 addendum — library-level pass on string-dict (commit 9189cf473),
+"users won't notice" strategy:** freeze() snapshots entries into a `$fastDict`
+native object so get/get-value/has-key on frozen dicts are one property read
+(HAMT untouched for set/remove and ALL enumeration → key order unchanged);
+typeof-gated arg checks on the hot ops; keys-list memoized on immutable dicts.
+**plagiarism p/c 1.41 → ~1.22** (1.85s → 1.64s, parity-identical output),
+dtree 0.96; suite 13346 shipshape. Remaining plagiarism residual: per-callback
+generator allocation (GC ~21%) + freeze()'s eager HAMT build + the per-lookup
+`some()` allocation that the get-now API mandates. Cont also gains this when
+its jarrs are ever rebuilt — the frozen baseline on disk is unchanged.
+
 ## Results (2026-07-01 — generator machinery: gen-functions + tail-flat; promise beats frozen cont)
 
 The two machinery levers that finally moved the backend gap itself (not the static opts):
