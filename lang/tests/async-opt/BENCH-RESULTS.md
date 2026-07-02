@@ -69,7 +69,18 @@ medians, both sides all-pass every step):
 | session start (async-function codegen)   | ~227s  | ~267s  | 1.18 |
 | + gen-functions + tail-flat              | 227.7s | 255.2s | 1.12 |
 | + maybe-promise equality core            | 228.2s | 247.6s | 1.085 |
-| + constructor appBody fix                | 227.5s | 217.8s | **0.957** |
+| + constructor appBody fix                | 227.5s | 217.8s | 0.957 |
+| + Map-based equal3 seen-pairs cache      | 229.2s | 174.9s | **0.763** |
+
+(The Map cache replaces a linear findPair scan over a cache that instrumented
+counters showed growing to ~38k pairs inside a single equal3 call — O(pairs²),
+paid by BOTH backends but credited to promise under the frozen-cont rule. The
+counters also showed both backends do IDENTICAL equality work — ~6.7M worklist
+iterations, ~433k user _equals dispatches per suite run — so the earlier
+"promise equality is 4× cont" profile reading was attribution illusion from
+inlining + microtask-root frames. Curated benches barely move (their caches
+stay small); plagiarism holds ~1.41, confirming per-callback generator
+allocation as its true residual.)
 
 1. **Maybe-promise equality** (`equal3`/`equalHelp`): the worklist drains synchronously
    and returns a flat EqualityResult; async ONLY when a user `_equals` actually suspends
