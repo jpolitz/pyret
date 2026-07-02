@@ -1056,6 +1056,15 @@ export interface CompileOptions {
   // intact (the ub facts rest on the checks that DO run), so it self-disables
   // unless runtimeAnnotations && userAnnotations.
   annElision: boolean;
+  // Typed operator weakening (type-flow.ts; promise backend only). On by default;
+  // -no-op-weakening disables it for A/B measurement. Rewrites a polymorphic,
+  // dispatching operator app (`_plus` ...) into its monomorphic, non-dispatching,
+  // known-flat global (`_plus_nums` ...) where upper-bound type-flow proves both
+  // operands are Number, so ordinary structural flatness flattens the arithmetic
+  // and the runtime skips the per-op type re-check. Sound on the same basis as ann
+  // elision (the ub facts rest on the runtime annotation checks), so it self-
+  // disables unless runtimeAnnotations && userAnnotations.
+  opWeakening: boolean;
   stackBackend: StackBackend;
   inlineCaseBodyLimit: number;
   moduleEval: boolean;
@@ -1097,6 +1106,7 @@ export const defaultCompileOptions: CompileOptions = {
   properTailCalls: true,
   effectTailCalls: true,
   annElision: true,
+  opWeakening: true,
   stackBackend: compiledStackBackend,
   inlineCaseBodyLimit: 5,
   moduleEval: true,

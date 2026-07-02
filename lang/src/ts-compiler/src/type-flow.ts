@@ -43,6 +43,7 @@ import * as N from './ast-anf';
 import * as C from './compile-structs';
 import * as T from './type-structs';
 import * as FL from './flatness';
+import { InternalCompilerError } from './shared';
 
 // ---------------------------------------------------------------------------
 // Lattice
@@ -844,4 +845,215 @@ export function makeProgTypeFlowEnv(
     return new Set();
   }
   return ctx.redundant;
+}
+
+// ---------------------------------------------------------------------------
+// Typed operator weakening (ANF -> ANF; promise backend only).
+//
+// `a + b` lowers to a call of the POLYMORPHIC global `_plus`, which dispatches on
+// operand type (numeric tower / string concat / a user `_plus` method -- arbitrary,
+// possibly suspending code), so `_plus` has UNDEFINED flatness and the enclosing
+// arithmetic compiles to an async function. But when this analysis proves both
+// operands are Number, the dispatch ALWAYS takes the numeric-tower branch, so the
+// call is statically a MONOMORPHIC, non-dispatching, known-flat `_plus_nums` -- the
+// same numeric fast path exposed under a name and registered flat (0) in the global
+// env (global.js). Rewriting `_plus` -> `_plus_nums` lets ORDINARY structural
+// function-flatness pick it up with NO numeric special-casing in flatness.ts, and
+// skips `_plus`'s per-call `isNumber` re-check at runtime.
+//
+// Soundness rests entirely on this upper-bound analysis (same basis as ann
+// elision); the caller gates on `runtimeAnnotations && userAnnotations`, promise
+// only. The rewrite ONLY rebuilds operator a-app nodes' callee, and it runs
+// BEFORE the flatness env build and codegen, so the ANF object graph those
+// passes see (and key on -- bind keys today, node identity for later
+// identity-keyed analyses) is the weakened one. Any future ANF -> ANF rewrite
+// or identity-keyed pre-pass must keep running AFTER this pass.
+// ---------------------------------------------------------------------------
+// Binary operators that monomorphize on Number operands.
+const WEAKEN_NUM_OPS: Map<string, string> = new Map([
+  ['_plus', '_plus_nums'], ['_minus', '_minus_nums'],
+  ['_times', '_times_nums'], ['_divide', '_divide_nums'],
+  ['_lessthan', '_lessthan_nums'], ['_greaterthan', '_greaterthan_nums'],
+  ['_lessequal', '_lessequal_nums'], ['_greaterequal', '_greaterequal_nums'],
+]);
+// Binary operators that monomorphize on String operands (`_plus` = concat; the
+// comparisons are lexicographic). `_minus`/`_times`/`_divide` have no String path.
+const WEAKEN_STR_OPS: Map<string, string> = new Map([
+  ['_plus', '_plus_strings'],
+  ['_lessthan', '_lessthan_strings'], ['_greaterthan', '_greaterthan_strings'],
+  ['_lessequal', '_lessequal_strings'], ['_greaterequal', '_greaterequal_strings'],
+]);
+// Equality that monomorphizes when BOTH operands are primitives (ANY prim, not
+// necessarily the same: `5 == "x"` is a flat NotEqual). Two primitives can't carry a
+// user `_equals`, so `equal-always` cannot dispatch or suspend. `<>` is `not(==)`, so
+// weakening the inner `equal-always` flattens it too.
+const WEAKEN_EQ_OPS: Map<string, string> = new Map([
+  ['equal-always', 'equal-always-prim'],
+]);
+// Unary tostring/torepr: pick the monomorphic flat helper by the operand's prim
+// type (no user `_output`/`_torepr` dispatch possible on a primitive).
+const WEAKEN_TOSTRING_OPS: Map<string, { Number: string; String: string; Boolean: string }> = new Map([
+  ['tostring', { Number: 'tostring_num', String: 'tostring_str', Boolean: 'tostring_bool' }],
+  ['torepr', { Number: 'torepr_num', String: 'torepr_str', Boolean: 'torepr_bool' }],
+]);
+// Unary globals that monomorphize with NO operand-type condition: they never
+// dispatch and never suspend regardless of argument. `raise` always constructs
+// and throws a PyretFailException synchronously, so its only-suspending-looking
+// status was purely a conservative flatness default -- exposing it flat lets a
+// branch whose sole work is `raise(msg)` (a bounds/guard error path) stay flat.
+const WEAKEN_UNARY_OPS: Map<string, string> = new Map([
+  ['raise', 'raise_flat'],
+]);
+
+// Both ends of every weakening entry are hand-written names that must line up
+// with global.js, and a mismatch on EITHER end fails silently:
+//   - a typo'd SOURCE (the polymorphic LHS we match on) simply never matches, so
+//     that rewrite quietly stops firing -- a performance regression with no error
+//     and nothing to grep for;
+//   - a missing / mistyped / non-flat TARGET (the monomorphic RHS) makes the
+//     "weakened" call resolve non-flat (or fail name resolution), defeating the
+//     optimization (or worse) just as quietly.
+// The target is also a multi-file surface: its name + arrow type + `flatness: 0`
+// live in global.js, it is registered in compile-structs' runtimeProvides, and
+// implemented in runtime.js / runtime-async.js.
+//
+// This tripwire pins that contract: every SOURCE must resolve as a global (it
+// need not be flat -- sources are exactly the suspending dispatchers we are
+// specializing away), and every TARGET must resolve as a `VFun` with flatness 0.
+// It runs once per process (the global env is fixed -- global.js) and, crucially,
+// is invoked OUTSIDE `weakenOperators`' fail-safe try below, so a broken table
+// fails LOUDLY in any compile (hence any parity/exec test) rather than silently.
+let weakenTableChecked = false;
+function assertWeakenTableResolves(env: C.CompileEnvironment): void {
+  if (weakenTableChecked) { return; }
+  weakenTableChecked = true;
+  // Sources: just need to exist as globals (a typo here silently disables the
+  // rewrite). NUM_ARITH_OPS / the `_plus`-string rule reuse these same names.
+  const sources = new Set<string>([
+    ...WEAKEN_NUM_OPS.keys(),
+    ...WEAKEN_STR_OPS.keys(),
+    ...WEAKEN_EQ_OPS.keys(),
+    ...WEAKEN_TOSTRING_OPS.keys(),
+    ...WEAKEN_UNARY_OPS.keys(),
+  ]);
+  for (const s of sources) {
+    if (env.globalValue(s) === undefined) {
+      throw new InternalCompilerError(
+        `operator-weakening source '${s}' is not a global in global.js: the weakening `
+        + `table in type-flow.ts names an operator that doesn't exist (a typo here `
+        + `silently disables that rewrite).`);
+    }
+  }
+  // Targets: must resolve as flat (flatness 0) globals or the rewritten call is
+  // no better (or breaks).
+  const targets: string[] = [
+    ...WEAKEN_NUM_OPS.values(),
+    ...WEAKEN_STR_OPS.values(),
+    ...WEAKEN_EQ_OPS.values(),
+    ...WEAKEN_UNARY_OPS.values(),
+    ...[...WEAKEN_TOSTRING_OPS.values()].flatMap((v) => [v.Number, v.String, v.Boolean]),
+  ];
+  for (const t of targets) {
+    const ve = env.globalValue(t);
+    if (ve === undefined || !C.isVFun(ve) || ve.flatness !== 0) {
+      const got = ve === undefined ? 'missing from the global env'
+        : !C.isVFun(ve) ? `a ${ve.$name}, not a function`
+        : `a function with flatness ${ve.flatness} (expected 0)`;
+      throw new InternalCompilerError(
+        `operator-weakening target '${t}' is ${got}: every WEAKEN_* target must be `
+        + `a flat (flatness 0) global declared in global.js. The weakening table in `
+        + `type-flow.ts and global.js have drifted out of sync.`);
+    }
+  }
+}
+
+// The prim type of a value's ub, or undefined if not a primitive.
+function primNameOf(v: N.AVal, ctx: Ctx): 'Number' | 'String' | 'Boolean' | undefined {
+  const t = absOfVal(v, ctx);
+  return t.k === 'prim' ? t.n : undefined;
+}
+
+class WeakenVisitor extends N.DefaultMapVisitor {
+  constructor(private ctx: Ctx, private count: { n: number }) { super(); }
+  aApp(node: N.AApp): N.ALettable {
+    const name = globalOpName(node._fun, this.ctx);
+    if (name !== undefined) {
+      // Binary numeric / string operator on two same-prim operands.
+      if (node.args.length === 2) {
+        const p0 = primNameOf(node.args[0], this.ctx);
+        const p1 = primNameOf(node.args[1], this.ctx);
+        let weak: string | undefined;
+        if (p0 === 'Number' && p1 === 'Number') { weak = WEAKEN_NUM_OPS.get(name); }
+        else if (p0 === 'String' && p1 === 'String') { weak = WEAKEN_STR_OPS.get(name); }
+        // Equality: any two primitives (need not match) -> the flat prim equality.
+        if (weak === undefined && p0 !== undefined && p1 !== undefined) {
+          weak = WEAKEN_EQ_OPS.get(name);
+        }
+        if (weak !== undefined) { return this.weakenTo(node, weak); }
+      }
+      // Unary globals.
+      if (node.args.length === 1) {
+        // Unconditional (no operand-type guard): e.g. raise.
+        const uncond = WEAKEN_UNARY_OPS.get(name);
+        if (uncond !== undefined) { return this.weakenTo(node, uncond); }
+        // tostring/torepr on a primitive operand.
+        const variants = WEAKEN_TOSTRING_OPS.get(name);
+        if (variants !== undefined) {
+          const p = primNameOf(node.args[0], this.ctx);
+          if (p !== undefined) { return this.weakenTo(node, variants[p]); }
+        }
+      }
+    }
+    return super.aApp(node);
+  }
+  // An s-global reference rides the ordinary global-value rails: it is a free var,
+  // so compile-module emits `var <name> = getModuleField('builtin://global',
+  // 'values','<name>')`, and flatness resolves its (flat) flatness from the global
+  // env. Args are leaf values -- left unchanged.
+  private weakenTo(node: N.AApp, weak: string): N.ALettable {
+    this.count.n += 1;
+    const newFun = new N.AId(node._fun.l, new A.SGlobal(weak));
+    return new N.AApp(node.l, newFun, node.args, node.appInfo);
+  }
+}
+
+export function weakenOperators(
+  anfed: N.AProg,
+  postEnv: C.ComputedEnvironment,
+  env: C.CompileEnvironment,
+  moduleUri: string,
+): N.AProg {
+  // Pin the weakening table <-> global.js contract before doing any work, so a
+  // typo'd source or drifted/non-flat target trips here (loudly) rather than
+  // inside the fail-safe try, where it would be swallowed into a silent no-op.
+  assertWeakenTableResolves(env);
+  // flatnessEnv is unused when collectRedundant is false; pass an empty one.
+  const dummyFlat: FL.FlatnessEnv = [new Map(), new Map()];
+  const ctx = newCtx(postEnv, env, dummyFlat, moduleUri, false);
+  try {
+    runTypeFlow(anfed, ctx);
+    const count = { n: 0 };
+    // Transform only the body and rebuild the program, preserving imports/provides
+    // (the ANF map-visitor doesn't handle the surface s-import nodes the program
+    // still carries -- and they contain no operator apps to weaken anyway).
+    const newBody = anfed.body.visit(new WeakenVisitor(ctx, count)) as N.AExpr;
+    const out = new N.AProgram(anfed.l, anfed.provides, anfed.imports, newBody);
+    if (process.env.PYRET_TF_DEBUG) {
+      process.stderr.write(`[op-weaken ${moduleUri}] weakened=${count.n} eligibleVars=${ctx.eligibleVars.size} funRet=${ctx.funRet.size}\n`);
+      if (process.env.PYRET_TF_DUMP) {
+        for (const k of ctx.eligibleVars) {
+          const t = ctx.varUb.get(k); if (t && t.k !== 'any') { process.stderr.write(`  varUb ${k} = ${JSON.stringify(t)}\n`); }
+        }
+        for (const [k, t] of ctx.funRet) { process.stderr.write(`  funRet ${k} = ${JSON.stringify(t)}\n`); }
+      }
+    }
+    return out;
+  } catch (_e) {
+    // Optimization only: an analysis miss or unexpected node must never break
+    // compilation. Fail safe to "weaken nothing".
+    if (process.env.PYRET_TF_DEBUG) {
+      process.stderr.write(`[op-weaken ${moduleUri}] FAILED: ${(_e as any)?.stack ?? _e}\n`);
+    }
+    return anfed;
+  }
 }

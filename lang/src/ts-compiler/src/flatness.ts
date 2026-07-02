@@ -459,6 +459,33 @@ export function getFlatnessForModuleCall(
   return incrementFlatness(getFlatnessForModuleFun(id, field, mb, env));
 }
 
+// The flatness of an a-app's CALL given its callee value `f`. Single source of
+// truth shared by this analysis and the async codegen, so the sync-vs-async
+// emission decision can never disagree with the analysis (a disagreement emits an
+// `await` inside a sync function -- a JS syntax error -- or fails to await a
+// Promise). Mirrors the a-app cases below.
+export function getAppFunFlatness(
+  f: AA.AVal,
+  sd: FEnv,
+  mb: Map<string, C.ModuleBind>,
+  env: C.CompileEnvironment
+): Flatness {
+  if (AA.isAId(f) || AA.isAIdSafeLetrec(f)) {
+    if (!sd.has(f.id.key()) && A.isSGlobal(f.id)) {
+      // A global introduced AFTER name resolution (e.g. `_plus_nums` from the
+      // operator-weakening pass) has no binding in sd, but its flatness lives in
+      // the global env like any builtin. Resolve it there so ordinary structural
+      // flatness flattens it -- no numeric special-casing in the analysis itself.
+      const ve = env.globalValue(f.id.toname());
+      if (ve !== undefined && C.isVFun(ve)) { return incrementFlatness(ve.flatness); }
+    }
+    return getFlatnessForCall(f.id.key(), sd);
+  } else if (AA.isAIdModref(f)) {
+    return getFlatnessForModuleCall(f.id, f.name, mb, env);
+  }
+  return undefined;
+}
+
 export function makeLettableFlatnessEnv(
   lettable: AA.ALettable,
   sd: FEnv,
@@ -487,16 +514,11 @@ export function makeLettableFlatnessEnv(
 
     case 'a-app': {
       const f = lettable._fun;
-      // Look up flatness in the dictionary
-      if (AA.isAId(f) || AA.isAIdSafeLetrec(f)) {
-        return getFlatnessForCall(f.id.key(), sd);
-      } else if (AA.isAIdModref(f)) {
-        return getFlatnessForModuleCall(f.id, f.name, mb, env);
-      } else {
-        // This should never happen in a "correct" program, but it's not our job
-        // to do this kind of checking here, so don't raise an error.
-        return undefined;
-      }
+      // Look up flatness via the shared resolver (also used by codegen). Operator
+      // arithmetic on Number operands is already a flat `_plus_nums` global here
+      // (the weakening pass rewrote it), so it flattens structurally with no
+      // numeric special-casing.
+      return getAppFunFlatness(f, sd, mb, env);
     }
 
     case 'a-method-app':

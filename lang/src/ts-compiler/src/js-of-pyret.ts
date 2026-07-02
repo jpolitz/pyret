@@ -118,7 +118,19 @@ export function traceMakeCompiledPyret(
   provides: C.Provides,
   options: C.CompileOptions
 ): [C.Provides, C.CompileResult<CompiledCodePrinter>] {
-  const anfed = addPhase('ANFed', N.anfProgram(programAst));
+  const anfedRaw = addPhase('ANFed', N.anfProgram(programAst));
+  // Typed operator weakening (promise backend only): rewrite polymorphic operator
+  // apps (`_plus` ...) into monomorphic, known-flat globals (`_plus_nums` ...) where
+  // upper-bound type-flow proves the operand types, so ORDINARY structural flatness
+  // flattens the arithmetic (no numeric special-casing in flatness.ts). An ANF->ANF
+  // rewrite, so it MUST run before the flatness env build and codegen: every later
+  // pass keys off (and codegen visits) the weakened ANF object graph, never the raw
+  // one. Gated like ann elision: the ub facts rest on the runtime ann checks.
+  const anfed =
+    (C.isPromise(options.stackBackend) && options.opWeakening
+      && options.runtimeAnnotations && options.userAnnotations)
+      ? addPhase('Operator weakening', TF.weakenOperators(anfedRaw, postEnv, env, provides.fromUri))
+      : anfedRaw;
   const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env));
   const flatProvides = addPhase('Get flat-provides', FL.getFlatProvides(provides, env, postEnv, flatnessEnv, anfed));
   // Upper-bound type-flow: bind keys whose `:: T` annotation check is provably
