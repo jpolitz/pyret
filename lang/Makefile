@@ -374,10 +374,14 @@ ts-parity-test: ts-compiler $(PHASEA)/pyret.jarr
 	bash $(TS_COMP_DIR)/tests/parity-test.sh
 
 # ===== Promise/async backend, TS port (--stack-backend promise) =====
-# Byte-parity (PRIMARY oracle): compile each parity program with the in-tree
-# Pyret-promise reference (phaseA --stack-backend promise) and with the
-# TS-promise compiler, and compare the per-module cache + standalone jarr
-# byte-for-byte. Pins exact async codegen.
+# Byte-parity vs the phaseA Pyret-promise reference. HISTORICAL: this was the
+# primary oracle while the TS async port was being brought up. It has been
+# red since the TS compiler gained promise-only codegen the .arr reference
+# never mirrored (conditional await, 1914009cf) and is not a gate anymore.
+# The byte gate for compiler changes is CONT parity (ts-parity-test); the
+# promise backend's semantic load is carried by cross-backend run parity, the
+# full suites, and per-lever A/B differentials (same TS binary, -no-<lever>
+# vs default, output-identical). Kept runnable for archaeology only.
 .PHONY : ts-parity-promise-test
 ts-parity-promise-test: ts-compiler $(PHASEA)/pyret.jarr
 	bash $(TS_COMP_DIR)/tests/parity-promise-test.sh
@@ -455,7 +459,9 @@ ts-promise-compile-test: warm-promise-cache tests/pyret/main2-compile-ts-promise
 	test $$code -eq 0 && echo "TS-PROMISE COMPILE SUITE OK" || { echo "TS-PROMISE COMPILE SUITE: failures (exit $$code)"; exit 1; }
 
 .PHONY : ts-promise-test
-ts-promise-test: ts-parity-promise-test ts-promise-pyret-test
+# (ts-parity-promise-test removed from the aggregate: red-by-design since the
+# TS compiler gained unmirrored promise-only codegen; see its comment above.)
+ts-promise-test: ts-promise-pyret-test
 
 # Build and run the main Pyret test suite using the TS compiler
 TS_TEST_BUILD=$(TS_PYRET) \

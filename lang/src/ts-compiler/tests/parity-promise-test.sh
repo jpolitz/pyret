@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# Promise-backend byte-parity test (PRIMARY oracle for the async port).
+# Promise-backend byte-parity test (HISTORICAL — was the primary oracle for
+# the async port bring-up; red since the TS compiler gained promise-only
+# codegen the .arr reference never mirrored, starting with conditional await
+# in 1914009cf, and every promise-only optimization since widens the gap).
+# NOT a gate. The byte gate is cont parity (parity-test.sh); promise-backend
+# semantics are pinned by cross-backend run parity, the full suites, and
+# per-lever A/B differentials (same TS binary, -no-<lever> vs default,
+# identical output). Kept runnable for archaeology.
 #
 # For each program in tests/programs/, compile with BOTH:
 #   - the in-tree Pyret-promise reference: build/phaseA/pyret.jarr --stack-backend promise
