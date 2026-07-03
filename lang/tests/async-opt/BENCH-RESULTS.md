@@ -60,6 +60,29 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-03 — Stage 5: tier analysis + Gen tier)
+
+Two commits: the ANF tier pass (emission-neutral; verdict oracle 11/11;
+structural byte-identity verified modulo gensym renumbering; O7 residual-await
+assertion live) and the Gen tier (non-flat functions as function* + sync
+wrapper with per-wrapper inlined driver; TailFlat/FewSuspend verdicts compile
+as Gen until their sync emissions land).
+
+- O1 cont byte-parity 16/16 PASS. O3-compile 483 green. mf green. exec green.
+  Gen execution pins 7/7 (1M-deep non-tail stack safety; Pyret-level error
+  identity vs -no-gen-functions; A/B result parity; baseline-vs-gen function*
+  emission counts).
+- O5 (primary, N=5): parity 16/16, geomean **0.971** — an honestly MIXED
+  intermediate: **vec-methods 0.51** (sync wrapper's flat return eliminates
+  Promise allocation on the hot path), boids-compute-data 0.90,
+  car-compute 0.81; but spell 0.80 → 0.96, plagiarism → 1.36,
+  orbital-compute → 1.15: functions that rarely suspend but are called hot
+  now pay a generator allocation per call where an async fn used to be
+  V8-optimized. That cost is precisely what the TailFlat and FewSuspend sync
+  tiers reclaim next; the discovery branch never measured gen-alone (its
+  first datapoint was gen+tailflat at geomean 0.93).
+- O6 N=3 medians: cont 228.9 s vs promise 245.2 s → p/c 1.07 (same story).
+
 ## Results (2026-07-03 — Stage 5 pre-work: exn-parser frame drop, JGenFun/JYield, driveGen/rejP)
 
 Three mechanical commits ahead of the tier machinery, all inert until the
