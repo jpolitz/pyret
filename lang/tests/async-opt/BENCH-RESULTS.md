@@ -60,6 +60,34 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-03 — Stage 3d: direct cases + direct fields/method dispatch)
+
+First two-box battery: oracles on the primary box, O5 on the new timing box
+(`ts-pyret-opus`, node22 v22.17.0, its OWN same-day frozen cont built from
+this branch — cont there includes the Stage-1 string-dict gains, so its
+ratios read HARSHER than the primary box's; the two boxes' numbers are never
+mixed).
+
+- O1 cont byte-parity 16/16 PASS — load-bearing here: the desugar-post-tc
+  change (SCasesElse keeps its compiled annotation) is this stage's one
+  shared-pipeline edit, and cont bytes did not move.
+- O3 13230 green, O4 12798 green, mf oracle green. A/B on cases-heavy
+  bench-dtree: output identical with -no-direct-cases -no-direct-fields;
+  static dict-read sites appear only in the enabled build.
+- O5 (timing box, N=5): parity 16/16, geomean **1.019** vs its harsher cont.
+  vec-methods 0.66, matrix 0.88, dtree 0.96. plagiarism 1.42 there =
+  the string-dict-enabled cont side (its promise absolute times match the
+  primary box); the tier stage remains its fix.
+- O6: skipped this stage — the timing box turned out to run the exec SUITE
+  ~13x slower than the primary (CPU and disk both benchmark FINE; suite-
+  specific pathology, under investigation), so whole-suite wall-clock stays
+  a primary-box oracle and resumes with the next stage's battery. Division
+  of labor recorded: timing box = O5 bench tables only.
+
+Discovered during this battery and fixed: the S3.7 test patch had placed an
+import mid-file (Pyret parse error) — caught by the timing box's fresh
+build; amended before landing.
+
 ## Results (2026-07-03 — Stage 3c': opt-facts provides section + cross-module method flatness)
 
 The schema-tagged `opt-facts` section (rule-3 design commit) + imported
