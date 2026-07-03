@@ -60,6 +60,30 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-04 — Stage 7: object representation — the re-derived endpoint)
+
+Flat-dict extendWith (one merged pass, extension-fields-first enumeration
+order pinned by torepr; brand rules and ref-update error preserved) +
+fast-mode dicts (shared null-proto $dictProto; Object.create at runtime
+sites; adopt-ready `{__proto__: R.$dictProto, ...}` aObj literals). Runtime
+drill on both embedded copies; $dictProto pinned in fresh jarrs.
+
+- O1 cont byte-parity 16/16 PASS. O3-compile 483 green. mf green.
+  exec 13022 green (incl. the new enumeration-order/brand-keeps/ref-update/
+  same-proto pins).
+- O5 (primary, N=5): parity 16/16, geomean **0.818** — **every bench ≤ 0.99**
+  for the first time: orbital-compute 1.01 → 0.73, matrix 0.71,
+  plagiarism 0.66, vec-methods 0.47, boids-compute-data 0.70; worst is
+  seam at 0.99.
+- O6 interleaved N=3 medians: cont 229.1 s vs promise 173.1 s →
+  **p/c 0.76**.
+
+Against the acceptance criteria (geomean ≤ 0.85, every bench ≤ 1.02,
+wall-clock ≤ 0.80): all met at this commit; the reference endpoint read
+geomean ≈ 0.82 and wall ≈ 0.75–0.77 on its own frozen cont. The formal
+Stage-8 gauntlet (fresh full-stack oracles + CPO browser sweep + bun spot)
+follows as the campaign's close.
+
 ## Results (2026-07-04 — Stage 6: runtime maybe-promise sweep — equality + iteration)
 
 Two runtime-only commits (equality core: scalar fast path before any
