@@ -294,3 +294,67 @@ check "direct fields: functional extend still dispatches to the override":
   df-checked-get(c) is 3
   df-checked-get(c2) raises "DfCell"
 end
+
+# Stage-7 object-representation pins (promise runtime's flat-dict extendWith +
+# shared dictProto, runtime-async.js). Functional extend builds the extended
+# dict FLAT in one merged pass (it used to layer a prototype and let the
+# PObject constructor re-flatten it), and record dicts share one empty
+# prototype object instead of prototype null. These pins hold the observable
+# contract fixed across that representation change -- and across backends: the
+# cont runtime keeps the old chain-then-flatten construction, so running this
+# file in both backends pins the two implementations against each other.
+
+check "functional extend: enumeration order (extension fields first)":
+  o = {x: 1, y: 2}
+  torepr(o) is "{x: 1, y: 2}"
+  # All-new extension: the NEW fields enumerate FIRST, then the old fields in
+  # their original order -- the exact insertion sequence the historical
+  # layered construction produced (own props first, then unshadowed proto
+  # props, flattened in for-in order).
+  torepr(o.{z: 3}) is "{z: 3, x: 1, y: 2}"
+  # An overridden field takes its position in the EXTENSION, not the original.
+  torepr(o.{y: 9, z: 3}) is "{y: 9, z: 3, x: 1}"
+  # Chained extends compose the same rule at each step.
+  torepr(o.{z: 3}.{x: 10}) is "{x: 10, z: 3, y: 2}"
+end
+
+check "functional extend: all-new fields KEEP the data brand":
+  b = febox(3)
+  b2 = b.{note: "hi"}
+  # b2 is a plain object now (data values extend to plain objects via the
+  # updateDict virtual dispatch), but an all-new-fields extension KEEPS the
+  # brands, so the `:: FeBox` check still passes and the original methods are
+  # intact alongside the new field.
+  fe-checked-get(b2) is 3
+  b2.get() is 3
+  b2.note is "hi"
+  # Contrast (the strips side is pinned in "functional-extend-strips-brand"):
+  # overriding ANY existing field -- a plain data field included -- strips.
+  fe-checked-get(b.{v: 5}) raises "FeBox"
+end
+
+check "functional extend: updating a ref field is an error":
+  m = mpair("a", "b")
+  m.{car: "x"} raises "Cannot update ref field"
+  # Extending AROUND a ref field is fine, and the ref itself is aliased into
+  # the extended object -- not rebuilt -- so updates through the original are
+  # visible in the extension.
+  m2 = m.{cdr: "c"}
+  m2.cdr is "c"
+  m2!car is "a"
+  m!{car: "z"}
+  m2!car is "z"
+end
+
+check "functional extend: structural equality over extended records":
+  o = {x: 1, y: 2}
+  # Extended-vs-literal and extended-vs-extended pairs exercise the
+  # same-dict-proto fast path of structural equality (compare own keys); the
+  # answers must be identical if the slow chain-walking path runs instead.
+  (o.{y: 9} == {x: 1, y: 9}) is true
+  (o.{z: 3} == {x: 1, y: 2, z: 3}) is true
+  ({x: 1, y: 2, z: 3} == o.{z: 3}) is true
+  (o.{z: 3} == o.{z: 3}) is true
+  (o.{z: 3} == o.{z: 4}) is false
+  (o.{z: 3} == o) is false
+end
