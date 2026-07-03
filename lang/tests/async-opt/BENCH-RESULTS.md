@@ -60,6 +60,29 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-03 — Stage 3b/3c: operator weakening + in-module method flatness)
+
+Two commits measured together (same-day frozen cont, fresh caches, jarr
+freshness pinned by `_plus_nums` in emitted module JS):
+
+- Feature smokes: bench-matrix emits `_plus_nums`/`_times_nums`;
+  vec-methods' method table converges dot=1/magsq=2/mag=3 flat with 4 flat
+  method-apps (`PYRET_METHOD_DEBUG=1`); numflat-sound output identical with
+  all three levers off (custom `_plus` still dispatches).
+- O1 cont byte-parity 16/16 PASS. O3 13207 green (incl. the new
+  functional-extend-strips-brand pins), O4 12775 green.
+- O5 N=5: parity 16/16, geomean **1.048** (from 1.117). Movers:
+  **matrix 1.27 → 0.85**, **vec-methods 1.08 → 0.84**, spell 0.92,
+  boids-compute-data 1.22 → 1.08. Still high and expected to stay until the
+  tier work: car-compute 1.26, orbital-compute 1.23, boids-compute 1.23,
+  plagiarism 1.21 (call machinery / representation costs).
+- O6 interleaved N=3 medians: cont 234.0 s vs promise 240.5 s → **p/c 1.03**
+  (from 1.08).
+
+Method-flatness note for later stages: constructor apps inside method bodies
+are currently not flat (vec-methods' plus/minus/scale stay INF in the table
+for that reason) — worth revisiting alongside the tier analysis.
+
 ## Results (2026-07-02 — Stage 3a: type-flow ann elision + operator-globals registration)
 
 Two commits measured together (the second is behaviorally inert): the
