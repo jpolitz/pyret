@@ -181,6 +181,21 @@ my-table = load-table: name :: String, age :: Number, favorite-color :: String
 end
 }
 
+◊example-preamble{
+import gdrive-sheets as GS
+import data-source as DS
+
+imported-my-table =
+  GS.load-spreadsheet("1BAexzf08Q5o8bXb_k8PwuE3tMKezxRfbKBKT-4L6UzI")
+
+my-table = load-table: name :: String, age :: Number, favorite-color :: String
+  source: imported-my-table.sheet-by-name("3-rows", true)
+  sanitize name using DS.string-sanitizer
+  sanitize age using DS.strict-num-sanitizer
+  sanitize favorite-color using DS.string-sanitizer
+end
+}
+
 In general, it is ◊italic{safest} to sanitize ◊italic{every} input column, since it
 is the only way to guarantee that the data source will not guess the column's
 type incorrectly.
@@ -206,7 +221,7 @@ The ◊pyret{select} expression can be used to create a new table from a subset
 of the columns of an existing one.  For example, we can get just the names
 and ages from ◊pyret{my-table} above:
 
-◊examples{
+◊examples[#:load-preamble #t]{
 names-and-ages = select name, age from my-table end
 check:
   names-and-ages is table: name, age
@@ -255,7 +270,7 @@ To arrange the rows of a table in some particular order, use an ◊pyret{order}
 expression.  This can be done with any column whose
 type supports the use of ◊pyret{<} and ◊pyret{>}, including ◊g-id{String}s. 
 
-◊examples{
+◊examples[#:load-preamble #t]{
 name-ordered = order my-table:
   name ascending
 end
@@ -345,7 +360,7 @@ One example of this is a column which tells
 whether the ◊pyret{age} field of a given row in ◊pyret{my-table} indicates
 that the person in that row is old enough drive in the United States or not,
 that is, whether that person is at least 16:
-◊examples{
+◊examples[#:load-preamble #t]{
 can-drive-col = extend my-table using age:
   can-drive: age >= 16
 end
@@ -465,6 +480,7 @@ of defaulting to 0.
 
 ◊examples{
 # calculates velocity of a dropping ball
+import tables at T
 ball-info = table: pos-y
   row: 25
   row: 24
@@ -525,6 +541,7 @@ or minimum value in the selected column in the current row or
 above.
 
 ◊examples{
+import tables as T
 some-numbers = table: n :: Number
   row: 4
   row: 9
@@ -723,6 +740,7 @@ columns.
 Produces a list of strings containing the names of the columns in the row.
 
 ◊examples{
+include tables
 check:
   r = [raw-row: {"city"; "NYC"}, {"pop"; 8500000}]
   r.get-column-names() is [list: "city", "pop"]
@@ -740,6 +758,7 @@ uses ◊tt{get-value}, which is often more pleasant to write than writing out
 ◊tt{get-value} fully.
 
 ◊examples{
+include tables
 check:
   r = [raw-row: {"city"; "NYC"}, {"pop"; 8500000}]
   r.get-value("pop") is 8500000
@@ -767,6 +786,7 @@ The type of all tables.
 A collection constructor that creates tables from ◊pyret-id["Row"] values.
 
 ◊examples{
+include tables
 check:
   t = [table-from-rows:
     [raw-row: {"A"; 5}, {"B"; 7}, {"C"; 8}],
@@ -788,6 +808,7 @@ specified as a tuple of its name (as a ◊pyret-id["String" "<global>"]) and a
 ◊pyret-id["List" "lists"] of its values.
 
 ◊examples{
+include tables
 check:
   t = [table-from-columns:
     {"a"; [list: 100, 200, 300]},
@@ -809,6 +830,7 @@ A function that creates a table of a single column from a column name, given as
 a ◊pyret-id["String" "<global>"] and a ◊pyret-id["List" "lists"] of values.
 
 ◊examples{
+include tables
 check:
   col = range(0, 100)
   tfc = table-from-column("a", col)
@@ -839,6 +861,7 @@ Consumes one value for each column in the table, and produces a
 appropriate column.
 
 ◊examples{
+include tables
 check:
   t = table: city, pop
     row: "NYC", 8.5 * 1000000

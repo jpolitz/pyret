@@ -35,6 +35,7 @@
   its length.
   
   ◊examples{
+    include statistics
     check:
       mean([list: ]) raises "Empty List"
       mean([list: 1]) is 1
@@ -53,6 +54,7 @@
   length, returns the average of the two middle-most values.
   
   ◊examples{
+    include statistics
     check:
       median([list: ]) raises "Empty List"
       median([list: 2]) is 2
@@ -80,6 +82,7 @@ considered a mode. To avoid confusing high-school students, we adopt the
 definition they will find in their textbooks.
 
   ◊examples{
+  include statistics
   check:
     modes([list: ]) is [list: ]
     modes([list: 1, 2, 3, 4]) is [list: ]
@@ -98,6 +101,7 @@ definition they will find in their textbooks.
     Determines if a list of numbers has any modes, i.e., any repeated values.
 
   ◊examples{
+  include statistics
   check:
     has-mode([list: ]) is false
     has-mode([list: 1, 2, 3, 4]) is false
@@ -115,6 +119,7 @@ definition they will find in their textbooks.
     Returns the smallest mode of a list of numbers, if any is present.
 
   ◊examples{
+  include statistics
   check:
     mode-smallest([list: ]) raises "empty" 
     mode-smallest([list: 1]) raises "no duplicate values"
@@ -133,6 +138,7 @@ definition they will find in their textbooks.
     Returns the largest mode of a list of numbers, if any is present.
 
   ◊examples{
+  include statistics
   check:
     mode-smallest([list: ]) raises "empty" 
     mode-smallest([list: 1]) raises "no duplicate values"
@@ -151,6 +157,7 @@ definition they will find in their textbooks.
     Returns an arbitrary mode of a list of numbers, if any is present.
 
   ◊examples{
+  include statistics
   check:
     mode-any([list: ]) raises "empty" 
     mode-any([list: 1]) raises "no duplicate values"
@@ -170,6 +177,7 @@ definition they will find in their textbooks.
   of the data set represented by numbers in ◊pyret{l}.
   
   ◊examples{
+    include statistics
     check:  
       stdev([list: ]) raises "list is empty"
       stdev([list: 2]) is 0
@@ -187,6 +195,7 @@ definition they will find in their textbooks.
   numbers in ◊pyret{l}.
   
   ◊examples{
+    include statistics
     check:  
       stdev-sample([list: ]) raises "list is empty"
       stdev-sample([list: 2]) raises "division by zero"
@@ -209,6 +218,7 @@ definition they will find in their textbooks.
   is a ◊emph{predictor function} to predict a y-value given an x-value.
 
   ◊examples{
+    include statistics
     check:
       predictor = linear-regression([list: 0, 1, 2, 3], [list: 3, 2, 1, 0])
       predictor(1) is-roughly 2
@@ -228,7 +238,8 @@ definition they will find in their textbooks.
   matches the given actual function (the argument ◊pyret{f}).
 
   ◊examples{
-    PI = ~3.1415926535
+    include statistics
+    # PI = ~3.1415926535
 
     fun f-good(x): 3 - x end
     fun f-poor(x): 3 * num-cos((x * PI) / 6) end

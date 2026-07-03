@@ -74,7 +74,7 @@ $abc
 ◊subsection{String Literals}
 
 ◊ebnf['Pyret]{
-◊nd{string-expr}: ◊tmi{STRING}
+◊nt{string-expr}: ◊tmi{STRING}
 }
 
 Strings in Pyret come in several forms.  First, they can be enclosed in double
@@ -121,7 +121,7 @@ beginning of intermediate lines is preserved.
 ◊subsection[#:tag "f:number_literals"]{Number Literals}
 
 ◊ebnf['Pyret]{
-◊nd{num-expr}: ◊tmi{NUMBER}
+◊nt{num-expr}: ◊tmi{NUMBER}
 }
 
 Pyret has several types of number literals.  The most traditional allows for
@@ -216,7 +216,7 @@ These are not valid rational literals:
 ◊subsection{Boolean Literals}
 
 ◊ebnf['Pyret]{
-◊nd{bool-expr}: ◊tm{true} | ◊tm{false}
+◊nt{bool-expr}: ◊tm{true} | ◊tm{false}
 }
 
 Boolean literals are the lowercase words ◊pyret{true} and ◊pyret{false}.
@@ -308,8 +308,8 @@ Programs consist of a sequence of import or provide statements, followed by a
 block:
 
 ◊ebnf['Pyret]{
-◊nd{program}: ◊nt{prelude} ◊nt{block}
-◊nd{prelude}: [◊nt{provide-stmt}] [◊nt{provide-types-stmt}] ◊nd{import-stmt}*
+◊nt{program}: ◊nt{prelude} ◊nt{block}
+◊nt{prelude}: [◊nt{provide-stmt}] [◊nt{provide-types-stmt}] ◊nt{import-stmt}*
 }
 
 ◊section{Import Statements}
@@ -317,12 +317,12 @@ block:
 Import statements come in a few forms:
 
 ◊ebnf['Pyret]{
-◊nd{import-stmt}: ◊tm{import} ◊nt{import-source} ◊tm{as} ◊tmi{NAME}
-                | ◊tm{import} ◊tmi{NAME} (◊tm{,} ◊tmi{NAME})* ◊tm{from} ◊nt{import-source}
-◊nd{import-source}: ◊nt{import-special} | ◊nt{import-name} | ◊nt{import-string}
-◊nd{import-special}: ◊tmi{NAME} ◊tm{(} ◊tmi{STRING} (◊tm{,} ◊tmi{STRING})* ◊tm{)}
-◊nd{import-name}: ◊tmi{NAME}
-◊nd{import-string}: ◊tmi{STRING}
+◊nt{import-stmt}: ◊tk{IMPORT} ◊nt{import-source} ◊tk{AS} ◊tmi{NAME}
+                | ◊tk{IMPORT} ◊tmi{NAME} (◊tk{COMMA} ◊tmi{NAME})* ◊tk{FROM} ◊nt{import-source}
+◊nt{import-source}: ◊nt{import-special} | ◊nt{import-name} | ◊nt{import-string}
+◊nt{import-special}: ◊tmi{NAME} ◊tk{PARENNOSPACE} ◊tmi{STRING} (◊tk{COMMA} ◊tmi{STRING})* ◊tk{RPAREN}
+◊nt{import-name}: ◊tmi{NAME}
+◊nt{import-string}: ◊tmi{STRING}
 }
 
 The form with ◊py-prod{import-name} looks for a file with that name in the
@@ -341,11 +341,11 @@ Example:
 ◊section{Provide Statements}
 
 ◊ebnf['Pyret]{
-◊nd{provide-stmt}: ◊tm{provide} ◊nt{stmt} ◊tm{end} | ◊tm{provide} ◊tm{*}
+◊nt{provide-stmt}: ◊tk{PROVIDE} ◊nt{stmt} ◊tk{END} | ◊tk{PROVIDE} ◊tk{STAR}
 }
 
 ◊ebnf['Pyret]{
-◊nd{provide-types-stmt}: ◊tm{provide-types} ◊nt{record-ann} | ◊tm{provide-types} ◊tm{*}
+◊nt{provide-types-stmt}: ◊tk{PROVIDE-TYPES} ◊nt{record-ann} | ◊tk{PROVIDE-TYPES} ◊tk{STAR}
 }
 
 ◊pyret{provide} and ◊pyret{provide-types} statements specify which
@@ -425,9 +425,9 @@ Many syntactic forms in Pyret need to designate names for values.  These are
 uniformly represented as ◊py-prod{binding}s:
 
 ◊ebnf['Pyret]{
-◊nd{binding}: ◊nt{name-binding} | ◊nt{tuple-binding}
-◊nd{name-binding}: [◊tm{shadow}] ◊tmi{name} [◊tm{::} ◊nt{ann}]
-◊nd{tuple-binding}: ◊tm{◊lbrace[]} (◊nt{binding} ◊tm{;})* ◊nt{binding} [◊tm{;}] ◊tm{◊rbrace[]} [◊tm{as} ◊nt{name-binding}]
+◊nt{binding}: ◊nt{name-binding} | ◊nt{tuple-binding}
+◊nt{name-binding}: [◊tk{SHADOW}] ◊tmi{name} [◊tk{COLONCOLON} ◊nt{ann}]
+◊nt{tuple-binding}: ◊tk{LBRACE} (◊nt{binding} ◊tk{SEMI})* ◊nt{binding} [◊tk{SEMI}] ◊tk{RBRACE} [◊tk{AS} ◊nt{name-binding}]
 }
 
 ◊subsection{Name bindings}
@@ -613,8 +613,8 @@ end
 A block's syntax is a list of statements:
 
 ◊ebnf['Pyret]{
-◊nd{block}: ◊nt{stmt}*
-◊nd{user-block-expr}: ◊tm{block:} ◊nt{block} ◊tm{end}
+◊nt{block}: ◊nt{stmt}*
+◊nt{user-block-expr}: ◊tk{BLOCKCOLON} ◊nt{block} ◊tk{END}
 }
 
 Blocks serve two roles in Pyret:
@@ -744,7 +744,7 @@ block containing multiple expressions.  Instead, Pyret will consider
 the following to be valid "non-blocky" blocks:
 
 ◊ebnf['Pyret]{
-◊nd{non-blocky-block}: ◊nt{stmt}* ◊nt{template-expr} ◊nt{stmt}* | ◊nt{let-decl}* ◊nt{expr} | ◊nt{user-block-expr}
+◊nt{non-blocky-block}: ◊nt{stmt}* ◊nt{template-expr} ◊nt{stmt}* | ◊nt{let-decl}* ◊nt{expr} | ◊nt{user-block-expr}
 }
 
 Any sequence of let-bindings followed by exactly one expression is
@@ -761,7 +761,7 @@ There are a number of forms that can only appear as statements in ◊tt{block}s
 ◊py-prod{data-decl} and ◊py-prod{contract} are exceptions, and can appear only at the top level.
 
 ◊ebnf['Pyret]{
-◊nd{stmt}: ◊nt{let-decl} | ◊nt{rec-decl} | ◊nt{fun-decl} | ◊nt{var-decl} | ◊nt{type-stmt} | ◊nt{newtype-stmt}
+◊nt{stmt}: ◊nt{let-decl} | ◊nt{rec-decl} | ◊nt{fun-decl} | ◊nt{var-decl} | ◊nt{type-stmt} | ◊nt{newtype-stmt}
     | ◊nt{data-decl} | ◊nt{contract}
 }
 
@@ -770,7 +770,7 @@ There are a number of forms that can only appear as statements in ◊tt{block}s
 Let declarations are written with an equals sign:
 
 ◊ebnf['Pyret]{
-◊nd{let-decl}: ◊nt{binding} ◊tm{=} ◊nt{binop-expr}
+◊nt{let-decl}: ◊nt{binding} ◊tk{EQUALS} ◊nt{binop-expr}
 }
 
 A let statement causes the name in the ◊tt{binding} to be put in scope in the
@@ -832,7 +832,7 @@ x = "hi"
 
 ◊subsection[#:tag "s:rec-decl"]{Recursive Let Declarations}
 ◊ebnf['Pyret]{
-◊nd{rec-decl}: ◊tm{rec} ◊nt{binding} ◊tm{=} ◊nt{binop-expr}
+◊nt{rec-decl}: ◊tk{REC} ◊nt{binding} ◊tk{EQUALS} ◊nt{binop-expr}
 }
 
 A recursive let-binding is just like a normal let-binding, except that the name
@@ -862,15 +862,15 @@ rec countdown-good =
 Function declarations have a number of pieces:
 
 ◊ebnf['Pyret]{
-◊nd{fun-decl}: ◊tm{fun} ◊tmi{NAME} ◊nt{fun-header} [◊tm{block}] ◊tm{:} ◊nt{doc-string} ◊nt{block} ◊nt{where-clause} ◊tm{end}
-◊nd{fun-header}: ◊nt{ty-params} ◊nt{args} ◊nt{return-ann}
-◊nd{ty-params}: [◊tm{<} ◊nt{list-ty-param}* ◊tmi{NAME} ◊tm{>}]
-◊nd{list-ty-param}: ◊tmi{NAME} ◊tm{,}
-◊nd{args}: ◊tm{(} [◊nt{list-arg-elt}* ◊nt{binding}] ◊tm{)}
-◊nd{list-arg-elt}: ◊nt{binding} ◊tm{,}
-◊nd{return-ann}: [◊tm{->} ◊nt{ann}]
-◊nd{doc-string}: [◊tm{doc} ◊tmi{STRING}]
-◊nd{where-clause}: [◊tm{where} ◊nt{block}]
+◊nt{fun-decl}: ◊tk{FUN} ◊tmi{NAME} ◊nt{fun-header} [◊tk{BLOCK}] ◊tk{COLON} ◊nt{doc-string} ◊nt{block} ◊nt{where-clause} ◊tk{END}
+◊nt{fun-header}: ◊nt{ty-params} ◊nt{args} ◊nt{return-ann}
+◊nt{ty-params}: [◊tk{LANGLE} ◊nt{list-ty-param}* ◊tmi{NAME} ◊tk{RANGLE}]
+◊nt{list-ty-param}: ◊tmi{NAME} ◊tk{COMMA}
+◊nt{args}: ◊tk{LPAREN} [◊nt{list-arg-elt}* ◊nt{binding}] ◊tk{RPAREN}
+◊nt{list-arg-elt}: ◊nt{binding} ◊tk{COMMA}
+◊nt{return-ann}: [◊tk{THINARROW} ◊nt{ann}]
+◊nt{doc-string}: [◊tk{DOC} ◊tmi{STRING}]
+◊nt{where-clause}: [◊tk{WHERE} ◊nt{block}]
 }
 
 Function declarations are statements used to define functions with a given
@@ -976,17 +976,17 @@ Data declarations define a number of related functions for creating and
 manipulating a data type.  Their grammar is:
 
 ◊ebnf['Pyret]{
-◊nd{data-decl}: DATA ◊tmi{NAME} ◊nt{ty-params} ◊tm{:}
+◊nt{data-decl}: ◊tk{DATA} ◊tmi{NAME} ◊nt{ty-params} ◊tk{COLON}
     ◊nt{data-variant}*
     ◊nt{data-sharing}
     ◊nt{where-clause}
-  ◊tm{end}
-◊nd{data-variant}: ◊tm{|} ◊tmi{NAME} ◊nt{variant-members} ◊nt{data-with} | ◊tm{|} ◊tmi{NAME} ◊nt{data-with}
-◊nd{variant-members}: ◊tm{(} [◊nt{list-variant-member}* ◊nt{variant-member}] ◊tm{)}
-◊nd{list-variant-member}: ◊nt{variant-member} ◊tm{,}
-◊nd{variant-member}: [◊tm{ref}] ◊nt{binding}
-◊nd{data-with}: [◊tm{with:} ◊nt{fields}]
-◊nd{data-sharing}: [◊tm{sharing:} ◊nt{fields}]
+  ◊tk{END}
+◊nt{data-variant}: ◊tk{PIPE} ◊tmi{NAME} ◊nt{variant-members} ◊nt{data-with} | ◊tk{PIPE} ◊tmi{NAME} ◊nt{data-with}
+◊nt{variant-members}: ◊tk{LPAREN} [◊nt{list-variant-member}* ◊nt{variant-member}] ◊tk{RPAREN}
+◊nt{list-variant-member}: ◊nt{variant-member} ◊tk{COMMA}
+◊nt{variant-member}: [◊tk{REF}] ◊nt{binding}
+◊nt{data-with}: [◊tk{WITH} ◊nt{fields}]
+◊nt{data-sharing}: [◊tk{SHARING} ◊nt{fields}]
 }
 
 
@@ -1115,7 +1115,7 @@ Variable declarations look like ◊seclink["s:let-decl" "let bindings"], but
 with an extra ◊tt{var} keyword in the beginning:
 
 ◊ebnf['Pyret]{
-◊nd{var-decl}: ◊tm{var} ◊nt{binding} ◊tm{=} ◊nt{expr}
+◊nt{var-decl}: ◊tk{VAR} ◊nt{binding} ◊tk{EQUALS} ◊nt{expr}
 }
 
 A ◊tt{var} expression creates a new ◊emph{assignable variable} in the current
@@ -1135,8 +1135,8 @@ updating.
 ◊subsection[#:tag "s:type-decl"]{Type Declarations}
 Pyret provides two means of defining new type names.  
 ◊ebnf['Pyret]{
-◊nd{type-stmt}: ◊tm{type} ◊nt{type-decl}
-◊nd{type-decl}: ◊tmi{NAME} ◊nt{ty-params} ◊tm{=} ◊nt{ann}
+◊nt{type-stmt}: ◊tk{TYPE} ◊nt{type-decl}
+◊nt{type-decl}: ◊tmi{NAME} ◊nt{ty-params} ◊tk{EQUALS} ◊nt{ann}
 }
 
 A ◊py-prod{type-stmt} declares an alias to an existing type.  This allows for
@@ -1161,8 +1161,8 @@ details of its internals.)  To do that we need to specify both a ◊emph{static 
 use as annotations to describe our data, and a ◊emph{dynamic brand} to mark the
 data and ensure that we can recognize it again when we see it.
 ◊ebnf['Pyret]{
-◊nd{newtype-stmt}: ◊nt{newtype-decl}
-◊nd{newtype-decl}: ◊tm{newtype} ◊tmi{NAME} ◊tm{as} ◊tmi{NAME}
+◊nt{newtype-stmt}: ◊nt{newtype-decl}
+◊nt{newtype-decl}: ◊tk{NEWTYPE} ◊tmi{NAME} ◊tk{AS} ◊tmi{NAME}
 }
 When we write
 ◊examples{
@@ -1214,9 +1214,9 @@ The grammar for these contracts looks nearly identical to that of
 relaxed treatment: the outermost set of parentheses are optional.
 
 ◊ebnf['Pyret]{
-◊nd{contract}: ◊tmi{NAME} ◊tm{::} ◊nt{ty-params} ◊nt{ann} | ◊tmi{NAME} ◊tm{::} ◊nt{ty-params} ◊nt{contract-arrow-ann}
-◊nd{contract-arrow-ann}: (◊nt{ann} ◊tm{,})* ◊nt{ann} ◊tm{->} ◊nt{ann} 
-              | ◊tm{(} (◊tmi{NAME} ◊tm{::} ◊nt{ann} ◊tm{,})* ◊tmi{NAME} ◊tm{::} ◊nt{ann} ◊tm{)} ◊tm{->} ◊nt{ann}
+◊nt{contract}: ◊tmi{NAME} ◊tk{COLONCOLON} ◊nt{ty-params} ◊nt{ann} | ◊tmi{NAME} ◊tk{COLONCOLON} ◊nt{ty-params} ◊nt{contract-arrow-ann}
+◊nt{contract-arrow-ann}: (◊nt{ann} ◊tk{COMMA})* ◊nt{ann} ◊tk{THINARROW} ◊nt{ann}
+              | ◊tk{LPAREN} (◊tmi{NAME} ◊tk{COLONCOLON} ◊nt{ann} ◊tk{COMMA})* ◊tmi{NAME} ◊tk{COLONCOLON} ◊nt{ann} ◊tk{RPAREN} ◊tk{THINARROW} ◊nt{ann}
 }
 
 When weaving function annotations onto functions, Pyret enforces a few
@@ -1311,7 +1311,7 @@ There are just a few forms that can only appear as statements in ◊tt{block}s
 that aren't declarations:
 
 ◊ebnf['Pyret]{
-◊nd{stmt}: ◊nt{when-stmt} | ◊nt{assign-stmt} | ◊nt{binop-expr}
+◊nt{stmt}: ◊nt{when-stmt} | ◊nt{assign-stmt} | ◊nt{binop-expr}
 }
 
 ◊subsection[#:tag "s:when-stmt"]{When Statements}
@@ -1320,7 +1320,7 @@ A when expression has a single test condition with a corresponding
 block.
 
 ◊ebnf['Pyret]{
-◊nd{when-stmt}: ◊tm{when} ◊nt{binop-expr} [◊tm{block}] ◊tm{::} ◊nt{block} ◊tm{end}
+◊nt{when-stmt}: ◊tk{WHEN} ◊nt{binop-expr} [◊tk{BLOCK}] ◊tk{COLON} ◊nt{block} ◊tk{END}
 }
 
 For example:
@@ -1340,7 +1340,7 @@ Assignment statements have a name on the left, and an expression on the right
 of ◊tt{:=}:
 
 ◊ebnf['Pyret]{
-◊nd{assign-stmt}: ◊tmi{NAME} ◊tm{:=} ◊nt{binop-expr}
+◊nt{assign-stmt}: ◊tmi{NAME} ◊tk{COLON-EQUALS} ◊nt{binop-expr}
 }
 
 If ◊tt{NAME} is not declared in the same or an outer scope of the assignment
@@ -1361,7 +1361,7 @@ well-formedness checking).
 The following are all the expression forms of Pyret:
 
 ◊ebnf['Pyret]{
-◊nd{expr}: ◊nt{paren-expr} | ◊nt{id-expr} | ◊nt{prim-expr}
+◊nt{expr}: ◊nt{paren-expr} | ◊nt{id-expr} | ◊nt{prim-expr}
     | ◊nt{lam-expr} | ◊nt{method-expr} | ◊nt{app-expr}
     | ◊nt{obj-expr} | ◊nt{dot-expr} | ◊nt{extend-expr}
     | ◊nt{tuple-expr} | ◊nt{tuple-get}
@@ -1383,9 +1383,9 @@ The following are all the expression forms of Pyret:
     | ◊nt{table-extend}
     | ◊nt{load-table-expr}
     | ◊nt{reactor-expr}
-◊nd{paren-expr}: ◊tm{(} ◊nt{binop-expr} ◊tm{)}
-◊nd{id-expr}: ◊tmi{NAME}
-◊nd{prim-expr}: ◊tmi{NUMBER} | ◊tmi{RATIONAL} | ◊tmi{BOOLEAN} | ◊tmi{STRING}
+◊nt{paren-expr}: ◊tk{LPAREN} ◊nt{binop-expr} ◊tk{RPAREN}
+◊nt{id-expr}: ◊tmi{NAME}
+◊nt{prim-expr}: ◊tmi{NUMBER} | ◊tmi{RATIONAL} | ◊tmi{BOOLEAN} | ◊tmi{STRING}
 }
 
 ◊subsection[#:tag "s:lam-expr"]{Lambda Expressions}
@@ -1393,11 +1393,11 @@ The following are all the expression forms of Pyret:
 The grammar for a lambda expression is:
 
 ◊ebnf['Pyret]{
-◊nd{lam-expr}: ◊tm{lam} ◊nt{fun-header} [◊tm{block}] ◊tm{:}
+◊nt{lam-expr}: ◊tk{LAM} ◊nt{fun-header} [◊tk{BLOCK}] ◊tk{COLON}
     ◊nt{doc-string}
     ◊nt{block}
     ◊nt{where-clause}
-  ◊tm{end}
+  ◊tk{END}
 }
 
 A lambda expression creates a function value that can be applied with
@@ -1468,11 +1468,11 @@ end
 Lambda expressions can also be written with a curly-brace shorthand:
 
 ◊ebnf['Pyret]{
-◊nd{curly-lam-expr}: ◊tm{◊lbrace[]} ◊nt{fun-header} [◊tm{block}] ◊tm{:}
+◊nt{curly-lam-expr}: ◊tk{LBRACE} ◊nt{fun-header} [◊tk{BLOCK}] ◊tk{COLON}
     ◊nt{doc-string}
     ◊nt{block}
     ◊nt{where-clause}
-  ◊tm{◊rbrace[]}
+  ◊tk{RBRACE}
 }
 
 ◊examples{
@@ -1489,7 +1489,7 @@ An anonymous method expression looks much like an anonymous function (defined
 with ◊pyret{lam}):
 
 ◊ebnf['Pyret]{
-◊nd{method-expr}: ◊tm{method} ◊nt{fun-header} [◊tm{block}] ◊tm{:} ◊nt{doc-string} ◊nt{block} ◊nt{where-clause} ◊tm{end}
+◊nt{method-expr}: ◊tk{METHOD} ◊nt{fun-header} [◊tk{BLOCK}] ◊tk{COLON} ◊nt{doc-string} ◊nt{block} ◊nt{where-clause} ◊tk{END}
 }
 
 All the same rules for bindings, including annotations and shadowing, apply the
@@ -1525,9 +1525,9 @@ end
 Function application expressions have the following grammar:
 
 ◊ebnf['Pyret]{
-◊nd{app-expr}: ◊nt{expr} ◊nt{app-args}
-◊nd{app-args}: ◊tm{(} [◊nt{app-arg-elt}* ◊nt{binop-expr}] ◊tm{)}
-◊nd{app-arg-elt}: ◊nt{binop-expr} ◊tm{,}
+◊nt{app-expr}: ◊nt{expr} ◊nt{app-args}
+◊nt{app-args}: ◊tk{LPAREN} [◊nt{app-arg-elt}* ◊nt{binop-expr}] ◊tk{RPAREN}
+◊nt{app-arg-elt}: ◊nt{binop-expr} ◊tk{COMMA}
 }
 
 An application expression is an expression followed by a comma-separated list
@@ -1630,7 +1630,7 @@ Pyret just does not provide syntactic sugar to help in this case
 ◊index["^ (Chained Application)"]{}
 
 ◊ebnf['Pyret]{
-◊nd{chain-app-expr}: ◊nt{binop-expr} ◊tm{^} ◊nt{binop-expr}
+◊nt{chain-app-expr}: ◊nt{binop-expr} ◊tk{CARET} ◊nt{binop-expr}
 }
 
 The expression ◊pyret{e1 ^ e2} is equivalent to ◊pyret{e2(e1)}.  It's just
@@ -1694,7 +1694,7 @@ call.  Spaces are not permitted before the left-angle bracket or after the
 right-angle bracket
 
 ◊ebnf['Pyret]{
-◊nd{inst-expr}: ◊nt{expr} ◊tm{<} ◊nt{ann} (◊tm{,} ◊nt{ann})* ◊tm{>}
+◊nt{inst-expr}: ◊nt{expr} ◊tk{LANGLE} ◊nt{ann} (◊tk{COMMA} ◊nt{ann})* ◊tk{RANGLE}
 }
 
 ◊examples{
@@ -1713,7 +1713,7 @@ is a series of expressions joined by binary operators. An expression itself
 is also a binary operator expression.
 
 ◊ebnf['Pyret]{
-◊nd{binop-expr}: ◊nt{expr} (◊tmi{BINOP} ◊nt{expr})*
+◊nt{binop-expr}: ◊nt{expr} (◊tmi{BINOP} ◊nt{expr})*
 }
 
 Pyret supports the following operations, shown by example:
@@ -1761,8 +1761,8 @@ apply to primitive boolean values.
 Tuples are an immutable, fixed-length collection of expressions indexed by non-negative integers:
 
 ◊ebnf['Pyret]{
-◊nd{tuple-expr}: ◊tm{◊lbrace[]} ◊nt{tuple-fields} ◊tm{◊rbrace[]}
-◊nd{tuple-fields}: ◊nt{binop-expr} (◊tm{;} ◊nt{binop-expr})* ◊tm{;}
+◊nt{tuple-expr}: ◊tk{LBRACE} ◊nt{tuple-fields} ◊tk{RBRACE}
+◊nt{tuple-fields}: ◊nt{binop-expr} (◊tk{SEMI} ◊nt{binop-expr})* [◊tk{SEMI}]
 }
 
 A semicolon-separated sequence of fields enclosed in ◊tt{{}} creates a tuple. 
@@ -1770,7 +1770,7 @@ A semicolon-separated sequence of fields enclosed in ◊tt{{}} creates a tuple.
 ◊subsection[#:tag "s:tuple-get-expr"]{Tuple Access Expressions}
 
 ◊ebnf['Pyret]{
-◊nd{tuple-get}: ◊nt{expr} ◊tm{.} ◊tm{◊lbrace[]} ◊tmi{NUMBER} ◊tm{◊rbrace[]}
+◊nt{tuple-get}: ◊nt{expr} ◊tk{DOT} ◊tk{LBRACE} ◊tmi{NUMBER} ◊tk{RBRACE}
 }
 
 A tuple-get expression evaluates the ◊tt{expr} to a value ◊tt{val}, and then
@@ -1814,12 +1814,12 @@ This restriction ensures that tuple access is typable.
 Object expressions map field names to values:
 
 ◊ebnf['Pyret]{
-◊nd{obj-expr}: ◊tm{◊lbrace[]} ◊nt{fields} ◊tm{◊rbrace[]} | ◊tm{◊lbrace[]} ◊tm{◊rbrace[]}
-◊nd{fields}: ◊nt{list-field}* ◊nt{field} [◊tm{,}]
-◊nd{list-field}: ◊nt{field} ◊tm{,}
-◊nd{field}: ◊nt{key} ◊tm{:} ◊nt{binop-expr}
-     | ◊tm{method} ◊nt{key} ◊nt{fun-header} [◊tm{BLOCK}] ◊tm{:} ◊nt{doc-string} ◊nt{block} ◊nt{where-clause} ◊tm{END}
-◊nd{key}: ◊tmi{NAME}
+◊nt{obj-expr}: ◊tk{LBRACE} ◊nt{fields} ◊tk{RBRACE} | ◊tk{LBRACE} ◊tk{RBRACE}
+◊nt{fields}: ◊nt{list-field}* ◊nt{field} [◊tk{COMMA}]
+◊nt{list-field}: ◊nt{field} ◊tk{COMMA}
+◊nt{field}: ◊nt{key} ◊tk{COLON} ◊nt{binop-expr}
+     | ◊tk{METHOD} ◊nt{key} ◊nt{fun-header} [◊tk{BLOCK}] ◊tk{COLON} ◊nt{doc-string} ◊nt{block} ◊nt{where-clause} ◊tk{END}
+◊nt{key}: ◊tmi{NAME}
 }
 
 A comma-separated sequence of fields enclosed in ◊tt{{}} creates an object; we
@@ -1849,7 +1849,7 @@ more than once, it is a compile-time error.
 A dot expression is any expression, followed by a dot and name:
 
 ◊ebnf['Pyret]{
-◊nd{dot-expr}: ◊nt{expr} ◊tm{.} ◊tmi{NAME}
+◊nt{dot-expr}: ◊nt{expr} ◊tk{DOT} ◊tmi{NAME}
 }
 
 A dot expression evaluates the ◊tt{expr} to a value ◊tt{val}, and then does one
@@ -1916,7 +1916,7 @@ The extend expression consists of an base expression and a list of fields to
 extend it with:
 
 ◊ebnf['Pyret]{
-◊nd{extend-expr}: ◊nt{expr} ◊tm{.} ◊tm{◊lbrace[]} ◊nt{fields} ◊tm{◊rbrace[]}
+◊nt{extend-expr}: ◊nt{expr} ◊tk{DOT} ◊tk{LBRACE} ◊nt{fields} ◊tk{RBRACE}
 }
 
 The extend expression first evaluates ◊tt{expr} to a value ◊tt{val}, and then
@@ -1940,8 +1940,8 @@ end
 An if expression has a number of test conditions and an optional else case.
 
 ◊ebnf['Pyret]{
-◊nd{if-expr}: ◊tm{if} ◊nt{binop-expr} [◊tm{block}] ◊tm{:} ◊nt{block} ◊nt{else-if}* [◊tm{else:} ◊nt{block}] ◊tm{end}
-◊nd{else-if}: ◊tm{else if} ◊nt{binop-expr} ◊tm{:} ◊nt{block}
+◊nt{if-expr}: ◊tk{IF} ◊nt{binop-expr} [◊tk{BLOCK}] ◊tk{COLON} ◊nt{block} ◊nt{else-if}* [◊tk{ELSECOLON} ◊nt{block}] ◊tk{END}
+◊nt{else-if}: ◊tk{ELSEIF} ◊nt{binop-expr} ◊tk{COLON} ◊nt{block}
 }
 
 For example, this if expression has an "else:"
@@ -1978,8 +1978,8 @@ An ◊pyret{ask} expression is a different way of writing an ◊pyret{if}
 expression that can be easier to read in some cases.
 
 ◊ebnf['Pyret]{
-◊nd{ask-expr}: ◊tm{ask} [◊tm{block}] ◊tm{:} ◊nt{ask-branch}* [◊tm{|} ◊tm{otherwise:} ◊nt{block}] ◊tm{end}
-◊nd{ask-branch}: ◊tm{|} ◊nt{binop-expr} ◊tm{then:} ◊nt{block}
+◊nt{ask-expr}: ◊tk{ASK} [◊tk{BLOCK}] ◊tk{COLON} ◊nt{ask-branch}* [◊tk{BAR} ◊tk{OTHERWISECOLON} ◊nt{block}] ◊tk{END}
+◊nt{ask-branch}: ◊tk{BAR} ◊nt{binop-expr} ◊tk{THENCOLON} ◊nt{block}
 }
 
 This ask expression:
@@ -2014,11 +2014,11 @@ inspect (before the colon), and a number of branches.  It is intended to be
 used in a structure parallel to a data definition.
 
 ◊ebnf['Pyret]{
-◊nd{cases-expr}: ◊tm{cases} ◊tm{(} ◊nt{ann} ◊tm{)} ◊nt{expr} [◊tm{block}] ◊tm{:}
+◊nt{cases-expr}: ◊tk{CASES} ◊tk{LPAREN} ◊nt{ann} ◊tk{RPAREN} ◊nt{expr} [◊tk{BLOCK}] ◊tk{COLON}
     ◊nt{cases-branch}*
-    [◊tm{|} ◊tm{else} ◊tm{=>} ◊nt{block}]
-  ◊tm{end}
-◊nd{cases-branch}: ◊tm{|} ◊tmi{NAME} [◊nt{args}] ◊tm{=>} ◊nt{block}
+    [◊tk{BAR} ◊tk{ELSE} ◊tk{THICKARROW} ◊nt{block}]
+  ◊tk{END}
+◊nt{cases-branch}: ◊tk{BAR} ◊tmi{NAME} [◊nt{args}] ◊tk{THICKARROW} ◊nt{block}
 }
 
 The ◊pyret{check-ann} must be a type, like ◊pyret-id["List" "lists"].  Then
@@ -2080,11 +2080,11 @@ For expressions consist of the ◊tt{for} keyword, followed by a list of
 ◊tt{binding from expr} clauses in parentheses, followed by a block:
 
 ◊ebnf['Pyret]{
-◊nd{for-expr}: ◊tm{for} ◊nt{expr} ◊tm{(} [◊nt{for-bind-elt}* ◊nt{for-bind}] ◊tm{)} ◊nt{return-ann} [◊tm{block}] ◊tm{colon}
+◊nt{for-expr}: ◊tk{FOR} ◊nt{expr} ◊tk{PARENNOSPACE} [◊nt{for-bind-elt}* ◊nt{for-bind}] ◊tk{RPAREN} ◊nt{return-ann} [◊tk{BLOCK}] ◊tk{COLON}
   ◊nt{block}
-◊tm{end}
-◊nd{for-bind-elt}: ◊nt{for-bind} ◊tm{,}
-◊nd{for-bind}: ◊nt{binding} ◊tm{from} ◊nt{binop-expr}
+◊tk{END}
+◊nt{for-bind-elt}: ◊nt{for-bind} ◊tk{COMMA}
+◊nt{for-bind}: ◊nt{binding} ◊tk{FROM} ◊nt{binop-expr}
 }
 
 The for expression is just syntactic sugar for a
@@ -2120,7 +2120,7 @@ fold(lam(sum, number): sum + number end, 0, [list: 1,2,3,4])
 A template expression is three dots in a row:
 
 ◊ebnf['Pyret]{
-◊nd{template-expr}: ◊tm{...}
+◊nt{template-expr}: ◊tk{DOTS}
 }
 
 It is useful for a placeholder for other expressions in code-in-progress.  When
@@ -2168,45 +2168,45 @@ Table expressions consist of a list of column names followed by one or more
 rows of data:
 
 ◊ebnf['Pyret]{
-◊nd{table-expr}: ◊tm{table:} ◊nt{table-headers} ◊nt{table-rows} ◊tm{end}
-◊nd{table-headers}: [◊nt{table-header} ◊tm{,}]* ◊nt{table-header}
-◊nd{table-header}: ◊tmi{NAME} [◊tm{::} ◊nt{ann}]
-◊nd{table-rows}: ◊nt{table-row}* ◊nt{table-row}
-◊nd{table-row}: ◊tmi{row:} [◊nt{binop-expr} ◊tm{,}]* ◊nt{binop-expr}
+◊nt{table-expr}: ◊tk{TABLE} ◊nt{table-headers} ◊nt{table-rows} ◊tk{END}
+◊nt{table-headers}: [◊nt{table-header} ◊tk{COMMA}]* ◊nt{table-header}
+◊nt{table-header}: ◊tmi{NAME} [◊tk{COLONCOLON} ◊nt{ann}]
+◊nt{table-rows}: ◊nt{table-row}* ◊nt{table-row}
+◊nt{table-row}: ◊tk{ROW} [◊nt{binop-expr} ◊tk{COMMA}]* ◊nt{binop-expr}
 }
 
 ◊ebnf['Pyret]{
-◊nd{table-select}: ◊tm{select} ◊tmi{NAME} (◊tm{,} ◊tmi{NAME})* ◊tm{from} ◊nt{expr} ◊tm{end}
+◊nt{table-select}: ◊tk{TABLE-SELECT} ◊tmi{NAME} (◊tk{COMMA} ◊tmi{NAME})* ◊tk{FROM} ◊nt{expr} ◊tk{END}
 }
 
 ◊ebnf['Pyret]{
-◊nd{table-sieve}: ◊tm{sieve} ◊nt{expr} [◊tm{using} ◊nt{binding} (◊tm{,} ◊nt{binding})*] ◊tm{:} ◊nt{binop-expr} ◊tm{end}
+◊nt{table-sieve}: ◊tk{TABLE-FILTER} ◊nt{expr} [◊tk{USING} ◊nt{binding} (◊tk{COMMA} ◊nt{binding})*] ◊tk{COLON} ◊nt{binop-expr} ◊tk{END}
 }
 
 
 ◊subsubsection[#:tag "s:tables:order"]{Sorting Table Rows}
 ◊ebnf['Pyret]{
-◊nd{table-order}: ◊tm{order} ◊nt{expr} ◊tm{:} ◊nt{column-order} ◊tm{end}
-◊nd{column-order}: ◊tmi{NAME} ◊tm{ascending} | ◊tmi{NAME} ◊tm{descending}
+◊nt{table-order}: ◊tk{TABLE-ORDER} ◊nt{expr} ◊tk{COLON} ◊nt{column-order} ◊tk{END}
+◊nt{column-order}: ◊tmi{NAME} ◊tk{ASCENDING} | ◊tmi{NAME} ◊tk{DESCENDING}
 }
 
 ◊subsubsection[#:tag "s:tables:transform"]{Transforming Table Rows}
 ◊ebnf['Pyret]{
-◊nd{table-transform}: ◊tm{transform} ◊nt{expr} [◊tm{using} ◊nt{binding} (◊tm{,} ◊nt{binding})*] ◊tm{:} ◊nt{transform-fields} ◊tm{end}
-◊nd{transform-fields}: ◊nt{transform-field} (◊tm{,} ◊nt{transform-field})* [◊tm{,}]
-◊nd{transform-field}: ◊nt{key} ◊tm{:} ◊nt{binop-expr}
+◊nt{table-transform}: ◊tk{TABLE-TRANSFORM} ◊nt{expr} [◊tk{USING} ◊nt{binding} (◊tk{COMMA} ◊nt{binding})*] ◊tk{COLON} ◊nt{transform-fields} ◊tk{END}
+◊nt{transform-fields}: ◊nt{transform-field} (◊tk{COMMA} ◊nt{transform-field})* [◊tk{COMMA}]
+◊nt{transform-field}: ◊nt{key} ◊tk{COLON} ◊nt{binop-expr}
 }
 
 ◊subsubsection[#:tag "s:tables:extract"]{Extracting Table Columns}
 ◊ebnf['Pyret]{
-◊nd{table-extract}: ◊tm{extract} ◊tmi{NAME} ◊tm{from} ◊nt{expr} ◊tm{end}
+◊nt{table-extract}: ◊tk{TABLE-EXTRACT} ◊tmi{NAME} ◊tk{FROM} ◊nt{expr} ◊tk{END}
 }
 
 ◊subsubsection[#:tag "s:tables:extend"]{Adding Table Columns}
 ◊ebnf['Pyret]{
-◊nd{table-extend}: ◊tm{extend} ◊nt{expr} [◊tm{using} ◊nt{binding} (◊tm{,} ◊nt{binding})*] ◊tm{:} [◊nt{table-extend-field} ◊tm{,}]* ◊nt{table-extend-field} ◊tm{end}
-◊nd{table-extend-field}: ◊nt{key} [◊tm{::} ◊nt{ann}] ◊tm{:} ◊nt{binop-expr}
-                  | ◊nt{key} [◊tm{::} ◊nt{ann}] ◊tm{:} ◊nt{expr} ◊tm{of} ◊tmi{NAME}
+◊nt{table-extend}: ◊tk{TABLE-EXTEND} ◊nt{expr} [◊tk{USING} ◊nt{binding} (◊tk{COMMA} ◊nt{binding})*] ◊tk{COLON} [◊nt{table-extend-field} ◊tk{COMMA}]* ◊nt{table-extend-field} ◊tk{END}
+◊nt{table-extend-field}: ◊nt{key} [◊tk{COLONCOLON} ◊nt{ann}] ◊tk{COLON} ◊nt{binop-expr}
+                  | ◊nt{key} [◊tk{COLONCOLON} ◊nt{ann}] ◊tk{COLON} ◊nt{expr} ◊tk{OF} ◊tmi{NAME}
 }
 
 
@@ -2215,20 +2215,20 @@ rows of data:
 A table loading expression constructs a table using a data source and
 zero or more data sanitizers:
 ◊ebnf['Pyret]{
-◊nd{load-table-expr}: ◊tm{load-table} ◊tm{:} ◊nt{table-headers} [◊nt{load-table-specs}] ◊tm{end}
-◊nd{load-table-specs}: ◊nt{load-table-spec}* ◊nt{load-table-spec}
-◊nd{load-table-spec}: ◊tm{source:} ◊nt{expr}
-               | ◊tm{sanitize} ◊tmi{NAME} ◊tm{using} ◊nt{expr}
+◊nt{load-table-expr}: ◊tk{LOAD-TABLE} ◊tk{COLON} ◊nt{table-headers} [◊nt{load-table-specs}] ◊tk{END}
+◊nt{load-table-specs}: ◊nt{load-table-spec}* ◊nt{load-table-spec}
+◊nt{load-table-spec}: ◊tk{SOURCECOLON} ◊nt{expr}
+               | ◊tk{SANITIZE} ◊tmi{NAME} ◊tk{USING} ◊nt{expr}
 }
 
 ◊subsection[#:tag "s:reactor-expr"]{Reactor Expressions}
 
 ◊ebnf['Pyret]{
-◊nd{reactor-expr}: ◊tm{reactor} ◊tm{:}
-  ◊tm{init} ◊tm{:} ◊nt{expr}
-  [ ◊tm{,} ◊nt{option-name} ◊tm{:} ◊nt{expr} ]*
-◊tm{end}
-◊nd{option-name}:
+◊nt{reactor-expr}: ◊tk{REACTOR} ◊tk{COLON}
+  ◊tk{INIT} ◊tk{COLON} ◊nt{expr}
+  [ ◊tk{COMMA} ◊nt{option-name} ◊tk{COLON} ◊nt{expr} ]*
+◊tk{END}
+◊nt{option-name}:
     ◊tm{on-tick}
   | ◊tm{on-mouse}
   | ◊tm{on-key}
@@ -2245,8 +2245,8 @@ Reactors are described in detail in ◊secref["s:reactors"].
 Pyret allows creating data definitions whose fields are mutable.  Accordingly,
 it provides syntax for accessing and modifying those fields.
 ◊ebnf['Pyret]{
-◊nd{get-bang-expr}: ◊nt{expr} ◊tm{!} ◊tmi{NAME}
-◊nd{update-expr}: ◊nt{expr} ◊tm{!} ◊tm{◊lbrace[]} ◊nt{fields} ◊tm{◊rbrace[]}
+◊nt{get-bang-expr}: ◊nt{expr} ◊tk{BANG} ◊tmi{NAME}
+◊nt{update-expr}: ◊nt{expr} ◊tk{BANG} ◊tk{LBRACE} ◊nt{fields} ◊tk{RBRACE}
 }
 
 By analogy with how ◊py-prod{dot-expr} accesses normal fields,
@@ -2272,7 +2272,15 @@ end
 To update a reference value, we use syntax similar to ◊py-prod{extend-expr},
 likewise made more emphatic:
 
-◊examples{
+◊example-preamble{
+data MutX:
+  | mut-x(ref x, y)
+end
+
+ex1 = mut-x(1, 2)
+}
+
+◊examples[#:load-preamble #t]{
 ex1!{x: 42}
 check:
   ex1!x is 42
@@ -2301,8 +2309,8 @@ we can write the above example as
 where ◊emph{◊pyret{list} is not a syntactic keyword} in the language.  Instead,
 this is one example of a ◊emph{construction expression}, whose syntax is simply
 ◊ebnf['Pyret]{
-◊nd{construct-expr}: ◊tm{[} ◊nt{binop-expr} ◊tm{:} ◊nt{construct-args} ◊tm{]}
-◊nd{construct-args}: [◊nt{binop-expr} (◊tm{,} ◊nt{binop-expr})*]
+◊nt{construct-expr}: ◊tk{LBRACK} ◊nt{binop-expr} ◊tk{COLON} ◊nt{construct-args} ◊tk{RBRACK}
+◊nt{construct-args}: [◊nt{binop-expr} (◊tk{COMMA} ◊nt{binop-expr})*]
 }
 
 Pyret defines several of these constructors for you: lists, sets, arrays, and
@@ -2326,7 +2334,19 @@ When Pyret encounters a construction expression, it will call the
 appropriately-numbered method on the constructor objects, depending on the
 number of arguments it received.
 
-◊examples{
+◊example-preamble{
+type Constructor<A> = {
+  make0 :: ( -> A),
+  make1 :: (Any -> A),
+  make2 :: (Any, Any -> A),
+  make3 :: (Any, Any, Any -> A),
+  make4 :: (Any, Any, Any, Any -> A),
+  make5 :: (Any, Any, Any, Any, Any -> A),
+  make  :: (RawArray<Any> -> A),
+}
+}
+
+◊examples[#:load-preamble #t]{
 weird :: Constructor<String> = {
   make0: lam(): "nothing at all" end,
   make1: lam(a): "just " + tostring(a) end,
@@ -2356,11 +2376,11 @@ read.  Pyret allows for three additional forms that combine bindings with
 expression blocks in a manner that is sometimes more legible:
 
 ◊ebnf['Pyret]{
-◊nd{multi-let-expr}: ◊tm{let} ◊nt{let-or-var} (◊tm{,} ◊nt{let-or-var})* [◊tm{block}] ◊tm{:} ◊nt{block} ◊tm{end}
-◊nd{let-or-var}: ◊nt{let-decl} | ◊nt{var-decl}
-◊nd{letrec-expr}: ◊tm{letrec} ◊nt{let-decl} (◊tm{,} ◊nt{let-decl})* [◊tm{block}] ◊tm{:} ◊nt{block} ◊tm{end}
-◊nd{type-let-expr}: ◊tm{type-let} ◊nt{type-let-or-newtype} (◊tm{,} ◊nt{type-let-or-newtype})* [◊tm{block}] ◊tm{:} ◊tm{end}
-◊nd{type-let-or-newtype}: ◊nt{type-decl} | ◊nt{newtype-decl}
+◊nt{multi-let-expr}: ◊tk{LET} ◊nt{let-or-var} (◊tk{COMMA} ◊nt{let-or-var})* [◊tk{BLOCK}] ◊tk{COLON} ◊nt{block} ◊tk{END}
+◊nt{let-or-var}: ◊nt{let-decl} | ◊nt{var-decl}
+◊nt{letrec-expr}: ◊tk{LETREC} ◊nt{let-decl} (◊tk{COMMA} ◊nt{let-decl})* [◊tk{BLOCK}] ◊tk{COLON} ◊nt{block} ◊tk{END}
+◊nt{type-let-expr}: ◊tk{TYPE-LET} ◊nt{type-let-or-newtype} (◊tk{COMMA} ◊nt{type-let-or-newtype})* [◊tk{BLOCK}] ◊tk{COLON} ◊tk{END}
+◊nt{type-let-or-newtype}: ◊nt{type-decl} | ◊nt{newtype-decl}
 }
 
 These define their bindings only for the scope of the following block.  A
@@ -2386,7 +2406,7 @@ to ◊py-prod{type-stmt}.
 ◊section[#:tag "s:annotations"]{Annotations}
 
 ◊ebnf['Pyret]{
-◊nd{ann}: ◊nt{name-ann} | ◊nt{dot-ann}
+◊nt{ann}: ◊nt{name-ann} | ◊nt{dot-ann}
    | ◊nt{app-ann} | ◊nt{arrow-ann} | ◊nt{pred-ann}
    | ◊nt{tuple-ann} | ◊nt{record-ann}
 }
@@ -2405,8 +2425,8 @@ have the expected types and are used correctly.
 
 
 ◊ebnf['Pyret]{
-◊nd{name-ann}: ◊tmi{NAME}
-◊nd{dot-ann}: ◊tmi{NAME} ◊tm{.} ◊tmi{NAME}
+◊nt{name-ann}: ◊tmi{NAME}
+◊nt{dot-ann}: ◊tmi{NAME} ◊tk{DOT} ◊tmi{NAME}
           }
 Some annotations are simply names.  For example, a
 ◊seclink["s:data-decl"]{◊tt{data declaration}} binds the name of the
@@ -2442,8 +2462,8 @@ eq-result :: EQ.EqualityResult = equal-always3(5, 6)
 
 ◊subsection[#:tag "s:app-ann"]{Parametric Annotations}
 ◊ebnf['Pyret]{
-◊nd{app-ann}: ◊nt{name-ann}  ◊tm{<} ◊nt{comma-anns} ◊tm{>} | dot-ann ◊tm{<} ◊nt{comma-anns} ◊tm{>}
-◊nd{comma-anns}: ◊nt{ann} (◊tm{,} ◊nt{ann})*
+◊nt{app-ann}: ◊nt{name-ann}  ◊tk{LANGLE} ◊nt{comma-anns} ◊tk{RANGLE} | dot-ann ◊tk{LANGLE} ◊nt{comma-anns} ◊tk{RANGLE}
+◊nt{comma-anns}: ◊nt{ann} (◊tk{COMMA} ◊nt{ann})*
 }
 
 Many data definitions are parametric, meaning they can contain any
@@ -2471,8 +2491,8 @@ of a list of comma-separated argument types followed by an ASCII arrow and
 return type.  Optionally, the annotation can specify argument names as well:
 
 ◊ebnf['Pyret]{
-◊nd{arrow-ann}: ◊tm{(} (◊nt{ann} ◊tm{,})* ◊nt{ann} ◊tm{->} ◊nt{ann} ◊tm{)}
-     | ◊tm{(} ◊tm{(} (◊tmi{NAME} ◊tm{::} ◊nt{ann} ◊tm{,})* ◊tmi{NAME} ◊tm{::} ◊nt{ann} ◊tm{)} ◊tm{->} ◊nt{ann} ◊tm{)}
+◊nt{arrow-ann}: ◊tk{LPAREN} (◊nt{ann} ◊tk{COMMA})* ◊nt{ann} ◊tk{THINARROW} ◊nt{ann} ◊tk{RPAREN}
+     | ◊tk{LPAREN} ◊tk{LPAREN} (◊tmi{NAME} ◊tk{COLONCOLON} ◊nt{ann} ◊tk{COMMA})* ◊tmi{NAME} ◊tk{COLONCOLON} ◊nt{ann} ◊tk{RPAREN} ◊tk{THINARROW} ◊nt{ann} ◊tk{RPAREN}
 }
 
 When an arrow annotation appears in a binding, that binding position simply
@@ -2483,7 +2503,7 @@ A predicate annotation is used to ◊emph{refine} the annotations
 describing the a value.  
 
 ◊ebnf['Pyret]{
-◊nd{pred-ann}: ◊nt{ann} ◊tm{%} ◊tm{(} ◊tmi{NAME} ◊tm{)}
+◊nt{pred-ann}: ◊nt{ann} ◊tk{PERCENT} ◊tk{LPAREN} ◊tmi{NAME} ◊tk{RPAREN}
           }
 
 
@@ -2502,7 +2522,7 @@ position, and must be refered to by name.
 Annotating a tuple is syntactically very similar to writing a tuple value:
 
 ◊ebnf['Pyret]{
-◊nd{tuple-ann}: ◊tm{◊lbrace[]} ◊nt{ann} (◊tm{;} ◊nt{ann})* [◊tm{;}] ◊tm{◊rbrace[]}
+◊nt{tuple-ann}: ◊tk{LBRACE} ◊nt{ann} (◊tk{SEMI} ◊nt{ann})* [◊tk{SEMI}] ◊tk{RBRACE}
 }
 
 Each component is itself an annotation.
@@ -2519,8 +2539,8 @@ but where the single-colon separators between field names and their values have
 been replaced with the double-colon of all annotations:
 
 ◊ebnf['Pyret]{
-◊nd{record-ann}: ◊tm{◊lbrace[]} ◊nt{ann-field} (◊tm{,} ◊nt{ann-field})* ◊tm{◊rbrace[]}
-◊nd{ann-field}: ◊tmi{NAME} ◊tm{::} ◊nt{ann}
+◊nt{record-ann}: ◊tk{LBRACE} ◊nt{ann-field} (◊tk{COMMA} ◊nt{ann-field})* ◊tk{RBRACE}
+◊nt{ann-field}: ◊tmi{NAME} ◊tk{COLONCOLON} ◊nt{ann}
 }
 
 As with object literals, the order of fields does not matter.  For example,
