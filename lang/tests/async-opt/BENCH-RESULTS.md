@@ -60,6 +60,40 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-03 — Stage 4: ANF optimizer middle-end + var unboxing + tc corners)
+
+Three commits (inliner+CSE+LICM `-no-optimize`/`-no-licm`/`-inline-comments`;
+var unboxing `-no-unbox-vars`; tc-15..57 corner suite).
+
+- O1 cont byte-parity 16/16 PASS. O3-compile 483 green (first battery on the
+  restructured gauntlet: compile-pipeline suite runs separately for its own
+  signal). mf oracle green. tc corner suite green. exec suite green.
+- A/B levers-off (matrix, dtree): output identical; LICM fires broadly
+  (83–118 `?? (cv = …)` cached reads per bench jarr — note the emitted
+  spelling is the value form, not `??=`).
+- O5 (timing box, N=5, re-run on a verified-quiet box): parity 16/16,
+  geomean **0.967** vs its string-dict-enabled frozen cont. Movers vs the
+  Stage-3d table on the same box: **car-compute 1.26 → 0.73** (inliner+unbox
+  on the physics tick), orbital-compute 1.21 → 0.97, boids-compute-data
+  → 0.97, vec-methods 0.66 → **0.60**, spell 0.82, matrix 0.87. Remaining
+  over 1: plagiarism 1.48, boids-compute 1.21, boids-raster 1.13 — the tier
+  stage's targets.
+- O6 (primary box) interleaved N=3 medians: cont 231.9 s vs promise 243.8 s
+  → p/c 1.05 (flat; expected — the wall-clock lever for the suite is the
+  Stage-5/6 machinery, as on the discovery branch).
+
+Two operational findings, recorded for posterity:
+- The exec suite's reported TEST COUNT is cwd-dependent (filesystem-
+  enumerating tests count cwd-relative entries): the same jarr reports 12798
+  from a clean worktree and 12927 from a build-dropping-laden tree. Count
+  deltas across differently-dirty trees are NOT behavior deltas ("green" is
+  the signal). This cost a full false-alarm bisect of Stage 4.
+- The timing box runs this exec suite ~13x slower than the primary despite
+  identical EPYC 9554P CPUs, equal-or-better spin/disk microbenchmarks, no
+  contention (verified quiet), and near-zero memory pressure — cause unknown;
+  in-process bench LOOP times match the primary box closely, so O5 remains
+  valid there and O6 remains a primary-box oracle.
+
 ## Results (2026-07-03 — Stage 3d: direct cases + direct fields/method dispatch)
 
 First two-box battery: oracles on the primary box, O5 on the new timing box
