@@ -11,12 +11,21 @@ once:
 	make pollenboots
 	raco pollen render index.ptree
 
+debug-examples:
+	./debug-examples.sh
+
+debug-tests:
+	./debug-tests.sh
+
 pollenboots:
 	git clone https://github.com/ds26gte/pollenboots
 
 clean:
 	find . -name compiled -type d -exec rm -fr {} \; || true
-	find . -name \*.html -delete || true
+	find [^p]* -name \*.html -delete || true
+	find pl* -name \*.html -delete || true
+	find . -name .image\*.png -delete || true
+	find . -name .examples\*.arr -delete || true
 	make cleanglob
 
 cleanglob:
