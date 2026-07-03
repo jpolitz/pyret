@@ -80,6 +80,8 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Run without proper tail calls')],
     ['no-effect-tail-calls',
       C.flag(C.once, 'Disable the tail-call-in-effect-position optimization (for differential testing)')],
+    ['no-direct-cases',
+      C.flag(C.once, 'Disable static field access for cases (promise backend; use the reflective $fieldNames/$mut_fields_mask chain, for A/B measurement)')],
     ['no-ann-elision',
       C.flag(C.once, 'Disable redundant annotation-check elimination (promise backend; keep every _checkAnn the type-flow analysis proved dead, for A/B measurement)')],
     ['no-method-flatness',
@@ -130,6 +132,7 @@ export function main(args: string[]): number {
     const typeCheck = r.has('type-check');
     const tailCalls = !r.has('improper-tail-calls');
     const effectTailCalls = !r.has('no-effect-tail-calls');
+    const directCases = !r.has('no-direct-cases');
     const annElision = !r.has('no-ann-elision');
     const methodFlatness = !r.has('no-method-flatness');
     const importedMethodFlat = !r.has('no-imported-method-flat');
@@ -209,6 +212,7 @@ export function main(args: string[]): number {
           ignoreUnbound: false,
           properTailCalls: tailCalls,
           effectTailCalls: effectTailCalls,
+          directCases: directCases,
           annElision: annElision,
           methodFlatness: methodFlatness,
           importedMethodFlat: importedMethodFlat,
@@ -248,6 +252,7 @@ export function main(args: string[]): number {
         ignoreUnbound: false,
         properTailCalls: tailCalls,
         effectTailCalls: effectTailCalls,
+        directCases: directCases,
         annElision: annElision,
         methodFlatness: methodFlatness,
         importedMethodFlat: importedMethodFlat,

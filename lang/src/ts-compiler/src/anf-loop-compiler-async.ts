@@ -976,23 +976,114 @@ export function compileUpdateAsync(compiler: CompilerVisitor, l: Loc, obj: N.AVa
   return clAppend(pre, compiler.complete(jAwait(call)));
 }
 
-export function compileCasesBranchAsync(compiler: CompilerVisitor, valId: A.Name, branch: N.ACasesBranch, casesLoc: Loc): CList<J.JStmt> {
-  const preamble = casesPreamble(compiler, jId(valId), branch, casesLoc);
+// Direct-cases optimization: resolve a cases `typ` annotation to the scrutinee's
+// data type so the matched branch can read fields by their statically-known names.
+// Returns undefined (=> fall back to the reflective codegen) for anything we can't
+// resolve to concrete in-scope variant metadata. Wrapped in a try/catch so a
+// resolution miss can never break compilation -- it just disables the opt locally.
+function resolveCasesDataType(compiler: CompilerVisitor, typ: A.Ann): T.DataType | undefined {
+  try {
+    // The field LAYOUT is invariant under parametric instantiation and predicate
+    // refinement, so peel those wrappers off to reach the underlying type name.
+    let ann: A.Ann = typ;
+    while (true) {
+      if (A.isAApp(ann)) { ann = ann.ann; continue; }
+      if (A.isAPred(ann)) { ann = ann.ann; continue; }
+      break;
+    }
+    let uri: string | undefined;
+    let origName: string | undefined;
+    if (A.isAName(ann)) {
+      const tb = compiler.typeBindings.get(ann.id.key());
+      if (tb !== undefined) {
+        uri = tb.origin.uriOfDefinition;
+        origName = tb.origin.originalName.toname();
+      } else {
+        // Global (built-in) type names (e.g. List, Option) may not have a
+        // type-binding in untyped programs; consult the global type origins.
+        const o = compiler.env.originByTypeName(ann.id.toname());
+        if (o !== undefined) { uri = o.uriOfDefinition; origName = o.originalName.toname(); }
+      }
+    } else if (A.isADot(ann)) {
+      const mb = compiler.moduleBindings.get(ann.obj.key());
+      if (mb !== undefined) { uri = mb.uri; origName = ann.field; }
+    }
+    if (uri === undefined || origName === undefined) { return undefined; }
+    return lookupDataTypeByUri(compiler, uri, origName);
+  } catch (_e) {
+    return undefined;
+  }
+}
+
+function lookupDataTypeByUri(compiler: CompilerVisitor, uri: string, name: string): T.DataType | undefined {
+  // The module currently being compiled is not in env.allModules yet, so its own
+  // data types must be looked up in the local provides.
+  const de: CS.DataExport | undefined =
+    uri === compiler.uri ? compiler.localDataDefs.get(name) : compiler.env.datatypeByUri(uri, name);
+  if (de === undefined) { return undefined; }
+  if (CS.isDAlias(de)) {
+    if (de.origin.uriOfDefinition === uri) { return undefined; }
+    return lookupDataTypeByUri(compiler, de.origin.uriOfDefinition, de.name);
+  }
+  return (de as CS.DType).typ;
+}
+
+export function compileCasesBranchAsync(compiler: CompilerVisitor, valId: A.Name, branch: N.ACasesBranch, casesLoc: Loc, dataType?: T.DataType): CList<J.JStmt> {
+  // When the scrutinee's data type is statically known, find this branch's variant
+  // and (for a normal branch) confirm its arity matches the pattern. If so we can
+  // read fields directly by name and skip the runtime arity check (the $name switch
+  // already committed to this variant, and the scrutinee is proven to be of the
+  // cases type, so $arity always equals branch.args.length here).
+  let directVariant: T.TVariant | undefined;
+  let elideArity = false;
+  if (dataType !== undefined) {
+    const v = dataType.getVariant(branch.name);
+    if (N.isACasesBranch(branch)) {
+      if (v !== undefined && v.$name === 't-variant' && v.fields.length === branch.args.length) {
+        directVariant = v;
+        elideArity = true;
+      }
+    } else if (v !== undefined && v.$name === 't-singleton-variant') {
+      // Singleton branch on a statically-known singleton variant: $arity is always
+      // -1, so the singleton arity check never fires.
+      elideArity = true;
+    }
+  }
+  const preamble = casesPreamble(compiler, jId(valId), branch, casesLoc, elideArity);
   let bodyStmts: CList<J.JStmt>;
   if (N.isACasesBranch(branch)) {
-    const fieldNames = freshId(compilerName('fn'));
-    const getFieldNames = jVar(fieldNames, jDot(jDot(jId(valId), '$constructor'), '$fieldNames'));
-    const derefFields = CL.map_list_n((i: number, arg: N.ACasesBind) => {
-      const mask = jBracket(jDot(jId(valId), '$mut_fields_mask'), jNum(i));
-      const field = getDictField(jId(valId), jBracket(jId(fieldNames), jNum(i)));
-      return jVar(jsIdOf(arg.bind.id),
-        rtMethod('derefField', clist(field, mask, jBool(A.isSCasesBindRef(arg.fieldType))))) as J.JStmt;
-    }, 0, (branch as N.ACasesBranch$).args);
+    let fieldStmts: CList<J.JStmt>;
+    if (directVariant !== undefined) {
+      // Static field access: cases_val.dict["name"] with a statically-known field
+      // name + mutability, dropping the $constructor.$fieldNames / $mut_fields_mask
+      // reflection. derefField is elided entirely for plain immutable, non-ref
+      // fields (where it is a no-op); kept (with static flags) for ref/mutable.
+      fieldStmts = CL.map_list_n((i: number, arg: N.ACasesBind) => {
+        const [fname, ftype] = directVariant!.fields[i];
+        const isRefField = ftype.$name === 't-ref';
+        const lookupIsRef = A.isSCasesBindRef(arg.fieldType);
+        const field = getDictField(jId(valId), jStr(fname));
+        const rhs = (!isRefField && !lookupIsRef)
+          ? field
+          : rtMethod('derefField', clist(field, jBool(isRefField), jBool(lookupIsRef)));
+        return jVar(jsIdOf(arg.bind.id), rhs) as J.JStmt;
+      }, 0, (branch as N.ACasesBranch$).args);
+    } else {
+      const fieldNames = freshId(compilerName('fn'));
+      const getFieldNames = jVar(fieldNames, jDot(jDot(jId(valId), '$constructor'), '$fieldNames'));
+      const derefFields = CL.map_list_n((i: number, arg: N.ACasesBind) => {
+        const mask = jBracket(jDot(jId(valId), '$mut_fields_mask'), jNum(i));
+        const field = getDictField(jId(valId), jBracket(jId(fieldNames), jNum(i)));
+        return jVar(jsIdOf(arg.bind.id),
+          rtMethod('derefField', clist(field, mask, jBool(A.isSCasesBindRef(arg.fieldType))))) as J.JStmt;
+      }, 0, (branch as N.ACasesBranch$).args);
+      fieldStmts = clCons(getFieldNames as J.JStmt, derefFields);
+    }
     let annStmts: CList<J.JStmt> = clEmpty;
     for (const arg of (branch as N.ACasesBranch$).args) {
       annStmts = clAppend(annStmts, annCheckStmts(compiler, arg.bind));
     }
-    bodyStmts = clAppend(clCons(getFieldNames as J.JStmt, derefFields),
+    bodyStmts = clAppend(fieldStmts,
       clAppend(annStmts, compileAexprAsync(compiler, branch.body)));
   } else {
     bodyStmts = compileAexprAsync(compiler, branch.body);
@@ -1000,12 +1091,26 @@ export function compileCasesBranchAsync(compiler: CompilerVisitor, valId: A.Name
   return clAppend(preamble, bodyStmts);
 }
 
-export function compileCasesAsync(compiler: CompilerVisitor, casesLoc: Loc, _typ: A.Ann, val: N.AVal, branches: N.ACasesBranch[], _else: N.AExpr): CList<J.JStmt> {
+export function compileCasesAsync(compiler: CompilerVisitor, casesLoc: Loc, typ: A.Ann, val: N.AVal, branches: N.ACasesBranch[], _else: N.AExpr): CList<J.JStmt> {
   const valCe = val.visit(compiler) as DAG.CExp;
   const valId = freshId(compilerName('cases_val'));
+  // Resolve the cases type to concrete variant metadata for direct field access
+  // (promise backend; -no-direct-cases turns it off). undefined => reflective path.
+  //
+  // Soundness rests on the scrutinee being guaranteed of type `typ` at the matched
+  // branch, so that `typ`'s static field names match the value's own. That guarantee
+  // comes from EITHER the type checker (static proof) OR the scrutinee's runtime
+  // _checkAnn. The latter is defeated by -no-runtime-annotations (makes _checkAnn a
+  // no-op) and -no-user-annotations (strips the ann entirely), so require type-check
+  // or both annotation mechanisms intact. Otherwise fall back to the reflective path
+  // (which reads the value's OWN $fieldNames and so is correct regardless).
+  const valueIsTyped = compiler.options.typeCheck ||
+    (compiler.options.runtimeAnnotations && compiler.options.userAnnotations);
+  const dataType = (compiler.options.directCases && valueIsTyped)
+    ? resolveCasesDataType(compiler, typ) : undefined;
   const branchCases = CL.map_list((branch: N.ACasesBranch) =>
     jCase(jStr(branch.name),
-      jBlock(clSnoc(compileCasesBranchAsync(compiler, valId, branch, casesLoc), jBreak))) as J.JCaseT, branches);
+      jBlock(clSnoc(compileCasesBranchAsync(compiler, valId, branch, casesLoc, dataType), jBreak))) as J.JCaseT, branches);
   const elseCase = jDefault(jBlock(clSnoc(compileAexprAsync(compiler, _else), jBreak)));
   const theSwitch = jSwitch(jDot(jId(valId), '$name'), clSnoc(branchCases, elseCase as unknown as J.JCaseT));
   return clAppend(valCe.otherStmts,
@@ -1672,8 +1777,12 @@ export function casesPreamble(
   compiler: CompilerVisitor,
   compiledVal: J.JExprT,
   branch: N.ACasesBranch,
-  casesLoc: Loc
+  casesLoc: Loc,
+  elideArity: boolean = false
 ): CList<J.JStmt> {
+  // The direct-cases optimization elides this runtime arity check when the variant
+  // and its arity are statically known to match (the check provably never fires).
+  if (elideArity) { return clEmpty; }
   const constructorLoc = jDot(compiledVal, '$loc');
   switch (branch.$name) {
     case 'a-cases-branch': {
@@ -2144,6 +2253,10 @@ export class CompilerVisitor {
   env!: CS.CompileEnvironment;
   // fields installed by compile-module
   progProvides!: A.ProvideBlock;
+  // Current module's own data definitions (provides.dataDefinitions), used by the
+  // direct-cases optimization to resolve in-module variant metadata (the current
+  // module is not in env.allModules during its own compilation). See compileCasesAsync.
+  localDataDefs!: Map<string, CS.DataExport>;
   getLoc!: (l: Loc) => J.JExprT;
   getLocId!: (l: Loc) => number;
   curApploc!: A.Name;
@@ -3185,6 +3298,7 @@ export function compileModule(
     resumer: resumer,
     allowTco: false,
     dispatches: casesDispatches,
+    localDataDefs: provides.dataDefinitions,
   });
   // The toplevel module fn is called directly (`await bodyName()`) and its result
   // is the module value, not driven through a `.app` wrapper, so it must NEVER mint

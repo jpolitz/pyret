@@ -1100,6 +1100,16 @@ export interface CompileOptions {
   // default; -no-effect-tail-calls disables it to recover the un-optimized
   // baseline (used as a differential-testing correctness oracle).
   effectTailCalls: boolean;
+  // Direct (static) field access for `cases` (promise backend only). On by
+  // default; -no-direct-cases disables it for A/B measurement. When the cases
+  // scrutinee's type resolves to concrete variant metadata, the matched branch
+  // reads `cases_val.dict.<name>` with statically-known field names / mutability
+  // mask instead of the reflective `$constructor.$fieldNames[i]` + dynamic
+  // `dict[name]` + `$mut_fields_mask[i]` chain (and drops `derefField` entirely
+  // for plain immutable, non-ref fields). The scrutinee's runtime _checkAnn (or
+  // the static type proof under -type-check) guarantees the value is of the type,
+  // making the static names sound. It's a codegen choice in the async backend.
+  directCases: boolean;
   // Redundant annotation-check elimination driven by the upper-bound type-flow
   // analysis (type-flow.ts; promise backend only). On by default; -no-ann-elision
   // disables it for A/B measurement. When the analysis proves an `:: T` bind's
@@ -1181,6 +1191,7 @@ export const defaultCompileOptions: CompileOptions = {
   ignoreUnbound: false,
   properTailCalls: true,
   effectTailCalls: true,
+  directCases: true,
   annElision: true,
   methodFlatness: true,
   importedMethodFlat: true,
