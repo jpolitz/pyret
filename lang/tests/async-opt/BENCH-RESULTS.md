@@ -60,6 +60,23 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-03 — Stage 5 pre-work: exn-parser frame drop, JGenFun/JYield, driveGen/rejP)
+
+Three mechanical commits ahead of the tier machinery, all inert until the
+Gen tier emits (parser fix guards error rendering; AST nodes unused; runtime
+driver unused). Embedded-file drill done (runtime-async.js + exn-stack-parser
+copies refreshed, all promise jarrs rebuilt, driveGen greppable in jarrs).
+
+- O1 cont byte-parity 16/16 PASS. O3-compile 483 green. mf green.
+  exec green (12945 on this tree state; count is cwd-environmental, see the
+  Stage-4 entry).
+- O5 (primary box, N=5): parity 16/16, geomean **0.922** vs the primary's
+  frozen cont — first locally-measured table since Stage 3b/c (1.048);
+  the delta is Stage 4's effect on this box's softer cont basis (the
+  timing box reads 0.967 against its string-dict-enabled cont).
+- O6 interleaved N=3 medians: cont 229.8 s vs promise 240.8 s → p/c 1.05
+  (flat — correct for inert commits).
+
 ## Results (2026-07-03 — Stage 4: ANF optimizer middle-end + var unboxing + tc corners)
 
 Three commits (inliner+CSE+LICM `-no-optimize`/`-no-licm`/`-inline-comments`;
