@@ -60,6 +60,38 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-04 — Stage 8: ACCEPTANCE GAUNTLET — campaign complete)
+
+The full oracle stack, fresh, at the re-derived endpoint (30 commits from
+baseline 8674a57c6 on `promise-rederive`):
+
+| criterion | bound | measured | verdict |
+|---|---|---|---|
+| curated geomean (N=5, same-day frozen cont) | ≤ 0.85 | **0.818** | PASS |
+| every bench | ≤ 1.02 | worst 0.99 (seam) | PASS |
+| bench output parity | 16/16 | 16/16 | PASS |
+| whole-suite exec wall-clock p/c | ≤ 0.80 | **0.76** | PASS |
+| full main2 (promise, once for the record) | green | **13454 green** | PASS |
+| main2-exec / main2-compile | green | 13022 / 483 green | PASS |
+| O1 cont byte-parity | 16/16 | 16/16 (every stage) | PASS |
+| O7 residual-await ICEs | zero | zero (assertion live) | PASS |
+| O8 adversarial (tier 36+7+10+10, mf+skew, tc-57, strips-brand, within(0), #1532) | green | all green | PASS |
+| O9 CPO mocha (headless chrome, ts-promise flavor) | 0 failing | **311 passing / 0 failing** / 45 pending (credential-gated) | PASS |
+| O10 bun/JSC spot (6 benches × 2 flavors) | output parity, no gross regression | 6/6 parity; JSC engine-character notes recorded | PASS |
+
+Cross-box: the timing box (own frozen cont incl. Stage-1 string-dict gains)
+reads geomean 0.834 — inside the target band on the harsher basis too.
+
+Reference-endpoint comparison: geomean 0.818 vs ≈0.82; wall p/c 0.76 vs
+≈0.75–0.77; suites at parity-or-better. The re-derivation also ships design
+upgrades over the discovery branch: the ANF tier pass with O7
+assertions-not-fallbacks (the shadow bring-up comparison deleted at
+sustained zero, per its own deletion criterion), the schema-tagged opt-facts
+provides section with version-skew oracles, the one-classifier seam
+(getAppFunFlatness / annCheckClass), and the resumable-loop iteration
+helpers -- with zero changes to the cont backend or the .arr compiler
+throughout (cont byte-parity held at every single stage).
+
 ## Results (2026-07-04 — Stage 7: object representation — the re-derived endpoint)
 
 Flat-dict extendWith (one merged pass, extension-fields-first enumeration

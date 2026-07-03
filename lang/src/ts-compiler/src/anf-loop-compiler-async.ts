@@ -1058,36 +1058,6 @@ export function assertNoResidualAwaits(body: J.JBlockT, tier: string, l: Loc): v
   }
 }
 
-// Bring-up shadow comparison, env-gated (PYRET_TIER_SHADOW=1): after each
-// tiered function's body is emitted, compare the tier verdict against a
-// hasAwaits-style scan of what WAS emitted and report mismatches to stderr
-// WITHOUT failing. Today's invariants (pre-tier-codegen): every
-// continuation-capturing site emits at least one await (capturing sites are
-// non-tail, so neither the TCO `continue` nor the tail-token mint can elide
-// them), and a body whose only sites are TCO continues / token-minted tails
-// emits none beyond fuel. Tail sites may legitimately await OR mint, so they
-// silence the second direction. Known benign report: a `-> T` TCO self-call
-// with a non-flat return ann leaves a DEAD awaited _checkAnn after `continue`
-// (the analysis rightly skips that unreachable site).
-// DESIGNED FOR DELETION: remove in the Stage-5 wrap-up commit once zero
-// mismatches across O3+O4 (it must not survive into steady state).
-export function tierShadowCompare(
-  verdict: TIER.TierVerdict, body: J.JBlockT, kind: string, name: string, l: Loc
-): void {
-  const nonFuel = countResidualAwaits(body, true);
-  const s = verdict.suspendSites;
-  const who = kind + ' "' + name + '" at ' + l.key();
-  // FewSuspend bodies are exempt from the first direction: their capturing
-  // sites emit guarded return-then forms, ZERO awaits by design (the O7
-  // assertion owns that invariant).
-  if (verdict.tier !== 'few-suspend' && s.capturing > 0 && nonFuel === 0) {
-    process.stderr.write('[tier-shadow] MISMATCH ' + who + ': verdict ' + verdict.tier
-      + ' counted S=' + s.capturing + ' capturing site(s) but the emitted body has no non-fuel await\n');
-  } else if (s.capturing === 0 && s.tail === 0 && nonFuel > 0) {
-    process.stderr.write('[tier-shadow] MISMATCH ' + who + ': verdict ' + verdict.tier
-      + ' found no capturing/tail sites but the emitted body has ' + nonFuel + ' non-fuel await(s)\n');
-  }
-}
 
 export function compileAexprAsync(compiler: CompilerVisitor, e: N.AExpr): CList<J.JStmt> {
   // Walk the AExpr "chain" (let / arr-let / var / seq / type-let) ITERATIVELY,
@@ -2755,9 +2725,6 @@ export function compileALam(
     throw new InternalCompilerError(
       (verdict as TIER.TierVerdict).tier + ' lambda "' + name + '" at ' + l.key() + ' minted a tail token');
   }
-  if (verdict !== undefined && process.env.PYRET_TIER_SHADOW) {
-    tierShadowCompare(verdict, funBody, 'lam', name, l);
-  }
   const funArgs = CL.map_list((arg: N.ABind) => formalShadowName(arg.id), effectiveArgs);
   // Flat, TailFlat AND FewSuspend functions are plain synchronous jFuns (the
   // sync tiers' NAMED function expression is what their fuel check re-enters
@@ -3386,9 +3353,6 @@ export class CompilerVisitor {
     if ((useTailFlat || useFewSuspend) && tokenCell.has('minted')) {
       throw new InternalCompilerError(
         (verdict as TIER.TierVerdict).tier + ' method "' + node.name + '" at ' + node.l.key() + ' minted a tail token');
-    }
-    if (verdict !== undefined && process.env.PYRET_TIER_SHADOW) {
-      tierShadowCompare(verdict, fullInner, 'method', node.name, node.l);
     }
     // Gen-tier methods get the generator + sync-wrapper emission (genFunStmts);
     // flat, tail-flat AND few-suspend methods are plain synchronous jFuns
