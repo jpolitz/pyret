@@ -141,7 +141,8 @@ export function getCached(basedir: string, uri: string, name: string, cacheType:
         values: raw.getRawValueProvides(),
         aliases: raw.getRawAliasProvides(),
         datatypes: raw.getRawDatatypeProvides(),
-        modules: raw.getRawModuleProvides()
+        modules: raw.getRawModuleProvides(),
+        'opt-facts': raw.getRawOptFacts()
       });
       return new CS.ModuleAsString(provs, CS.noBuiltins, CS.computedNone,
         CS.ok(new JSP.CCPFile(P.resolve(modulePath + ".js"))));
@@ -223,7 +224,8 @@ export function getLoadable(basedir: string, readOnlyBasedirs: string[], l: ToCo
       modules: rawStatic.getRawModuleProvides(),
       values: rawStatic.getRawValueProvides(),
       aliases: rawStatic.getRawAliasProvides(),
-      datatypes: rawStatic.getRawDatatypeProvides()
+      datatypes: rawStatic.getRawDatatypeProvides(),
+      'opt-facts': rawStatic.getRawOptFacts()
     });
     return new CS.ModuleAsString(provs, CS.noBuiltins, CS.computedNone,
       CS.ok(new JSP.CCPFile(modulePath)));

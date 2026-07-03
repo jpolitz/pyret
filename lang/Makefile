@@ -491,6 +491,19 @@ ts-test: ts-unit-test ts-parity-test ts-repl-test ts-pyret-test ts-type-check-te
 ts-effect-tail-test: ts-compiler
 	NODE22="$(NODE22)" bash tests/async-opt/tc/run-corner-tests.sh
 
+# Fast soundness oracle for cross-module method flatness (promise backend): each
+# mf-*.arr calls every flat-tagged builtin method in a leak-observable way and is
+# compiled opt-promise / -no-imported-method-flat / cont; the three outputs must be
+# identical (a wrongly-flat method leaks a Promise) and flattening must fire. Then
+# skew-test.sh tampers a provider's -static opt-facts section (strip / unknown
+# field / future schema) -- the importer must stay correct and conservative -- and
+# pins the cross-module refinement-alias obligation (a `:: A.Nat`-annotated method
+# must NOT flatten). ~30s vs the ~10-min full promise suite. Non-zero on failure.
+.PHONY : ts-mf-test
+ts-mf-test: ts-compiler
+	NODE22="$(NODE22)" bash tests/async-opt/mf/run-mf-tests.sh
+	NODE22="$(NODE22)" bash tests/async-opt/mf/skew-test.sh
+
 .PHONY : ts-clean
 ts-clean:
 	$(call RMDIR,$(TS_COMP_OUT))

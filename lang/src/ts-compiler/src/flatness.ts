@@ -36,9 +36,9 @@ export type FEnv = Map<string, Flatness>;
 // no-await call) and the set of `a-method` nodes proven flat (so codegen emits
 // the method body as a synchronous function). Empty unless method flatness is
 // enabled (cont backend / no methodInfo -> empty, and never consulted there).
-// Fifth element: this module's converged (dataId#method -> flatness) table.
-// Consumed in-module today; a follow-on exports it via getFlatProvides so
-// importers can flatten these methods cross-module.
+// Fifth element: this module's converged (dataId#method -> flatness) table,
+// exported by getFlatProvides (into the optional `opt-facts` provides section)
+// so importers can flatten these methods cross-module.
 // [funFlatness, annFlatness, flatMethodApps, flatMethods, methodTable]
 export type FlatnessEnv = [FEnv, FEnv, Set<AA.AMethodApp>, Set<AA.AMethod>, Map<string, Flatness>];
 
@@ -58,11 +58,42 @@ export interface MethodFlatInfo {
 export const FLAT_LIMIT = 5;
 function methodFlatEnough(f: Flatness): boolean { return f !== undefined && f <= FLAT_LIMIT; }
 
+// Build the cross-module flat-method table (`uri#name#method` -> flatness) from the
+// method flatness carried on imported modules' provided DTypes (parsed out of the
+// optional, schema-tagged `opt-facts` provides section by providesFromRawProvides;
+// absent/ignored section => empty maps => everything stays conservatively non-flat).
+// Pyret modules compute it in getFlatProvides (from their own converged flatness
+// fixpoint, in the same compile that emits their code); native JS builtins DECLARE
+// it in their provides `opt-facts` section (e.g. string-dict.js -- the author knows
+// which native methods never re-enter Pyret, which a type-signature heuristic cannot
+// tell: `keys-now` takes no callback yet builds a tree-set via Pyret AVL insertion
+// and CAN suspend). Either way it is keyed the same way methodReceiver forms the
+// receiver dataId. SOUND on the same basis as in-module method flatness: the receiver
+// rests on a runtime-checked annotation / visible construction, and the type's brand
+// guarantees the analyzed / declared native implementations. Facts attach ONLY to
+// DTypes -- aliases never carry flatness, so a cross-module refinement alias
+// (`type Nat = Number%(p)`) can never be read as flat here (see annFlatness a-dot /
+// initTypeProvides, which keep all cross-module aliases non-flat).
+function buildImportedFlatMethods(env: C.CompileEnvironment): Map<string, Flatness> {
+  const m = new Map<string, Flatness>();
+  for (const [uri, loadable] of env.allModules) {
+    for (const [name, de] of loadable.provides.dataDefinitions) {
+      if (C.isDType(de)) {
+        for (const [meth, f] of de.methodFlatness) {
+          m.set(uri + '#' + name + '#' + meth, f);
+        }
+      }
+    }
+  }
+  return m;
+}
+
 // ---------------------------------------------------------------------------
 // Method-flatness analysis (structural; promise backend only).
 //
-// A method call `obj.m(args)` is flat iff `obj`'s receiver resolves to an
-// in-module data type whose `m` (across all variants) is itself flat.
+// A method call `obj.m(args)` is flat iff `obj`'s receiver resolves to a data type
+// whose `m` (across all variants) is itself flat -- either an in-module type (from
+// the fixpoint below) or an imported one (buildImportedFlatMethods, cross-module).
 // There is NO numeric special-casing here: arithmetic flatness is handled upstream by the
 // typed-operator-weakening pass (type-flow.ts), which rewrites `_plus(a,b)` on
 // Number operands into the flat global `_plus_nums(a,b)`, so ordinary structural
@@ -88,6 +119,10 @@ interface MethodCtx {
   // The PREVIOUS pass's complete table, consulted to resolve `self.m()` calls
   // (complete because the prior pass saw every variant). Empty on the first pass.
   methodTablePrev: Map<string, Flatness>;
+  // Persistent fallback: flat methods of IMPORTED types, from their provides'
+  // opt-facts method-flatness (empty when -no-imported-method-flat). Survives the
+  // per-pass replacement of methodTablePrev (which only ever holds in-module methods).
+  importedFlatMethods: Map<string, Flatness>;
   // outputs consumed by codegen (rebuilt each pass; the final pass's are returned).
   flatMethodApps: Set<AA.AMethodApp>;
   flatMethods: Set<AA.AMethod>;
@@ -584,8 +619,8 @@ export function makeLettableFlatnessEnv(
     }
 
     case 'a-method-app': {
-      // Method calls are infinite flatness UNLESS the receiver resolves to an
-      // in-module data type whose method (across all its variants) is itself flat.
+      // Method calls are infinite flatness UNLESS the receiver resolves to a data type
+      // (in-module OR imported) whose method (across all its variants) is itself flat.
       // Sound because a value of type T has T's original methods (functional extend
       // that overrides a method strips the brand, so it can't satisfy `:: T`), and
       // the receiver type rests on that same annotation/constructor basis.
@@ -593,8 +628,11 @@ export function makeLettableFlatnessEnv(
         const dataId = nc.methodReceiver.get(lettable);
         if (dataId !== undefined) {
           const key = dataId + '#' + lettable.meth;
-          // Consult the previous pass's COMPLETE table (the fixpoint; see MethodCtx).
-          const f = nc.methodTablePrev.get(key);
+          // Consult the previous pass's COMPLETE table (the fixpoint; see MethodCtx)
+          // for in-module methods, then fall back to the persistent imported-method
+          // table (cross-module flatness; empty when -no-imported-method-flat). The
+          // fallback survives the per-pass replacement of methodTablePrev.
+          const f = nc.methodTablePrev.get(key) ?? nc.importedFlatMethods.get(key);
           if (methodFlatEnough(f)) {
             nc.flatMethodApps.add(lettable);
             return incrementFlatness(f);
@@ -685,7 +723,8 @@ export function makeProgFlatnessEnv(
   anfed: AA.AProg,
   postEnv: C.ComputedEnvironment,
   env: C.CompileEnvironment,
-  methodInfo?: MethodFlatInfo
+  methodInfo?: MethodFlatInfo,
+  importedMethodFlat: boolean = true
 ): FlatnessEnv {
   const pe = postEnv as C.ComputedEnv;
   const bindings = pe.bindings;
@@ -768,6 +807,13 @@ export function makeProgFlatnessEnv(
   // method dependency chains of depth d converge in ~d passes. The cap bounds
   // pathological cases and is sound (an unconverged slot just reads as non-flat).
   const MAX_METHOD_PASSES = 16;
+  // Flat methods of IMPORTED types: Pyret modules' exported facts plus native
+  // builtins' declared facts, both read from the opt-facts provides section. Built
+  // once (independent of the in-module fixpoint); empty when disabled
+  // (-no-imported-method-flat) or when no imported module carries facts, in which
+  // case cross-module flattening is a no-op.
+  const importedFlatMethods = (methodsEnabled && importedMethodFlat)
+    ? buildImportedFlatMethods(env) : new Map<string, Flatness>();
   let methodTablePrev = new Map<string, Flatness>();
   let flatMethodApps = new Set<AA.AMethodApp>();
   let flatMethods = new Set<AA.AMethod>();
@@ -778,6 +824,7 @@ export function makeProgFlatnessEnv(
       methodsEnabled, methodReceiver, methodOf,
       methodTable: new Map(),
       methodTablePrev,
+      importedFlatMethods,
       flatMethodApps,
       flatMethods,
     };
@@ -899,5 +946,29 @@ export function getFlatProvides(
     }
     newValues.set(k, newVal);
   }
-  return new C.Provides(uri, modules, newValues, aliases, datatypes);
+  // Attach this module's computed per-method flatness to its provided datatypes, so
+  // importers can flatten those methods cross-module (promise backend; serialized
+  // into the optional `opt-facts` provides section by the async compileProvides).
+  // The method table is keyed `<uri>#<dataName>#<method>`; we export only the
+  // flat-enough ones. Derived HERE, in the same compile that emits the module's
+  // code, so fact/code consistency holds by construction. Facts attach ONLY to
+  // DTypes: aliases pass through untouched and never carry flatness (a cross-module
+  // refinement alias must stay non-flat in every importer).
+  const methodTable = flatnessEnvAndTypes[4];
+  const newDatatypes = new Map<string, C.DataExport>();
+  for (const [name, de] of datatypes) {
+    if (C.isDType(de)) {
+      const prefix = uri + '#' + name + '#';
+      const mf = new Map<string, number>();
+      for (const [k, f] of methodTable) {
+        if (k.startsWith(prefix) && methodFlatEnough(f) && typeof f === 'number') {
+          mf.set(k.slice(prefix.length), f);
+        }
+      }
+      newDatatypes.set(name, mf.size > 0 ? new C.DType(de.origin, de.typ, mf) : de);
+    } else {
+      newDatatypes.set(name, de);
+    }
+  }
+  return new C.Provides(uri, modules, newValues, aliases, newDatatypes);
 }

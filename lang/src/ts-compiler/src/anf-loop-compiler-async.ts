@@ -2901,12 +2901,36 @@ export function compileProvides(provides: CS.Provides): J.JExprT {
   const aliasFields = clMapSd((a: string) =>
     jField(a, compileProvidedType(mapGetValue(provides.aliases, a))) as J.JFieldT,
   provides.aliases);
-  return jObj(clist<J.JFieldT>(
+  // Optimization-facts section (rule 3; see CS.OPT_FACTS_SCHEMA for the reader's
+  // skew rules): a separate, OPTIONAL, schema-tagged top-level `opt-facts` object,
+  // emitted only when non-empty, with sorted keys for deterministic bytes. Today it
+  // carries one fact kind, `method-flatness` { dataName: { methodName: flatness } },
+  // attached to DTypes by getFlatProvides in this same compile. Only THIS (async)
+  // serializer emits it -- cont's compileProvides (anf-loop-compiler.ts) is
+  // untouched, so cont provides bytes are unchanged (byte-parity oracle intact).
+  const methodFlatnessFields: J.JFieldT[] = [];
+  for (const d of [...provides.dataDefinitions.keys()].sort()) {
+    const de = mapGetValue(provides.dataDefinitions, d);
+    if (CS.isDType(de) && de.methodFlatness.size > 0) {
+      const methFields = [...de.methodFlatness.keys()].sort().map((meth) =>
+        jField(meth, jNum(mapGetValue(de.methodFlatness, meth))) as J.JFieldT);
+      methodFlatnessFields.push(jField(d, jObj(CL.clist(...methFields))) as J.JFieldT);
+    }
+  }
+  const baseProvidesFields = clist<J.JFieldT>(
     jField('modules', jObj(moduleFields)),
     jField('values', jObj(valueFields)),
     jField('datatypes', jObj(dataFields)),
     jField('aliases', jObj(aliasFields))
-  ));
+  );
+  const allProvidesFields = methodFlatnessFields.length === 0
+    ? baseProvidesFields
+    : clAppend(baseProvidesFields, clist<J.JFieldT>(
+      jField('opt-facts', jObj(clist<J.JFieldT>(
+        jField('schema', jNum(CS.OPT_FACTS_SCHEMA)),
+        jField('method-flatness', jObj(CL.clist(...methodFlatnessFields)))
+      ))) as J.JFieldT));
+  return jObj(allProvidesFields);
 }
 
 // Pyret lists.sort-by (the non-stable variant used by compile-module):

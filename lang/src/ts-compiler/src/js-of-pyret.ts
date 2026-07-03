@@ -144,7 +144,10 @@ export function traceMakeCompiledPyret(
       && options.runtimeAnnotations && options.userAnnotations)
       ? addPhase('Method receiver info', TF.makeProgMethodInfo(anfed, postEnv, env, provides.fromUri))
       : undefined;
-  const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env, methodInfo));
+  // importedMethodFlat is a sub-feature of methodFlatness: it only matters when
+  // methodInfo is defined (methods enabled), and buildImportedFlatMethods gates on
+  // both, so -no-imported-method-flat leaves everything else untouched.
+  const flatnessEnv = addPhase('Build flatness env', FL.makeProgFlatnessEnv(anfed, postEnv, env, methodInfo, options.importedMethodFlat));
   const flatProvides = addPhase('Get flat-provides', FL.getFlatProvides(provides, env, postEnv, flatnessEnv, anfed));
   // Upper-bound type-flow: bind keys whose `:: T` annotation check is provably
   // redundant. Promise backend only (cont codegen stays frozen for the byte-parity

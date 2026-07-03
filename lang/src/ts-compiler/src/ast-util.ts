@@ -1631,7 +1631,12 @@ export function canonicalizeVariant(v: T.TypeVariant, uri: URI, tn: NameChanger)
 export function canonicalizeDataExport(de: CS.DataExport, uri: URI, tn: NameChanger): CS.DataExport {
   switch (de.$name) {
     case 'd-alias': return de;
-    case 'd-type': return new CS.DType(de.origin, canonicalizeDataType(de.typ, uri, tn));
+    // Carry methodFlatness through: canonicalize/localize rebuild every provided
+    // datatype for storage in the compile env, and dropping it here would strip
+    // cross-module method flatness on the fresh-compile path (the cached-load path
+    // reads it straight from -static.js and so was unaffected -- which is exactly
+    // how the ref branch's cold-compile bug stayed masked).
+    case 'd-type': return new CS.DType(de.origin, canonicalizeDataType(de.typ, uri, tn), de.methodFlatness);
     default:
       throw raise('Unknown DataExport in canonicalizeDataExport: ' + (de as any).$name);
   }

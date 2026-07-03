@@ -99,6 +99,29 @@
         "freeze": ["arrow", [], "sdOfA"],
         "seal": ["arrow", [], "msdOfA"]
       }],
+    },
+    // Optimization facts (promise backend; optional, schema-tagged, droppable --
+    // see compile-structs OPT_FACTS_SCHEMA). method-flatness DECLARES the native
+    // methods that never suspend, so a caller with a typed receiver can skip the
+    // conditional-await wrapper. DELIBERATELY OMITTED (they re-enter Pyret /
+    // suspend): keys / keys-now build a tree-set via Pyret AVL insertion;
+    // map-keys / fold-keys / each-key (+ -now) call a Pyret callback; merge /
+    // merge-now iterate via `.app`; _equals awaits an element comparator;
+    // _output calls a renderer callback. Declaration beats signature heuristics:
+    // "takes no callback" does NOT imply flat (the keys-now Promise-leak lesson).
+    "opt-facts": {
+      "schema": 1,
+      "method-flatness": {
+        "StringDict": {
+          "get": 0, "get-value": 0, "set": 0, "remove": 0,
+          "count": 0, "has-key": 0, "keys-list": 0, "unfreeze": 0
+        },
+        "MutableStringDict": {
+          "get-now": 0, "get-value-now": 0, "set-now": 0, "remove-now": 0,
+          "count-now": 0, "has-key-now": 0, "keys-list-now": 0,
+          "freeze": 0, "seal": 0, "clone-now": 0
+        }
+      }
     }
   },
   theModule: function(runtime, namespace, uri, VSlib){

@@ -713,7 +713,18 @@ export class DAlias extends DataExportBase {
 }
 export class DType extends DataExportBase {
   get $name(): 'd-type' { return 'd-type'; }
-  constructor(public origin: BindOrigin, public typ: T.DataType) { super(); }
+  // methodFlatness: per-method flatness (`methodName` -> flatness), for the promise
+  // backend's cross-module method-flatness analysis. Populated either from this
+  // module's own flatness fixpoint (getFlatProvides, for Pyret modules) or declared
+  // by native builtins; serialized in / parsed back from the optional schema-tagged
+  // `opt-facts` provides section (see providesFromRawProvides). Empty for cont /
+  // when the feature is off / when the section is absent or skew-ignored -- an
+  // empty map is always the sound, conservative reading (nothing flattens).
+  constructor(
+    public origin: BindOrigin,
+    public typ: T.DataType,
+    public methodFlatness: Map<string, number> = new Map()
+  ) { super(); }
 }
 export type DataExport = DAlias | DType;
 export function isDAlias(x: any): x is DAlias { return x instanceof DAlias; }
@@ -892,6 +903,27 @@ export function originFromRaw(uri: string, raw: any, name: string): BindOrigin {
   }
 }
 
+// The optimization-facts provides section (architectural rule 3: "types stay
+// types"). Flatness/optimization facts that cross module boundaries live in ONE
+// separate, OPTIONAL, schema-tagged top-level provides section:
+//
+//   "opt-facts": {
+//     "schema": 1,
+//     "method-flatness": { "<dataName>": { "<methodName>": <flatness:number> } }
+//     // future fact kinds are added as sibling fields under the same schema
+//   }
+//
+// Reader rules (all degrade to the conservative verdict, never to wrong code):
+//   - section absent            => all maps empty => nothing flattens (droppable);
+//   - `schema` missing or > OPT_FACTS_SCHEMA => the WHOLE section is ignored
+//     (a -static written by a newer compiler is safely unreadable wholesale);
+//   - unknown fields inside the section => ignored (only known keys are read);
+//   - malformed entries (non-number flatness, unknown dataName) => skipped.
+// The writer (anf-loop-compiler-async compileProvides) emits the section only when
+// non-empty, sorted, with this same schema constant; the facts themselves are
+// derived in the same compile that emits the module's code (getFlatProvides).
+export const OPT_FACTS_SCHEMA = 1;
+
 export function providesFromRawProvides(uri: string, raw: any): Provides {
   const mdict = new Map<string, URI>();
   for (const v of raw.modules) {
@@ -929,6 +961,26 @@ export function providesFromRawProvides(uri: string, raw: any): Provides {
   const ddict = new Map<string, DataExport>();
   for (const d of raw.datatypes) {
     ddict.set(d.name, datatypeFromRaw(uri, d.typ));
+  }
+  // Optimization facts (see OPT_FACTS_SCHEMA above). Version-skew-safe by
+  // construction: any absent / unrecognized / future-schema shape falls through
+  // to empty methodFlatness maps, i.e. the conservative all-non-flat reading.
+  const rawOptFacts = raw['opt-facts'];
+  if (rawOptFacts !== undefined && rawOptFacts !== null && typeof rawOptFacts === 'object'
+      && typeof rawOptFacts.schema === 'number' && rawOptFacts.schema <= OPT_FACTS_SCHEMA) {
+    const rawMethodFlatness = rawOptFacts['method-flatness'];
+    if (rawMethodFlatness !== undefined && rawMethodFlatness !== null && typeof rawMethodFlatness === 'object') {
+      for (const dataName of Object.keys(rawMethodFlatness)) {
+        const de = ddict.get(dataName);
+        if (de !== undefined && isDType(de)) {
+          const perMethod = rawMethodFlatness[dataName];
+          for (const meth of Object.keys(perMethod)) {
+            const f = perMethod[meth];
+            if (typeof f === 'number') { de.methodFlatness.set(meth, f); }
+          }
+        }
+      }
+    }
   }
   return new Provides(uri, mdict, vdict, adict, ddict);
 }
@@ -1067,6 +1119,19 @@ export interface CompileOptions {
   // -- functional extend that overrides a method strips the brand -- so it
   // self-disables unless runtimeAnnotations && userAnnotations.
   methodFlatness: boolean;
+  // Cross-module method flatness (promise backend only; a sub-feature of
+  // methodFlatness, so also disabled by it). On by default; -no-imported-method-flat
+  // disables it for A/B measurement. Lets a call to an IMPORTED type's flat method
+  // skip the conditional-await wrapper. Two sources, both keyed off the receiver's
+  // runtime-checked/constructed type and both carried in the optional schema-tagged
+  // `opt-facts` provides section: (a) Pyret modules serialize each datatype's
+  // computed method flatness in their provides (getFlatProvides -> compileProvides),
+  // consumed here via providesFromRawProvides; (b) native JS builtins DECLARE their
+  // never-suspending methods (string-dict.js). Sound on the same basis as in-module
+  // method flatness: the receiver rests on an annotation/constructor check, and the
+  // type's brand guarantees the analyzed/declared method implementations. A missing
+  // or skew-ignored opt-facts section degrades to "no imported method is flat".
+  importedMethodFlat: boolean;
   // Typed operator weakening (type-flow.ts; promise backend only). On by default;
   // -no-op-weakening disables it for A/B measurement. Rewrites a polymorphic,
   // dispatching operator app (`_plus` ...) into its monomorphic, non-dispatching,
@@ -1118,6 +1183,7 @@ export const defaultCompileOptions: CompileOptions = {
   effectTailCalls: true,
   annElision: true,
   methodFlatness: true,
+  importedMethodFlat: true,
   opWeakening: true,
   stackBackend: compiledStackBackend,
   inlineCaseBodyLimit: 5,

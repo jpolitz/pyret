@@ -50,6 +50,11 @@ export interface RawBuiltinLocator {
   getRawModuleProvides(): any[];
   getRawAliasProvides(): any[];
   getRawValueProvides(): any[];
+  // The raw optional `opt-facts` provides section (promise backend optimization
+  // facts; rule 3), passed through VERBATIM -- schema checking and parsing happen
+  // in ONE place, compile-structs' providesFromRawProvides. undefined when the
+  // module carries none (the reader treats that as all-conservative).
+  getRawOptFacts(): any;
   getRawCompiled(): string;
 }
 
@@ -165,6 +170,10 @@ export function builtinRawLocatorFromModule(
         }
       }
       return [];
+    },
+    getRawOptFacts(): any {
+      const m = getData();
+      return (m.provides && m.provides["opt-facts"]) || undefined;
     },
     getRawCompiled(): string {
       return getCompiled();
