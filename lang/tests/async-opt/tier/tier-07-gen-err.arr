@@ -4,7 +4,7 @@
 # calls, S = 3 > FewSuspend's S <= 2) => Gen verdict under ALL tier
 # sub-flags, so the raise below fires INSIDE a generator-compiled body.
 # run-gen-exec-tests.sh compares this program's complete output (error
-# message + rendered stack) against the -no-gen-functions (legacy async
+# message + rendered stack) against the default (plain async residue)
 # emission) build: they must be IDENTICAL -- generator resume frames
 # ("at NAME.next (<anonymous>)") carry no location and are dropped by
 # exn-stack-parser, so the rendered Pyret stack matches the async one.

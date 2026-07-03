@@ -2706,7 +2706,8 @@ export function compileALam(
   const useTailFlat = verdict !== undefined && verdict.tier === 'tail-flat';
   const useFewSuspend = verdict !== undefined && verdict.tier === 'few-suspend';
   const useSync = isFlat || useTailFlat || useFewSuspend;
-  const useGen = verdict !== undefined && verdict.tier !== 'flat' && !useTailFlat && !useFewSuspend;
+  const useGen = verdict !== undefined && verdict.tier !== 'flat' && !useTailFlat && !useFewSuspend
+    && compiler.options.genResidue; // residue default is plain async emission (measured 2026-07-04); -gen-residue opts back in
   const arityOut = useGen ? { stmts: clEmpty as CList<J.JStmt> } : undefined;
   const funBody = compileFunBody(l, newStep, temp, ext(compiler, { allowTco: true, tokenCell: tokenCell }), effectiveArgs, len, body, true, isFlat, false, true,
     verdict !== undefined ? verdict.tier : 'async', arityOut,
@@ -3339,7 +3340,8 @@ export class CompilerVisitor {
     const useTailFlat = verdict !== undefined && verdict.tier === 'tail-flat';
     const useFewSuspend = verdict !== undefined && verdict.tier === 'few-suspend';
     const useSync = isFlat || useTailFlat || useFewSuspend;
-    const useGen = verdict !== undefined && verdict.tier !== 'flat' && !useTailFlat && !useFewSuspend;
+    const useGen = verdict !== undefined && verdict.tier !== 'flat' && !useTailFlat && !useFewSuspend
+      && this.options.genResidue; // residue default is plain async emission (measured 2026-07-04); -gen-residue opts back in
     const arityOut = useGen ? { stmts: clEmpty as CList<J.JStmt> } : undefined;
     const fullInner =
       compileFunBody(node.l, step, tempFull, ext(this, { allowTco: true, tokenCell: tokenCell }), node.args, len, node.body, true, isFlat, true, true,

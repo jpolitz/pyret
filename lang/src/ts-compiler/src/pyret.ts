@@ -100,8 +100,10 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Disable cross-module method flatness (promise backend; ignore imported modules\' opt-facts method flatness -- both a Pyret module method proven flat and a native builtin dict method -- and keep the conditional-await wrapper on calls to them, for A/B measurement)')],
     ['no-op-weakening',
       C.flag(C.once, 'Disable typed operator weakening (promise backend; keep polymorphic _plus etc. instead of monomorphic _plus_nums, for A/B measurement)')],
-    ['no-gen-functions',
+    ['no-tiers',
       C.flag(C.once, 'Disable the per-function tier architecture wholesale (promise backend; no tier analysis, every non-flat function keeps the legacy async emission, for A/B measurement)')],
+    ['gen-residue',
+      C.flag(C.once, 'Compile Gen-verdict residue functions (> 2 capturing suspends) as generator+wrapper instead of the default plain async emission (promise backend; measured 2026-07-04: default wins 4 of 6 benches, suite tie -- see BENCH-RESULTS)')],
     ['no-tail-flat',
       C.flag(C.once, 'Demote TailFlat tier verdicts to Gen (promise backend; disable the sync-with-direct-tail-returns tier, for A/B measurement)')],
     ['no-few-suspend',
@@ -158,7 +160,8 @@ export function main(args: string[]): number {
     const methodFlatness = !r.has('no-method-flatness');
     const importedMethodFlat = !r.has('no-imported-method-flat');
     const opWeakening = !r.has('no-op-weakening');
-    const genFunctions = !r.has('no-gen-functions');
+    const tiers = !r.has('no-tiers');
+    const genResidue = r.has('gen-residue');
     const tailFlat = !r.has('no-tail-flat');
     const fewSuspend = !r.has('no-few-suspend');
     const compiledDir = r.get('compiled-dir');
@@ -246,7 +249,8 @@ export function main(args: string[]): number {
           methodFlatness: methodFlatness,
           importedMethodFlat: importedMethodFlat,
           opWeakening: opWeakening,
-          genFunctions: genFunctions,
+          tiers: tiers,
+          genResidue: genResidue,
           tailFlat: tailFlat,
           fewSuspend: fewSuspend,
           stackBackend: stackBackend,
@@ -294,7 +298,8 @@ export function main(args: string[]): number {
         methodFlatness: methodFlatness,
         importedMethodFlat: importedMethodFlat,
         opWeakening: opWeakening,
-        genFunctions: genFunctions,
+        tiers: tiers,
+        genResidue: genResidue,
         tailFlat: tailFlat,
         fewSuspend: fewSuspend,
         stackBackend: stackBackend,

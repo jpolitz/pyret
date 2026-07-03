@@ -191,11 +191,11 @@ export function traceMakeCompiledPyret(
   // (like methodInfo, see the comment on the optimizer above), so any ANF
   // rewrite added after it would orphan the map and codegen throws an
   // InternalCompilerError on the missing entry (loud, by design).
-  // -no-gen-functions disables the tier architecture wholesale (no tierMap;
+  // -no-tiers disables the tier architecture wholesale (no tierMap;
   // the async codegen keeps today's all-async emission as the A/B baseline);
   // -no-tail-flat / -no-few-suspend demote just their tier inside the pass.
   const tierMap =
-    (C.isPromise(options.stackBackend) && options.genFunctions)
+    (C.isPromise(options.stackBackend) && options.tiers)
       ? addPhase('Tier analysis',
         TIER.makeProgTierMap(anfed, flatnessEnv, redundantAnnChecks, postEnv, env, options))
       : undefined;

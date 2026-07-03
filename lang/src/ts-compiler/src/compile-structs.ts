@@ -1181,17 +1181,27 @@ export interface CompileOptions {
   // disables unless runtimeAnnotations && userAnnotations.
   opWeakening: boolean;
   // Master switch for the per-function tier architecture (tier.ts; promise
-  // backend only). On by default; -no-gen-functions disables the tier
-  // ANALYSIS wholesale (no tierMap is computed; the async codegen keeps the
-  // legacy all-async emission) as the A/B baseline. Named for the Gen tier's
-  // generator-function emission, per the ref branch's flag naming; the
-  // per-tier sub-flags below demote individual verdicts instead.
-  genFunctions: boolean;
-  // TailFlat tier (sub-flag of genFunctions). On by default; -no-tail-flat
+  // backend only). On by default; -no-tiers disables the tier ANALYSIS
+  // wholesale (no tierMap is computed; the async codegen keeps the legacy
+  // all-async emission) as the A/B baseline. The per-tier sub-flags below
+  // demote individual verdicts instead.
+  tiers: boolean;
+  // Emission choice for the RESIDUE (Gen-verdict functions: > 2 capturing
+  // suspends or suspend-in-cases). Default FALSE = plain async-function
+  // emission, chosen by endpoint measurement (2026-07-04): generator+wrapper
+  // residue cost 4--17% on four benches against a whole-suite tie, and a
+  // fat generator body is the one shape that can overflow the default stack
+  // under the call-count fuel (see ~/stack-depth-findings.md). -gen-residue
+  // opts back into the generator emission (function* + sync wrapper +
+  // inlined driver) for A/B measurement and for call-shapes that favor its
+  // flat non-suspending returns (extreme call rates into sync-tier callers,
+  // e.g. vec-methods, +3.3%).
+  genResidue: boolean;
+  // TailFlat tier (sub-flag of tiers). On by default; -no-tail-flat
   // demotes TailFlat verdicts to Gen inside the tier analysis, for A/B
   // measurement of the sync-with-direct-tail-returns emission.
   tailFlat: boolean;
-  // FewSuspend tier (sub-flag of genFunctions). On by default;
+  // FewSuspend tier (sub-flag of tiers). On by default;
   // -no-few-suspend demotes FewSuspend verdicts to Gen inside the tier
   // analysis, for A/B measurement of the guarded-suspend-site sync emission.
   fewSuspend: boolean;
@@ -1245,7 +1255,8 @@ export const defaultCompileOptions: CompileOptions = {
   methodFlatness: true,
   importedMethodFlat: true,
   opWeakening: true,
-  genFunctions: true,
+  tiers: true,
+  genResidue: false,
   tailFlat: true,
   fewSuspend: true,
   stackBackend: compiledStackBackend,

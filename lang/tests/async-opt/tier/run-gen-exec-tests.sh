@@ -66,12 +66,13 @@ build() {
 }
 
 # ---- builds ----------------------------------------------------------------
-ERR_G="$WORK/err-gen.jarr";    build "$HERE/tier-07-gen-err.arr"  "$ERR_G"  gen   || true
-ERR_N="$WORK/err-nogen.jarr";  build "$HERE/tier-07-gen-err.arr"  "$ERR_N"  nogen -no-gen-functions || true
-DEEP_G="$WORK/deep-gen.jarr";  build "$HERE/tier-08-gen-deep.arr" "$DEEP_G" gen   || true
-DNT_G="$WORK/dnt-gen.jarr";    build "tests/async-opt/deep-nontail.arr" "$DNT_G" gen || true
-VEC_G="$WORK/vec-gen.jarr";    build "tests/async-opt/bench-vec-methods.arr" "$VEC_G" gen || true
-VEC_N="$WORK/vec-nogen.jarr";  build "tests/async-opt/bench-vec-methods.arr" "$VEC_N" nogen -no-gen-functions || true
+ERR_G="$WORK/err-gen.jarr";    build "$HERE/tier-07-gen-err.arr"  "$ERR_G"  gen   -gen-residue || true
+ERR_N="$WORK/err-nogen.jarr";  build "$HERE/tier-07-gen-err.arr"  "$ERR_N"  nogen || true
+DEEP_G="$WORK/deep-gen.jarr";  build "$HERE/tier-08-gen-deep.arr" "$DEEP_G" gen   -gen-residue || true
+DEEP_A="$WORK/deep-async.jarr"; build "$HERE/tier-08-gen-deep.arr" "$DEEP_A" nogen || true
+DNT_G="$WORK/dnt-gen.jarr";    build "tests/async-opt/deep-nontail.arr" "$DNT_G" gen -gen-residue || true
+VEC_G="$WORK/vec-gen.jarr";    build "tests/async-opt/bench-vec-methods.arr" "$VEC_G" gen -gen-residue || true
+VEC_N="$WORK/vec-nogen.jarr";  build "tests/async-opt/bench-vec-methods.arr" "$VEC_N" nogen || true
 
 # ---- 1. emission sanity (grep the jarrs) -----------------------------------
 if [ -f "$ERR_G" ] && grep -q 'function\*' "$ERR_G"; then
@@ -91,9 +92,9 @@ if [ -f "$ERR_N" ] && [ -f "$ERR_G" ]; then
   n=$(grep -o 'function\*' "$ERR_N" | wc -l)
   g=$(grep -o 'function\*' "$ERR_G" | wc -l)
   if [ "$g" -gt "$n" ]; then
-    ok "-no-gen-functions emits only baseline function* (nogen=$n gen=$g)"
+    ok "default(async residue) emits only baseline function* (default=$n gen-residue=$g)"
   else
-    bad "-no-gen-functions function* comparison" "nogen=$n gen=$g"
+    bad "residue emission function* comparison" "nogen=$n gen=$g"
   fi
 fi
 
@@ -101,9 +102,17 @@ fi
 if [ -f "$DEEP_G" ]; then
   out=$("$NODE" --max-old-space-size=4096 "$DEEP_G" 2>&1)
   if [ "$out" = "200000" ]; then
-    ok "tier-08 deep non-tail (200k levels, gen)"
+    ok "tier-08 deep non-tail (200k levels, -gen-residue)"
   else
-    bad "tier-08 deep non-tail (200k levels, gen)" "got: $(printf '%s' "$out" | head -c 120)"
+    bad "tier-08 deep non-tail (200k levels, -gen-residue)" "got: $(printf '%s' "$out" | head -c 120)"
+  fi
+fi
+if [ -f "$DEEP_A" ]; then
+  out=$("$NODE" --max-old-space-size=4096 "$DEEP_A" 2>&1)
+  if [ "$out" = "200000" ]; then
+    ok "tier-08 deep non-tail (200k levels, default async residue)"
+  else
+    bad "tier-08 deep non-tail (200k levels, default async residue)" "got: $(printf '%s' "$out" | head -c 120)"
   fi
 fi
 if [ -f "$DNT_G" ]; then
@@ -126,12 +135,12 @@ if [ -f "$ERR_G" ] && [ -f "$ERR_N" ]; then
   "$NODE" "$ERR_N" 2>&1 | grep -vE '^\s+at |\.jarr' >"$WORK/err-nogen.out"; rcn=${PIPESTATUS[0]}
   if [ "$rcg" -eq "$rcn" ] && diff -q "$WORK/err-gen.out" "$WORK/err-nogen.out" >/dev/null; then
     if [ "$rcg" -ne 0 ] && grep -q 'gen-tier-boom' "$WORK/err-gen.out"; then
-      ok "error identity (message+stack+rc, gen == async)"
+      ok "error identity (message+stack+rc, -gen-residue == default async)"
     else
-      bad "error identity (message+stack+rc, gen == async)" "rc=$rcg or message missing"
+      bad "error identity (message+stack+rc, -gen-residue == default async)" "rc=$rcg or message missing"
     fi
   else
-    bad "error identity (message+stack+rc, gen == async)" "rc $rcg vs $rcn"
+    bad "error identity (message+stack+rc, -gen-residue == default async)" "rc $rcg vs $rcn"
     diff -u "$WORK/err-nogen.out" "$WORK/err-gen.out" | head -20 | sed 's/^/    /'
   fi
 fi
@@ -141,7 +150,7 @@ if [ -f "$VEC_G" ] && [ -f "$VEC_N" ]; then
   rg=$("$NODE" "$VEC_G" 2>/dev/null | sed -n '1p')
   rn=$("$NODE" "$VEC_N" 2>/dev/null | sed -n '1p')
   if [ -n "$rg" ] && [ "$rg" = "$rn" ]; then
-    ok "bench-vec-methods result parity gen vs -no-gen-functions ($rg)"
+    ok "bench-vec-methods result parity -gen-residue vs default ($rg)"
   else
     bad "bench-vec-methods result parity" "gen='$rg' nogen='$rn'"
   fi
