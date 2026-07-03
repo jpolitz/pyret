@@ -60,6 +60,30 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-04 — post-acceptance: residue emission flipped to async-by-default)
+
+Review-driven (Joe's challenge of the Gen tier's value) and settled by
+endpoint A/B: gen-residue emission cost 4.4–16.9% on four benches against a
+whole-suite tie, and async residue has zero stack exposure (the fat-generator
+depth scenario dissolves; see ~/stack-depth-findings.md). The residue
+(> 2 capturing suspends) now compiles as plain async functions; -gen-residue
+opts back into generator emission; the tier-architecture master flag is
+renamed -no-tiers. Tier ANALYSIS unchanged — the flip is the emission arm's
+gate, two lines, which is the verdict-driven architecture doing its job.
+
+- O1 cont byte-parity 16/16 PASS. O3-compile 483 green. mf green.
+  exec 13022 green. Gen exec harness reframed for the new default: 8/8
+  (200k-deep non-tail green under BOTH emissions; error identity across the
+  flip; emission pin: default carries only the 4 baseline runtime function*
+  vs 443 under -gen-residue).
+- O5 (primary, N=5): parity 16/16, geomean **0.807** (from 0.818):
+  spell 0.85 → 0.70, orbital-compute 0.73 → 0.68, matrix 0.68, kmeans 0.86,
+  dtree 0.81; the gen-favored pair held (vec-methods 0.48, plagiarism 0.67).
+  lander read 1.06 — its all-campaign band is 0.98–1.07 (render-dominated,
+  noisy); every other bench ≤ 0.98.
+- O6 interleaved N=3 medians: cont 230.1 s vs promise 179.7 s → **p/c 0.78**
+  (the suite-level tie survived the landing, as the pre-flip A/B predicted).
+
 ## Results (2026-07-04 — Stage 8: ACCEPTANCE GAUNTLET — campaign complete)
 
 The full oracle stack, fresh, at the re-derived endpoint (30 commits from
