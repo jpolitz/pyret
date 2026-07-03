@@ -804,9 +804,11 @@ function callAndMaybeAwait(t: A.Name, callBase: J.JExprT): CList<J.JStmt> {
 // --- O7: post-emission residual-await scan (Stage 5) ---------------------------
 // Count JAwait nodes in an emitted J AST fragment. The walk descends into
 // nested SYNC JFuns (an await there is a would-be JS SyntaxError at load time)
-// and SKIPS JAsyncFun bodies (awaits are legal there) -- plus any future
-// 'j-gen-fun' node by tag (yields/awaits legal; the js-ast JGenFun class lands
-// with the Gen tier and this scan must not depend on it). With
+// and SKIPS JAsyncFun bodies (awaits are legal there) -- plus nested JGenFun
+// nodes by tag (their bodies were already lowered and asserted await-free at
+// their own emission; yields are legal there). Scanned bodies: the Flat arms
+// of compileALam/aMethod, and the Gen arm's generator body AFTER
+// awaitsToYields plus its sync wrapper (see genFunStmts). With
 // `skipFuelAwaits`, the fuel form `await R.checkPause()` is not counted (used
 // only by the non-fatal bring-up shadow below; the O7 assertion counts
 // everything, since a sync body has no fuel await either).
@@ -1390,19 +1392,22 @@ export function compileFunBody(
   canMintTokens: boolean,
   // The function's tier verdict ('async' = the legacy -no-gen-functions
   // emission path and the toplevel module fn, which is never in the tier
-  // map). Emission is NOT yet keyed on it (the per-tier emitters land in the
-  // Gen / TailFlat / FewSuspend commits); today it only carries the tier
-  // pass's allowTco (below) and feeds the O7/shadow checks in the callers.
+  // map). Inside this function it carries the tier pass's allowTco (below);
+  // the CALLERS key their emission on it: every non-flat verdict currently
+  // takes the Gen generator+wrapper emission (see compileALam / aMethod --
+  // the TailFlat and FewSuspend bodies get their own sync forms in the next
+  // two commits, which will also key the fuel form here).
   tier: TIER.Tier | 'async' = 'async',
-  // Reserved for the Gen tier: the arity-check statements move into the sync
-  // wrapper (inside a generator, `arguments.length` would see the wrapper's
-  // fixed forwarding call, never the user's count). Unused until then.
+  // Gen tier: when provided, the arity-check statements are NOT emitted into
+  // the body but handed back to the caller, which places them in the sync
+  // wrapper function (genFunStmts) -- the check reads `arguments.length`,
+  // which inside the generator would count the wrapper's fixed-arity
+  // forwarding call, never the user's actual argument count.
   arityOut?: { stmts: CList<J.JStmt> },
   // The tier pass's allowTco for this function (verdict.allowTco); undefined
   // on the 'async' path, which computes it via the shared detector below.
   tierAllowTco?: boolean
 ): J.JBlockT {
-  void arityOut;
   // A formal argument captured by an inner lambda forbids explicit-loop TCO
   // (the loop would clobber the captured binding). The detector itself lives
   // in tier.ts (TIER.argUsedInNestedLambda -- ONE source of truth); when a
@@ -1441,10 +1446,14 @@ export function compileFunBody(
   const copyFormalsToArgs: CList<J.JStmt> =
     noRealArgs ? clEmpty
       : CL.map_list2((formalArg: N.ABind, arg: N.ABind) => jVar(jsIdOf(arg.id), jId(formalArg.id)) as J.JStmt, formalArgs, args);
-  const arityStmts: CList<J.JStmt> =
+  let arityStmts: CList<J.JStmt> =
     optArity !== undefined
       ? (noRealArgs ? clEmpty : arityCheck(localCompiler.getLoc(l), optArity, isMethod))
       : clEmpty;
+  if (arityOut !== undefined) {
+    arityOut.stmts = arityStmts;
+    arityStmts = clEmpty;
+  }
   const profileEnter: CList<J.JStmt> =
     localCompiler.options.shouldProfile
       ? clSing<J.JStmt>(jExpr(rtMethod('profileEnter', clist(localCompiler.getLoc(l)))))
@@ -2141,6 +2150,114 @@ export function* compileAApp(
   return yield* appCompiler(l, compiler, b, f, args, optBody, appInfo, isFn);
 }
 
+// ---------- Gen tier: generator-based maybe-promise emission of non-flat functions ----------
+//
+// An `async function` ALWAYS returns a Promise, even on the (overwhelmingly
+// common) dynamic path where its body never actually suspends -- so every call
+// to a non-flat callee costs a Promise allocation plus a microtask hop at the
+// caller's conditional await, cascading up the whole call chain. The Gen tier
+// instead compiles the body EXACTLY as the legacy async path does (awaits
+// intact), then mechanically lowers it: each JAwait becomes a JYield
+// (awaitsToYields -- a pure J-AST -> J-AST rewrite, no decisions), the body
+// becomes a `function*`, and a plain synchronous wrapper drives it: when
+// nothing suspends, the first g.next() runs the body to completion and the
+// wrapper returns the flat result directly -- no Promise, no microtask, and
+// the caller's `R.iT` check falls through, transitively keeping the entire
+// call chain synchronous. On a genuine suspension (fuel pause or a suspending
+// callee) the body yields the thenable and the wrapper returns a Promise via
+// R.driveGen, preserving the async ABI (functions return Awaitables), the
+// fuel-based JS-stack unwinding, interruptibility, and `await` error
+// semantics (a rejected thenable is thrown back into the body at the yield
+// point via gen.throw) exactly. The wrapper's try/catch keeps the
+// async-function guarantee that a non-flat compiled function never throws
+// synchronously -- arity and contract failures reject instead (R.rejP).
+//
+// The sync-vs-gen decision is the tier VERDICT (tier.ts, node-identity
+// tierMap; consumed in compileALam / aMethod) -- never a scan of what was
+// emitted (the ref branch's hasAwaits-as-decider is exactly what this design
+// retires; the only post-emission scan is the O7 assertion).
+
+// Rewrite this function body's awaits into yields. Nested function exprs are
+// already fully compiled (inner lambdas/methods converted when built), so the
+// visitor does not descend into them. jLabel/jSourcenode/jRawCode/jBlock1 need
+// explicit handlers: the default map visitor lacks (or mis-implements) them.
+const awaitToYieldVisitor: any = ext(J.defaultMapVisitor as any, {
+  jAwait(node: J.JAwait): J.JExprT { return new J.JYield(node.expr.visit(this)); },
+  jFun(node: J.JFun): J.JExprT { return node; },
+  jAsyncFun(node: J.JAsyncFun): J.JExprT { return node; },
+  jGenFun(node: J.JGenFun): J.JExprT { return node; },
+  jSourcenode(node: J.JSourcenode): J.JExprT { return new J.JSourcenode(node.loc, node.uri, node.expr.visit(this)); },
+  jRawCode(node: J.JRawCode): J.JExprT { return node; },
+  jLabel(node: J.JLabel): J.JExprT { return node; },
+  jBlock1(node: J.JBlock1): J.JBlockT { return jBlock1(node.stmt.visit(this)); },
+});
+
+export function awaitsToYields(body: J.JBlockT): J.JBlockT {
+  return body.visit(awaitToYieldVisitor);
+}
+
+// Build the generator + sync-wrapper pair for a Gen-tier function body.
+// Returns the statements declaring both; the wrapper is bound to `temp`,
+// which is what makeFunction / makeTailFunction / makeMethod* wrap -- so the
+// wrapper is the appBody the runtime token driver pumps. Shape:
+//   var $gen = function* NAME($a, $b) { <body, awaits->yields> };
+//   var <temp> = function NAME($a, $b) {
+//     var $g = undefined; var $r = undefined;
+//     try { <arity stmts>; $g = $gen($a, $b); $r = $g.next(); }
+//     catch($e) { return R.rejP($e); }
+//     if ($r.done) { return $r.value; }
+//     return R.driveGen($g, $r.value);
+//   };
+// The arity stmts come from compileFunBody's arityOut: they read
+// `arguments.length`, which must see the USER's call -- i.e. the wrapper's
+// frame; inside the generator it would see the wrapper's fixed-arity
+// forwarding call `$gen($a, $b)` and never fail.
+// The done/drive dance stays INLINED in every wrapper -- NEVER a shared
+// R.runGen helper: sharing makes that helper's `gen.next()` site megamorphic
+// across every generator shape in the program (measured regression on the
+// ref branch; the ~12 lines per function are the accepted cost).
+function genFunStmts(
+  compiler: CompilerVisitor,
+  l: Loc,
+  temp: A.Name,
+  funArgs: CList<A.Name>,
+  funBody: J.JBlockT,
+  arityStmts: CList<J.JStmt>
+): CList<J.JStmt> {
+  const genId = freshId(compilerName('gen'));
+  const gVar = freshId(compilerName('g'));
+  const rVar = freshId(compilerName('gr'));
+  const eVar = freshId(compilerName('ge'));
+  const funName = makeFunName(compiler, l);
+  const loweredBody = awaitsToYields(funBody);
+  // O7 (gen arm): after the awaits->yields lowering, ZERO JAwait may remain
+  // anywhere in the generator body -- yields only. The lowering rightly does
+  // not descend into nested sync JFuns, so a residual await can only mean an
+  // await inside a nested sync function (a would-be SyntaxError at load
+  // time); countResidualAwaits descends into nested sync JFuns for exactly
+  // this reason, and skips nested JAsyncFun/JGenFun where awaits/yields are
+  // legal. Throw, never fall back (assertion, not a decision).
+  assertNoResidualAwaits(loweredBody, 'gen (generator body, post-awaitsToYields)', l);
+  const theGen = new J.JGenFun(J.nextJFunId(), funName, funArgs, loweredBody);
+  const tryBody = jBlock(clAppend(arityStmts, clist<J.JStmt>(
+    jExpr(jAssign(gVar, jApp(jId(genId), funArgs.map((a: A.Name) => jId(a) as J.JExprT)))),
+    jExpr(jAssign(rVar, jMethod(jId(gVar), 'next', clEmpty))))));
+  const catchBody = jBlock1(jReturn(rtMethod('rejP', clist<J.JExprT>(jId(eVar)))));
+  const wrapperBody = jBlock(clist<J.JStmt>(
+    jVar(gVar, jUndefined),
+    jVar(rVar, jUndefined),
+    new J.JTryCatch(tryBody, eVar, catchBody),
+    jIf1(jDot(jId(rVar), 'done'), jBlock1(jReturn(jDot(jId(rVar), 'value')))),
+    jReturn(rtMethod('driveGen', clist<J.JExprT>(jId(gVar), jDot(jId(rVar), 'value'))))));
+  // O7 (gen arm, sync wrapper): the wrapper is a plain sync JFun built
+  // await-free by construction; keep the scan as belt-and-braces -- it also
+  // covers the arity stmts hoisted into it via arityOut (which must never
+  // contain an await: arityCheck is synchronous by design).
+  assertNoResidualAwaits(wrapperBody, 'gen (sync wrapper)', l);
+  const theWrapper = jFun(J.nextJFunId(), funName, funArgs, wrapperBody);
+  return clist<J.JStmt>(jVar(genId, theGen), jVar(temp, theWrapper));
+}
+
 export function compileALam(
   compiler: CompilerVisitor,
   node: N.ALam,
@@ -2181,9 +2298,22 @@ export function compileALam(
   // A fresh cell records whether this body actually minted a bounce token at some
   // tail position; if so the function value needs the driving `.app` wrapper
   // (makeTailFunction), otherwise it keeps app === appBody for zero overhead.
+  // Gen-tier functions keep minting/participating in tail tokens exactly like
+  // the legacy async fns (the tier changes the body's FORM, not the token
+  // protocol; the wrapper below is the appBody the driver pumps).
   const tokenCell: Map<string, boolean> = new Map();
+  // Emission tier. Every non-flat verdict currently takes the Gen emission:
+  // 'gen' is its own tier, and 'tail-flat' / 'few-suspend' COMPILE AS GEN at
+  // this commit -- a safe superset (the generator+wrapper preserves full
+  // async semantics for any non-flat body); their dedicated sync emissions
+  // land in the next two commits and will peel off this branch.
+  // -no-tail-flat / -no-few-suspend already demote inside tier.ts, so the
+  // A/B flags stay meaningful; verdict === undefined is -no-gen-functions
+  // (no tierMap at all): the legacy all-async emission below.
+  const useGen = verdict !== undefined && verdict.tier !== 'flat';
+  const arityOut = useGen ? { stmts: clEmpty as CList<J.JStmt> } : undefined;
   const funBody = compileFunBody(l, newStep, temp, ext(compiler, { allowTco: true, tokenCell: tokenCell }), effectiveArgs, len, body, true, isFlat, false, true,
-    verdict !== undefined ? verdict.tier : 'async', undefined,
+    verdict !== undefined ? verdict.tier : 'async', arityOut,
     verdict !== undefined ? verdict.allowTco : undefined);
   // O7: a sync (jFun) body must have ZERO residual awaits -- assert at compile
   // time (a miss would be a JS SyntaxError at load time). Binds today's Flat
@@ -2196,15 +2326,24 @@ export function compileALam(
     tierShadowCompare(verdict, funBody, 'lam', name, l);
   }
   const funArgs = CL.map_list((arg: N.ABind) => formalShadowName(arg.id), effectiveArgs);
-  // Flat functions stay synchronous; everything else is an async function so its
-  // body can `await` non-flat calls and the fuel check.
-  const theFun = isFlat
-    ? jFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, funBody)
-    : jAsyncFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, funBody);
+  // Flat functions stay synchronous. Tiered non-flat functions compile to a
+  // generator body plus a synchronous driving wrapper (genFunStmts) so a
+  // non-suspending call returns its value flat. With -no-gen-functions
+  // (verdict === undefined) a non-flat body stays an async function so it
+  // can `await` non-flat calls and the fuel check.
+  let funStmts: CList<J.JStmt>;
+  if (useGen) {
+    funStmts = genFunStmts(compiler, l, temp, funArgs, funBody, arityOut!.stmts);
+  } else {
+    const theFun = isFlat
+      ? jFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, funBody)
+      : jAsyncFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, funBody);
+    funStmts = clist<J.JStmt>(jVar(temp, theFun));
+  }
   const maker = tokenCell.has('minted') ? 'makeTailFunction' : 'makeFunction';
   return cExp(
     rtMethod(maker, clist<J.JExprT>(jId(temp), jStr(name))),
-    clist<J.JStmt>(jVar(temp, theFun)));
+    funStmts);
 }
 
 export function* compileSplitPrimApp(
@@ -2762,9 +2901,16 @@ export class CompilerVisitor {
     }
     const funArgs = CL.map_list((a: N.ABind) => formalShadowName(a.id), node.args);
     const tokenCell: Map<string, boolean> = new Map();
+    // Emission tier -- same discipline as compileALam: every non-flat verdict
+    // takes the Gen emission at this commit ('tail-flat' / 'few-suspend'
+    // compile as Gen, a safe superset, until their own sync emissions land in
+    // the next two commits); the verdict is looked up per NODE, never
+    // inherited compile state (retires the ref's ext()-mode-flag bug class).
+    const useGen = verdict !== undefined && verdict.tier !== 'flat';
+    const arityOut = useGen ? { stmts: clEmpty as CList<J.JStmt> } : undefined;
     const fullInner =
       compileFunBody(node.l, step, tempFull, ext(this, { allowTco: true, tokenCell: tokenCell }), node.args, len, node.body, true, isFlat, true, true,
-        verdict !== undefined ? verdict.tier : 'async', undefined,
+        verdict !== undefined ? verdict.tier : 'async', arityOut,
         verdict !== undefined ? verdict.allowTco : undefined);
     // O7: same assertion as compileALam's flat arm (see there).
     if (isFlat) {
@@ -2773,16 +2919,23 @@ export class CompilerVisitor {
     if (verdict !== undefined && process.env.PYRET_TIER_SHADOW) {
       tierShadowCompare(verdict, fullInner, 'method', node.name, node.l);
     }
-    const fullVar = jVar(tempFull, isFlat
-      ? jFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, fullInner)
-      : jAsyncFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, fullInner));
+    // Tiered non-flat methods get the same generator + sync-wrapper emission
+    // as lambdas (genFunStmts); flat methods stay plain synchronous functions;
+    // -no-gen-functions keeps the legacy async emission. Gen-tier methods keep
+    // the token protocol exactly as async methods did (the wrapper is the
+    // full_methBody the driver pumps).
+    const fullStmts: CList<J.JStmt> = useGen
+      ? genFunStmts(this, node.l, tempFull, funArgs, fullInner, arityOut!.stmts)
+      : clist<J.JStmt>(jVar(tempFull, isFlat
+        ? jFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, fullInner)
+        : jAsyncFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, fullInner)));
     // A flat method never mints a token (isFlat forces mintsTokens=false), so
     // makeMethod is always correct for it.
     const maker = tokenCell.has('minted') ? 'makeTailMethod' : 'makeMethod';
     const methodExpr = len < 9
       ? rtMethod(maker + String(len - 1), clist<J.JExprT>(jId(tempFull), jStr(node.name)))
       : rtMethod(maker + 'N', clist<J.JExprT>(jId(tempFull), jStr(node.name)));
-    return cExp(methodExpr, clist<J.JStmt>(fullVar));
+    return cExp(methodExpr, fullStmts);
   }
 
   aVal(node: N.AVal$): DAG.CaseResults {
