@@ -902,6 +902,24 @@ export function compileAexprAsync(compiler: CompilerVisitor, e: N.AExpr): CList<
   // are bounded in depth) recurse, via compile-lettable-async.
   let acc: CList<J.JStmt> = clEmpty;
   let cur: N.AExpr = e;
+  // Does a let/arr-let RHS compile to the explicit-loop TCO `continue`?
+  // Same predicate compileAppAsync uses (shared helper TIER.isTcoSelfApp +
+  // inTcoLoop), re-derived here -- rule 2: never a second site list. Used by
+  // the sync TailFlat tier to elide the trailing annotation check, which is
+  // UNREACHABLE after `continue` (`fun f(n) -> T:` desugars a tail self-call
+  // to `let ans = f(...) in _checkAnn(T, ans)`); the tier walk skips that
+  // dead site for the same reason (tier.ts rhsTco), and a suspend-class dead
+  // check would otherwise leave a residual `await` in a sync body (a JS
+  // SyntaxError; O7 catches it at compile time). Gen/'async' bodies keep the
+  // (harmless) dead check so their output is unchanged by this commit.
+  const rhsIsTcoContinue = (rhs: N.ALettable): boolean => {
+    if (compiler.fnTier !== 'tail-flat' || rhs.$name !== 'a-app' || !compiler.inTcoLoop) {
+      return false;
+    }
+    const appRhs = rhs as N.AApp;
+    return TIER.isTcoSelfApp(appRhs.appInfo, appRhs.args.length, compiler.args.length,
+      compiler.allowTco, compiler.options.properTailCalls);
+  };
   while (true) {
     switch (cur.$name) {
       case 'a-let': {
@@ -918,7 +936,9 @@ export function compileAexprAsync(compiler: CompilerVisitor, e: N.AExpr): CList<
         const bindComplete = (v: J.JExprT): CList<J.JStmt> => clSing(jExpr(jAssign(jsIdOf(b.id), v)));
         const eStmts = compileLettableAsync(ext(compiler, { complete: bindComplete, tailPos: false, curLetBind: new BLet(b) }), cur.e);
         acc = clAppend(acc, clCons(jVar(jsIdOf(b.id), UNDEFINED) as J.JStmt, eStmts));
-        acc = clAppend(acc, annCheckStmts(compiler, b));
+        if (!rhsIsTcoContinue(cur.e)) {
+          acc = clAppend(acc, annCheckStmts(compiler, b));
+        }
         cur = cur.body;
         continue;
       }
@@ -928,7 +948,9 @@ export function compileAexprAsync(compiler: CompilerVisitor, e: N.AExpr): CList<
         const bindComplete = (v: J.JExprT): CList<J.JStmt> => clSing(jExpr(jBracketAssign(jId(jsIdOf(b.id)), jNum(idx), v)));
         const eStmts = compileLettableAsync(ext(compiler, { complete: bindComplete, tailPos: false, curLetBind: new BArray(b, idx) }), cur.e);
         acc = clAppend(acc, eStmts);
-        acc = clAppend(acc, annCheckStmts(compiler, b));
+        if (!rhsIsTcoContinue(cur.e)) {
+          acc = clAppend(acc, annCheckStmts(compiler, b));
+        }
         cur = cur.body;
         continue;
       }
@@ -1069,7 +1091,17 @@ export function compileAppAsync(compiler: CompilerVisitor, l: Loc, f: N.AVal, ar
       compiler.tokenCell.set('minted', true);
       const token = rtMethod('tailCall', clist<J.JExprT>(fCe.exp, jList(false, compiledArgs)));
       return clAppend(pre, clAppend(fnCheck, clSing(jReturn(token))));
-    } else if (isFlat) {
+    } else if (isFlat || (compiler.fnTier === 'tail-flat' && compiler.tailPos)) {
+      // Flat callee: direct call, no await. TailFlat tier, tail position: the
+      // callee's result (flat value OR thenable) is RETURNED DIRECTLY -- the
+      // Awaitable ABI permits both, the caller's conditional await handles
+      // either, and every intermediate sync tail frame returns the SAME
+      // promise, so a suspended tail chain collapses to O(1) heap. This
+      // direct return IS the bounce: tokens are subsumed (mintsTokens is
+      // forced false for the tier in compileFunBody, so the mint branch
+      // above can never fire here). Keyed on compiler.fnTier -- the
+      // node-identity tier verdict, installed unconditionally at every
+      // compileFunBody entry, never inherited across a function boundary.
       const callBase = app(l, fCe.exp, compiledArgs);
       return clAppend(pre, clAppend(fnCheck, compiler.complete(callBase)));
     } else {
@@ -1098,6 +1130,13 @@ export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.
   // a tail token (the call is bounded). maybeMethodCall still does the dynamic
   // dispatch; only the await is elided.
   const isFlatMeth = node !== undefined && compiler.flatMethodApps.has(node);
+  // TailFlat tier, tail position: the method call's result (value or
+  // thenable) is returned DIRECTLY -- the Awaitable ABI analogue of the
+  // compileAppAsync tail direct return (see there). Must cover BOTH the
+  // direct-dispatch arm and the maybeMethodCall funnel arm below; a missed
+  // arm would emit a residual await in a sync body, which the O7 assertion
+  // turns into an InternalCompilerError at compile time.
+  const tailDirect = compiler.fnTier === 'tail-flat' && compiler.tailPos;
   // Direct method dispatch (de-funnelled): `obj.dict["m"].full_meth(obj, args)`
   // instead of `maybeMethodCall(obj, "m", ...)`. Fires when type-flow proved the
   // receiver is a data value on which `m` is a genuine method (node.directMethod),
@@ -1114,14 +1153,18 @@ export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.
       objExpr = jId(objId);
     }
     const call = wrapWithSrcnode(l, directMethodDispatch(objExpr, methname, compiledArgs));
-    if (isFlatMeth) {
-      // Flat method: no await.
+    if (isFlatMeth || tailDirect) {
+      // Flat method: no await. TailFlat tail position: direct return.
       return clAppend(pre, clAppend(preDecls, compiler.complete(call)));
     }
     const t = freshId(compilerName('mans'));
     return clAppend(pre, clAppend(preDecls, clAppend(callAndMaybeAwait(t, call), compiler.complete(jId(t)))));
   }
-  if (isFlatMeth) {
+  if (isFlatMeth || tailDirect) {
+    // Funnel arm (flat method-app, or TailFlat tail direct return). The
+    // non-JId receiver is normalized to a temp here, so the two-armed
+    // raw-await fallback at the bottom is never reached from a sync tier's
+    // tail position.
     let objExpr = compiledObj;
     let preDecls: CList<J.JStmt> = clEmpty;
     if (!J.isJId(compiledObj)) {
@@ -1428,7 +1471,12 @@ export function compileFunBody(
   // token to its non-awaiting caller without leaking it). `tokenCell` records
   // whether the body actually minted one, so the caller (compile-a-lam) can choose
   // makeTailFunction (driver) vs makeFunction (zero overhead).
-  const mintsTokens = canMintTokens && !isFlat;
+  // The TailFlat tier never mints: a sync body must never return a token to a
+  // non-driving caller, and its tail direct return of the callee's (maybe-
+  // thenable) result IS the O(1) bounce -- tokens are subsumed. Forcing it
+  // here (keyed on the verdict tier) leaves tokenCell untouched, so the
+  // callers' maker selection stays makeFunction / makeMethod*.
+  const mintsTokens = canMintTokens && !isFlat && tier !== 'tail-flat';
   const localCompiler: CompilerVisitor = ext(compiler, {
     curStep: step,
     curApploc: apploc,
@@ -1438,6 +1486,14 @@ export function compileFunBody(
     inTcoLoop: useLoop,
     mintsTokens: mintsTokens,
     curLetBind: undefined,
+    // The enclosing function's tier, for the site emitters below a function
+    // boundary (tail direct returns, dead-ann-check elision). Installed
+    // UNCONDITIONALLY at EVERY compileFunBody entry: since compileALam /
+    // aMethod always pass their own node's verdict, a nested function can
+    // never inherit an outer function's tier (the ref branch's
+    // ext()-inherits-tailFlatMode generator leak stays structurally
+    // impossible).
+    fnTier: tier,
   });
   // Shadow formals, assigned immediately to the "real" arg names (mirrors the
   // cont backend; lets us reassign args for TCO without touching parameters).
@@ -1459,10 +1515,32 @@ export function compileFunBody(
       ? clSing<J.JStmt>(jExpr(rtMethod('profileEnter', clist(localCompiler.getLoc(l)))))
       : clEmpty;
   // The fast-path fuel check: only await (and unwind the JS stack) when needed.
+  // TailFlat (sync) form: the body cannot await, so on fuel exhaustion it
+  // RETURNS checkPause().then(re-enter by NAME with the CURRENT argument
+  // values) -- the whole suspended sync tail chain unwinds by returning the
+  // same promise through every frame (the O(1) bounce), and the .then
+  // re-enters this function once fuel is restored (needsPause() already
+  // consumed the fuel, so the re-entered call proceeds). The check sits at
+  // the TOP of the `while(true)` TCO loop body, so re-entry reads the REAL
+  // arg vars, which the explicit loop reassigns -- a mid-loop pause resumes
+  // with the loop's current values, not the original call's. Re-entry
+  // re-runs the (idempotent) arity and arg-annotation checks. The self-name
+  // binding works because the emitted jFun is a NAMED function expression
+  // (makeFunName is deterministic per (uri, loc), so this name and the
+  // caller-side jFun name agree).
+  const reEnterArgs: CList<J.JExprT> = noRealArgs
+    ? CL.map_list((fa: N.ABind) => jId(fa.id) as J.JExprT, formalArgs)
+    : CL.from_list(args.map((a) => jId(jsIdOf(a.id)) as J.JExprT));
   const fuelCheck: CList<J.JStmt> =
     isFlat ? clEmpty
-      : clSing<J.JStmt>(jIf1(rtMethod('needsPause', clEmpty),
-        jBlock1(jExpr(jAwait(rtMethod('checkPause', clEmpty))))));
+      : tier === 'tail-flat'
+        ? clSing<J.JStmt>(jIf1(rtMethod('needsPause', clEmpty),
+          jBlock1(jReturn(jMethod(rtMethod('checkPause', clEmpty), 'then',
+            clSing<J.JExprT>(jFun(J.nextJFunId(), '',
+              clEmpty as CList<A.Name>,
+              jBlock1(jReturn(jApp(jId(constId(makeFunName(localCompiler, l))), reEnterArgs))))))))))
+        : clSing<J.JStmt>(jIf1(rtMethod('needsPause', clEmpty),
+          jBlock1(jExpr(jAwait(rtMethod('checkPause', clEmpty))))));
   // Argument annotation contracts. Emitted at the top of the loop body so they run
   // on initial entry AND on every explicit-loop TCO re-entry — the cont backend
   // resets step to 0 on a tail self-call, so it re-checks args too (parity). A flat
@@ -2302,40 +2380,52 @@ export function compileALam(
   // the legacy async fns (the tier changes the body's FORM, not the token
   // protocol; the wrapper below is the appBody the driver pumps).
   const tokenCell: Map<string, boolean> = new Map();
-  // Emission tier. Every non-flat verdict currently takes the Gen emission:
-  // 'gen' is its own tier, and 'tail-flat' / 'few-suspend' COMPILE AS GEN at
-  // this commit -- a safe superset (the generator+wrapper preserves full
-  // async semantics for any non-flat body); their dedicated sync emissions
-  // land in the next two commits and will peel off this branch.
-  // -no-tail-flat / -no-few-suspend already demote inside tier.ts, so the
-  // A/B flags stay meaningful; verdict === undefined is -no-gen-functions
-  // (no tierMap at all): the legacy all-async emission below.
-  const useGen = verdict !== undefined && verdict.tier !== 'flat';
+  // Emission tier. 'tail-flat' gets its own sync emission (plain jFun: every
+  // non-tail site is flat by the verdict's definition, tail sites return the
+  // callee's result directly, fuel re-enters via checkPause().then -- see
+  // compileFunBody); 'gen' and (until its sync emission lands in the next
+  // commit) 'few-suspend' take the generator+wrapper emission, a safe
+  // superset for any non-flat body. -no-tail-flat / -no-few-suspend demote
+  // inside tier.ts (the ONE demotion place -- a demoted function simply
+  // arrives here with tier 'gen'); verdict === undefined is
+  // -no-gen-functions (no tierMap at all): the legacy all-async emission.
+  const useTailFlat = verdict !== undefined && verdict.tier === 'tail-flat';
+  const useGen = verdict !== undefined && verdict.tier !== 'flat' && !useTailFlat;
   const arityOut = useGen ? { stmts: clEmpty as CList<J.JStmt> } : undefined;
   const funBody = compileFunBody(l, newStep, temp, ext(compiler, { allowTco: true, tokenCell: tokenCell }), effectiveArgs, len, body, true, isFlat, false, true,
     verdict !== undefined ? verdict.tier : 'async', arityOut,
     verdict !== undefined ? verdict.allowTco : undefined);
   // O7: a sync (jFun) body must have ZERO residual awaits -- assert at compile
-  // time (a miss would be a JS SyntaxError at load time). Binds today's Flat
-  // emissions; the TailFlat/FewSuspend arms hook the same assertion when they
-  // land.
-  if (isFlat) {
+  // time (a miss would be a JS SyntaxError at load time). Binds the Flat and
+  // TailFlat emissions; the FewSuspend arm hooks the same assertion when it
+  // lands. If a TailFlat verdict was wrong, this throw is the design working
+  // -- never a fallback to another emission.
+  if (isFlat || useTailFlat) {
     assertNoResidualAwaits(funBody, verdict !== undefined ? verdict.tier : 'flat', l);
+  }
+  // TailFlat never mints (mintsTokens forced false in compileFunBody);
+  // tokenCell untouched is what keeps the maker below makeFunction. Tripwire,
+  // not a decision: a mint here means the suppression regressed.
+  if (useTailFlat && tokenCell.has('minted')) {
+    throw new InternalCompilerError(
+      'tail-flat lambda "' + name + '" at ' + l.key() + ' minted a tail token');
   }
   if (verdict !== undefined && process.env.PYRET_TIER_SHADOW) {
     tierShadowCompare(verdict, funBody, 'lam', name, l);
   }
   const funArgs = CL.map_list((arg: N.ABind) => formalShadowName(arg.id), effectiveArgs);
-  // Flat functions stay synchronous. Tiered non-flat functions compile to a
-  // generator body plus a synchronous driving wrapper (genFunStmts) so a
-  // non-suspending call returns its value flat. With -no-gen-functions
-  // (verdict === undefined) a non-flat body stays an async function so it
-  // can `await` non-flat calls and the fuel check.
+  // Flat AND TailFlat functions are plain synchronous jFuns (TailFlat's
+  // NAMED function expression is what its fuel check re-enters by name).
+  // Gen-tier functions compile to a generator body plus a synchronous
+  // driving wrapper (genFunStmts) so a non-suspending call returns its value
+  // flat. With -no-gen-functions (verdict === undefined) a non-flat body
+  // stays an async function so it can `await` non-flat calls and the fuel
+  // check.
   let funStmts: CList<J.JStmt>;
   if (useGen) {
     funStmts = genFunStmts(compiler, l, temp, funArgs, funBody, arityOut!.stmts);
   } else {
-    const theFun = isFlat
+    const theFun = (isFlat || useTailFlat)
       ? jFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, funBody)
       : jAsyncFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, funBody);
     funStmts = clist<J.JStmt>(jVar(temp, theFun));
@@ -2637,6 +2727,15 @@ export class CompilerVisitor {
   mintsTokens!: boolean;
   tokenCell!: Map<string, boolean>;
   curLetBind!: BindType | undefined;
+  // The ENCLOSING function's tier verdict ('async' = legacy -no-gen-functions
+  // emission and the toplevel module fn, which is never in the tier map).
+  // Installed UNCONDITIONALLY at every compileFunBody entry from the per-NODE
+  // verdict -- NEVER inherited across a function boundary (the ref branch's
+  // ext()-inherits-tailFlatMode generator-leak bug class stays retired).
+  // Readers: the sync-tier tail-direct-return arms (compileAppAsync /
+  // compileMethodAppAsync) and the dead-ann-check elision after a TCO
+  // `continue` (compileAexprAsync).
+  fnTier: TIER.Tier | 'async' = 'async';
 
   aModule(node: N.AModule): DAG.CExp {
     const l = node.l;
@@ -2901,32 +3000,38 @@ export class CompilerVisitor {
     }
     const funArgs = CL.map_list((a: N.ABind) => formalShadowName(a.id), node.args);
     const tokenCell: Map<string, boolean> = new Map();
-    // Emission tier -- same discipline as compileALam: every non-flat verdict
-    // takes the Gen emission at this commit ('tail-flat' / 'few-suspend'
-    // compile as Gen, a safe superset, until their own sync emissions land in
-    // the next two commits); the verdict is looked up per NODE, never
+    // Emission tier -- same discipline as compileALam: 'tail-flat' gets the
+    // sync jFun emission; 'gen' (and 'few-suspend' until its emission lands)
+    // takes the generator+wrapper; the verdict is looked up per NODE, never
     // inherited compile state (retires the ref's ext()-mode-flag bug class).
-    const useGen = verdict !== undefined && verdict.tier !== 'flat';
+    const useTailFlat = verdict !== undefined && verdict.tier === 'tail-flat';
+    const useGen = verdict !== undefined && verdict.tier !== 'flat' && !useTailFlat;
     const arityOut = useGen ? { stmts: clEmpty as CList<J.JStmt> } : undefined;
     const fullInner =
       compileFunBody(node.l, step, tempFull, ext(this, { allowTco: true, tokenCell: tokenCell }), node.args, len, node.body, true, isFlat, true, true,
         verdict !== undefined ? verdict.tier : 'async', arityOut,
         verdict !== undefined ? verdict.allowTco : undefined);
-    // O7: same assertion as compileALam's flat arm (see there).
-    if (isFlat) {
+    // O7: same assertion as compileALam's flat/tail-flat arms (see there).
+    if (isFlat || useTailFlat) {
       assertNoResidualAwaits(fullInner, verdict !== undefined ? verdict.tier : 'flat', node.l);
+    }
+    // TailFlat mint tripwire, as in compileALam.
+    if (useTailFlat && tokenCell.has('minted')) {
+      throw new InternalCompilerError(
+        'tail-flat method "' + node.name + '" at ' + node.l.key() + ' minted a tail token');
     }
     if (verdict !== undefined && process.env.PYRET_TIER_SHADOW) {
       tierShadowCompare(verdict, fullInner, 'method', node.name, node.l);
     }
-    // Tiered non-flat methods get the same generator + sync-wrapper emission
-    // as lambdas (genFunStmts); flat methods stay plain synchronous functions;
+    // Gen-tier methods get the generator + sync-wrapper emission (genFunStmts);
+    // flat AND tail-flat methods are plain synchronous jFuns (tail-flat's
+    // named function expression is its fuel re-enter target);
     // -no-gen-functions keeps the legacy async emission. Gen-tier methods keep
     // the token protocol exactly as async methods did (the wrapper is the
-    // full_methBody the driver pumps).
+    // full_methBody the driver pumps); tail-flat methods never mint.
     const fullStmts: CList<J.JStmt> = useGen
       ? genFunStmts(this, node.l, tempFull, funArgs, fullInner, arityOut!.stmts)
-      : clist<J.JStmt>(jVar(tempFull, isFlat
+      : clist<J.JStmt>(jVar(tempFull, (isFlat || useTailFlat)
         ? jFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, fullInner)
         : jAsyncFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, fullInner)));
     // A flat method never mints a token (isFlat forces mintsTokens=false), so
