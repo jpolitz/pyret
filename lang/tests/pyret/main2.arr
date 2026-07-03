@@ -17,6 +17,7 @@ import file("./tests/test-s-exp.arr") as _
 import file("./tests/test-json.arr") as _
 import file("./tests/test-refs.arr") as _
 import file("./tests/test-equality.arr") as _
+import file("./tests/test-maybe-promise-equality.arr") as _
 import file("./tests/test-refined-refs.arr") as _
 import file("./tests/test-match.arr") as _
 import file("./tests/test-lists.arr") as _
