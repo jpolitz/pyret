@@ -88,8 +88,8 @@ if [ -f "$ERR_N" ] && [ -f "$ERR_G" ]; then
   # The runtime baseline ships a few function* of its own (present in every
   # jarr); the lever pin is that the gen build emits strictly MORE and the
   # flag-off build emits exactly the baseline count.
-  n=$(grep -o 'function\*' \"$ERR_N\" | wc -l)
-  g=$(grep -o 'function\*' \"$ERR_G\" | wc -l)
+  n=$(grep -o 'function\*' "$ERR_N" | wc -l)
+  g=$(grep -o 'function\*' "$ERR_G" | wc -l)
   if [ "$g" -gt "$n" ]; then
     ok "-no-gen-functions emits only baseline function* (nogen=$n gen=$g)"
   else

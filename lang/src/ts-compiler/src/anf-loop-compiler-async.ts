@@ -801,6 +801,201 @@ function callAndMaybeAwait(t: A.Name, callBase: J.JExprT): CList<J.JStmt> {
     jIf1(jIsThenable(t), jBlock1(jExpr(jAssign(t, jAwait(jId(t)))))));
 }
 
+// --- FewSuspend tier: guarded suspend sites over the ANF continuation ----------
+//
+// A 'few-suspend' function compiles to a PLAIN SYNC jFun in which each
+// continuation-capturing suspend site becomes
+//
+//   var t = <call>;
+//   if (R.iT(t)) return t.then(function(t) { <complete(t)> <continuation> });
+//   <complete(t)>            // sync path: falls through to the SAME statements
+//   <continuation>           // ...emitted once, in place, by the chain walker
+//
+// The resume closure's body is compiled FROM THE ANF CONTINUATION: the chain
+// walker (compileAexprAsync) reifies "everything after the current position up
+// to function exit" as the memoized thunk `compiler.rest`, so the closure and
+// the sync fall-through ALIAS the same immutable J statement nodes (printing
+// is pure; exactly one of the two paths executes at runtime). Zero allocation
+// unless a suspension actually happens. This dissolves the ref branch's
+// JS-level rewriting (tryFewSuspend): there is nothing to pattern-match,
+// because the continuation is in the compiler's hands at the moment the site
+// is emitted.
+//
+// REJECTION-SEMANTICS INVARIANT (matches driveGen's discipline exactly, and
+// holds ONLY while sync-tier bodies stay try-free -- never wrap them in
+// try/catch): `t.then(onF)` has no onRejected, so a rejected thenable SKIPS
+// the closure and rejects the returned promise = rethrow-at-the-suspend-point
+// in a body with no try/catch; a throw inside the closure rejects via .then's
+// contract; a thenable returned from the closure is flattened by .then (no
+// extra wrapping anywhere -- Promise.prototype.then gives all three for free).
+//
+// Aliasing safety (ref-proven): `var` decls inside the aliased continuation
+// are closure-locals on the resume path and hoisted fn-locals on the sync
+// path (both self-contained); vars declared BEFORE the site are shared by
+// ordinary closure capture, so assignments behave identically either way; a
+// whole aliased jSwitch is self-contained (its jBreaks are switch-local); the
+// tier verdict's loopUnsafe/inCases gates guarantee no TCO `continue` and no
+// mid-switch resume point can ever appear in a captured continuation, and the
+// live async path emits no labels, so every construct that can appear aliases
+// soundly -- nothing needs recompilation. The closure gets a fresh
+// nextJFunId(), so js-dag-utils' per-JFun-id caches cannot collide. The
+// closure's parameter deliberately REUSES the site temp's name: the aliased
+// completion statements read `t` as the parameter inside the closure and as
+// the fn-local var on the sync path.
+function fewSuspendSite(compiler: CompilerVisitor, t: A.Name, callBase: J.JExprT): CList<J.JStmt> {
+  const completeStmts = compiler.complete(jId(t));
+  // complete = completeReturn only at real function tail, where rest() is
+  // the (empty) function-exit thunk -- so no unreachable code after `return`.
+  const closureBody = clAppend(completeStmts, compiler.rest());
+  const resume = jFun(J.nextJFunId(), '', clSing<A.Name>(t), jBlock(closureBody));
+  const guard = jIf1(jIsThenable(t),
+    jBlock1(jReturn(jMethod(jId(t), 'then', clSing<J.JExprT>(resume)))));
+  return clCons(jVar(t, callBase) as J.JStmt, clCons(guard as J.JStmt, completeStmts));
+}
+
+// The function-exit continuation: nothing remains after the enclosing chain's
+// own statements (every path through a compiled body ends in `return`).
+// Installed (RESET) at EVERY compileFunBody entry -- see the CompilerVisitor
+// field comment for the landmine this discipline retires.
+const fnExitRest = (): CList<J.JStmt> => clEmpty as CList<J.JStmt>;
+
+// Memoize a continuation-part thunk: compiled at most once, so the suspend
+// site's resume closure (which forces it early) and the chain walker's
+// fall-through emission (which forces it after the site) get the SAME
+// statement nodes -- aliasing, never recompilation.
+function memoStmts(f: () => CList<J.JStmt>): () => CList<J.JStmt> {
+  let cached: CList<J.JStmt> | undefined;
+  return () => {
+    if (cached === undefined) { cached = f(); }
+    return cached;
+  };
+}
+
+// Shared classifier shorthand (rule 2): is this bind's annotation check a
+// suspend site? Same FL.annCheckClass call as annCheckStmts and tier.ts.
+function annSuspends(compiler: CompilerVisitor, b: N.ABind): boolean {
+  return FL.annCheckClass(b, compiler.flatnessEnv, compiler.typeFlatnessEnv,
+    compiler.redundantAnnChecks, compiler.moduleBindings, compiler.env) === 'suspend';
+}
+
+// The FewSuspend form of a suspend-class annotation check ('b = await
+// _checkAnn(...)' in async/gen bodies): a guarded site whose completion
+// assigns the checked value back to the binder and whose continuation is
+// `restAll` (the remaining chain to function exit). Returns the site
+// statements only -- the caller emits the fall-through continuation once,
+// in place, right after them.
+function fewSuspendAnnCheck(
+  compiler: CompilerVisitor, b: N.ABind, restAll: () => CList<J.JStmt>
+): CList<J.JStmt> {
+  const ca = compileAnn(b.ann, undefined, compiler);
+  const checkCall = rtMethod('_checkAnn',
+    clist(compiler.getLoc(annLoc(b.ann)), ca.exp, jId(jsIdOf(b.id))));
+  const t = freshId(compilerName('chk'));
+  const siteCompiler = ext(compiler, {
+    complete: (v: J.JExprT): CList<J.JStmt> => clSing<J.JStmt>(jExpr(jAssign(jsIdOf(b.id), v))),
+    rest: restAll,
+  });
+  return clAppend(ca.otherStmts, fewSuspendSite(siteCompiler, t, checkCall));
+}
+
+// Does a let/arr-let RHS compile to the explicit-loop TCO `continue`? Same
+// predicate compileAppAsync uses (shared helper TIER.isTcoSelfApp +
+// inTcoLoop) -- rule 2: never a second site list. Used by the sync tiers
+// (TailFlat AND FewSuspend) to elide the trailing annotation check, which is
+// UNREACHABLE after `continue` (`fun f(n) -> T:` desugars a tail self-call
+// to `let ans = f(...) in _checkAnn(T, ans)`); the tier walk skips that
+// dead site for the same reason (tier.ts rhsTco), and a suspend-class dead
+// check would otherwise leave a residual `await` in a sync body (a JS
+// SyntaxError; O7 catches it at compile time). Gen/'async' bodies keep the
+// (harmless) dead check so their output is unchanged.
+function rhsIsTcoContinue(compiler: CompilerVisitor, rhs: N.ALettable): boolean {
+  if ((compiler.fnTier !== 'tail-flat' && compiler.fnTier !== 'few-suspend')
+    || rhs.$name !== 'a-app' || !compiler.inTcoLoop) {
+    return false;
+  }
+  const appRhs = rhs as N.AApp;
+  return TIER.isTcoSelfApp(appRhs.appInfo, appRhs.args.length, compiler.args.length,
+    compiler.allowTco, compiler.options.properTailCalls);
+}
+
+// Does this (non-tail, same-function) lettable subtree contain a
+// continuation-CAPTURING suspend site? EXACTLY tier.ts's site classification,
+// through the SAME shared helpers (FL.getAppFunFlatness / flatMethodApps /
+// appInfo.needsStep / FL.annCheckClass / TIER.isTcoSelfApp), so the chain
+// walker's thunk gating can never disagree with the verdict that admitted
+// this function to the tier (a disagreement is a residual await -- O7 ICE).
+// Only ever called on RHS positions, which are never function-tail, so a
+// non-flat non-TCO app here always captures.
+function lettableHasCapturingSite(compiler: CompilerVisitor, e: N.ALettable): boolean {
+  switch (e.$name) {
+    case 'a-app': {
+      const f = e._fun;
+      const isFlat = (N.isAId(f) || N.isAIdSafeLetrec(f) || N.isAIdModref(f))
+        && isFlatEnough(FL.getAppFunFlatness(f, compiler.flatnessEnv, compiler.moduleBindings, compiler.env));
+      if (isFlat) { return false; }
+      if (compiler.inTcoLoop && TIER.isTcoSelfApp(e.appInfo, e.args.length,
+        compiler.args.length, compiler.allowTco, compiler.options.properTailCalls)) {
+        return false;  // compiles to the TCO `continue`, not a suspend site
+      }
+      return true;
+    }
+    case 'a-method-app':
+      return !compiler.flatMethodApps.has(e);
+    case 'a-prim-app':
+      return e.appInfo.needsStep;
+    case 'a-update':
+      return true;
+    case 'a-if':
+      return exprHasCapturingSite(compiler, e.t) || exprHasCapturingSite(compiler, e.e);
+    case 'a-cases': {
+      // A capturing site inside a-cases forces the Gen verdict (tier.ts
+      // inCases, v1 conservatism), so in a valid few-suspend body this
+      // always answers false; scanned with the same classifiers anyway
+      // rather than special-cased.
+      for (const br of e.branches) {
+        if (N.isACasesBranch(br)) {
+          for (const arg of (br as N.ACasesBranch$).args) {
+            if (annSuspends(compiler, arg.bind)) { return true; }
+          }
+        }
+        if (exprHasCapturingSite(compiler, br.body)) { return true; }
+      }
+      return exprHasCapturingSite(compiler, e._else);
+    }
+    default:
+      // a-lam / a-method are opaque values (their bodies are their own
+      // functions with their own verdicts); everything else is a flat form.
+      return false;
+  }
+}
+
+function exprHasCapturingSite(compiler: CompilerVisitor, e: N.AExpr): boolean {
+  let cur: N.AExpr = e;
+  for (;;) {
+    switch (cur.$name) {
+      case 'a-type-let':
+        cur = cur.body; continue;
+      case 'a-let':
+      case 'a-arr-let':
+        if (lettableHasCapturingSite(compiler, cur.e)) { return true; }
+        if (!rhsIsTcoContinue(compiler, cur.e) && annSuspends(compiler, cur.bind)) { return true; }
+        cur = cur.body; continue;
+      case 'a-var':
+        // The async codegen emits no annCheckStmts for a-var binds (see
+        // compileAexprAsync); only the RHS can be a site.
+        if (lettableHasCapturingSite(compiler, cur.e)) { return true; }
+        cur = cur.body; continue;
+      case 'a-seq':
+        if (lettableHasCapturingSite(compiler, cur.e1)) { return true; }
+        cur = cur.e2; continue;
+      case 'a-lettable':
+        return lettableHasCapturingSite(compiler, cur.e);
+      default:
+        throw new InternalCompilerError('exprHasCapturingSite: unknown expr ' + (cur as any).$name);
+    }
+  }
+}
+
 // --- O7: post-emission residual-await scan (Stage 5) ---------------------------
 // Count JAwait nodes in an emitted J AST fragment. The walk descends into
 // nested SYNC JFuns (an await there is a would-be JS SyntaxError at load time)
@@ -882,7 +1077,10 @@ export function tierShadowCompare(
   const nonFuel = countResidualAwaits(body, true);
   const s = verdict.suspendSites;
   const who = kind + ' "' + name + '" at ' + l.key();
-  if (s.capturing > 0 && nonFuel === 0) {
+  // FewSuspend bodies are exempt from the first direction: their capturing
+  // sites emit guarded return-then forms, ZERO awaits by design (the O7
+  // assertion owns that invariant).
+  if (verdict.tier !== 'few-suspend' && s.capturing > 0 && nonFuel === 0) {
     process.stderr.write('[tier-shadow] MISMATCH ' + who + ': verdict ' + verdict.tier
       + ' counted S=' + s.capturing + ' capturing site(s) but the emitted body has no non-fuel await\n');
   } else if (s.capturing === 0 && s.tail === 0 && nonFuel > 0) {
@@ -902,24 +1100,19 @@ export function compileAexprAsync(compiler: CompilerVisitor, e: N.AExpr): CList<
   // are bounded in depth) recurse, via compile-lettable-async.
   let acc: CList<J.JStmt> = clEmpty;
   let cur: N.AExpr = e;
-  // Does a let/arr-let RHS compile to the explicit-loop TCO `continue`?
-  // Same predicate compileAppAsync uses (shared helper TIER.isTcoSelfApp +
-  // inTcoLoop), re-derived here -- rule 2: never a second site list. Used by
-  // the sync TailFlat tier to elide the trailing annotation check, which is
-  // UNREACHABLE after `continue` (`fun f(n) -> T:` desugars a tail self-call
-  // to `let ans = f(...) in _checkAnn(T, ans)`); the tier walk skips that
-  // dead site for the same reason (tier.ts rhsTco), and a suspend-class dead
-  // check would otherwise leave a residual `await` in a sync body (a JS
-  // SyntaxError; O7 catches it at compile time). Gen/'async' bodies keep the
-  // (harmless) dead check so their output is unchanged by this commit.
-  const rhsIsTcoContinue = (rhs: N.ALettable): boolean => {
-    if (compiler.fnTier !== 'tail-flat' || rhs.$name !== 'a-app' || !compiler.inTcoLoop) {
-      return false;
-    }
-    const appRhs = rhs as N.AApp;
-    return TIER.isTcoSelfApp(appRhs.appInfo, appRhs.args.length, compiler.args.length,
-      compiler.allowTco, compiler.options.properTailCalls);
-  };
+  // FewSuspend (dossier B.3): a chain link whose RHS contains a capturing
+  // suspend site -- or whose bind annotation check suspends -- switches to
+  // CONTINUATION-THUNK emission: the rest of the chain is compiled ONCE
+  // through memoized thunks, so the suspend site's resume closure (built by
+  // fewSuspendSite from compiler.rest) and the walker's own fall-through
+  // emission ALIAS the same statement nodes. Each memoized part is emitted
+  // exactly once in its natural lexical position (a suspend inside ONE
+  // branch of an RHS a-if aliases the join statements that the walker emits
+  // once AFTER the jIf, which the suspend-free branch falls through to).
+  // Links without capturing sites keep the iterative fast path, so thunk
+  // recursion depth is bounded by the verdict (S <= 2, B <= 1), never by
+  // chain length.
+  const fs = compiler.fnTier === 'few-suspend';
   while (true) {
     switch (cur.$name) {
       case 'a-let': {
@@ -934,9 +1127,32 @@ export function compileAexprAsync(compiler: CompilerVisitor, e: N.AExpr): CList<
           continue;
         }
         const bindComplete = (v: J.JExprT): CList<J.JStmt> => clSing(jExpr(jAssign(jsIdOf(b.id), v)));
+        const rhsTco = rhsIsTcoContinue(compiler, cur.e);
+        if (fs && !rhsTco
+          && (annSuspends(compiler, b) || lettableHasCapturingSite(compiler, cur.e))) {
+          const outer = compiler;
+          const bodyExpr = cur.body;
+          // Local continuation parts, each memoized and emitted exactly once
+          // below; the RHS's site emitters see the composition (ann check ++
+          // rest-of-chain ++ outer rest) as compiler.rest.
+          const contThunk = memoStmts(() => compileAexprAsync(outer, bodyExpr));
+          const annStmts = annSuspends(outer, b)
+            ? memoStmts(() => fewSuspendAnnCheck(outer, b,
+              () => clAppend(contThunk(), outer.rest())))
+            : memoStmts(() => annCheckStmts(outer, b));
+          const restForRhs = (): CList<J.JStmt> =>
+            clAppend(annStmts(), clAppend(contThunk(), outer.rest()));
+          const eStmts = compileLettableAsync(ext(compiler, {
+            complete: bindComplete, tailPos: false, curLetBind: new BLet(b), rest: restForRhs,
+          }), cur.e);
+          acc = clAppend(acc, clCons(jVar(jsIdOf(b.id), UNDEFINED) as J.JStmt, eStmts));
+          // The continuation, emitted ONCE here; a resume closure built
+          // inside the RHS holds these same (aliased) statement nodes.
+          return clAppend(acc, clAppend(annStmts(), contThunk()));
+        }
         const eStmts = compileLettableAsync(ext(compiler, { complete: bindComplete, tailPos: false, curLetBind: new BLet(b) }), cur.e);
         acc = clAppend(acc, clCons(jVar(jsIdOf(b.id), UNDEFINED) as J.JStmt, eStmts));
-        if (!rhsIsTcoContinue(cur.e)) {
+        if (!rhsTco) {
           acc = clAppend(acc, annCheckStmts(compiler, b));
         }
         cur = cur.body;
@@ -946,9 +1162,29 @@ export function compileAexprAsync(compiler: CompilerVisitor, e: N.AExpr): CList<
         const b = cur.bind;
         const idx = cur.idx;
         const bindComplete = (v: J.JExprT): CList<J.JStmt> => clSing(jExpr(jBracketAssign(jId(jsIdOf(b.id)), jNum(idx), v)));
+        const rhsTco = rhsIsTcoContinue(compiler, cur.e);
+        if (fs && !rhsTco
+          && (annSuspends(compiler, b) || lettableHasCapturingSite(compiler, cur.e))) {
+          // Same continuation-thunk discipline as a-let (no binder jVar: the
+          // destination array already exists).
+          const outer = compiler;
+          const bodyExpr = cur.body;
+          const contThunk = memoStmts(() => compileAexprAsync(outer, bodyExpr));
+          const annStmts = annSuspends(outer, b)
+            ? memoStmts(() => fewSuspendAnnCheck(outer, b,
+              () => clAppend(contThunk(), outer.rest())))
+            : memoStmts(() => annCheckStmts(outer, b));
+          const restForRhs = (): CList<J.JStmt> =>
+            clAppend(annStmts(), clAppend(contThunk(), outer.rest()));
+          const eStmts = compileLettableAsync(ext(compiler, {
+            complete: bindComplete, tailPos: false, curLetBind: new BArray(b, idx), rest: restForRhs,
+          }), cur.e);
+          acc = clAppend(acc, eStmts);
+          return clAppend(acc, clAppend(annStmts(), contThunk()));
+        }
         const eStmts = compileLettableAsync(ext(compiler, { complete: bindComplete, tailPos: false, curLetBind: new BArray(b, idx) }), cur.e);
         acc = clAppend(acc, eStmts);
-        if (!rhsIsTcoContinue(cur.e)) {
+        if (!rhsTco) {
           acc = clAppend(acc, annCheckStmts(compiler, b));
         }
         cur = cur.body;
@@ -958,16 +1194,42 @@ export function compileAexprAsync(compiler: CompilerVisitor, e: N.AExpr): CList<
         const b = cur.bind;
         const temp = jsIdOf(freshId(compilerName('var_init')));
         const tempComplete = (v: J.JExprT): CList<J.JStmt> => clSing(jExpr(jAssign(temp, v)));
-        const eStmts = compileLettableAsync(ext(compiler, { complete: tempComplete, tailPos: false, curLetBind: undefined }), cur.e);
         const varDecl = compiler.unboxedVars.has(b.id.key())
           ? jVar(jsIdOf(b.id), jId(temp))
           : jVar(jsIdOf(b.id), jObj(clist<J.JFieldT>(jField('$var', jId(temp)))));
+        if (fs && lettableHasCapturingSite(compiler, cur.e)) {
+          // Continuation-thunk discipline for a suspending var-init RHS: the
+          // continuation is the var declaration (reading the temp) plus the
+          // rest of the chain. No annotation check on a-var binds.
+          const outer = compiler;
+          const bodyExpr = cur.body;
+          const contThunk = memoStmts(() =>
+            clCons(varDecl as J.JStmt, compileAexprAsync(outer, bodyExpr)));
+          const restForRhs = (): CList<J.JStmt> => clAppend(contThunk(), outer.rest());
+          const eStmts = compileLettableAsync(ext(compiler, {
+            complete: tempComplete, tailPos: false, curLetBind: undefined, rest: restForRhs,
+          }), cur.e);
+          acc = clAppend(acc, clCons(jVar(temp, UNDEFINED) as J.JStmt, eStmts));
+          return clAppend(acc, contThunk());
+        }
+        const eStmts = compileLettableAsync(ext(compiler, { complete: tempComplete, tailPos: false, curLetBind: undefined }), cur.e);
         acc = clAppend(acc, clSnoc(clCons(jVar(temp, UNDEFINED) as J.JStmt, eStmts), varDecl as J.JStmt));
         cur = cur.body;
         continue;
       }
       case 'a-seq': {
         const discardComplete = (v: J.JExprT): CList<J.JStmt> => clSing(jExpr(v));
+        if (fs && lettableHasCapturingSite(compiler, cur.e1)) {
+          const outer = compiler;
+          const bodyExpr = cur.e2;
+          const contThunk = memoStmts(() => compileAexprAsync(outer, bodyExpr));
+          const restForRhs = (): CList<J.JStmt> => clAppend(contThunk(), outer.rest());
+          const e1Stmts = compileLettableAsync(ext(compiler, {
+            complete: discardComplete, tailPos: false, curLetBind: undefined, rest: restForRhs,
+          }), cur.e1);
+          acc = clAppend(acc, e1Stmts);
+          return clAppend(acc, contThunk());
+        }
         const e1Stmts = compileLettableAsync(ext(compiler, { complete: discardComplete, tailPos: false, curLetBind: undefined }), cur.e1);
         acc = clAppend(acc, e1Stmts);
         cur = cur.e2;
@@ -1091,19 +1353,28 @@ export function compileAppAsync(compiler: CompilerVisitor, l: Loc, f: N.AVal, ar
       compiler.tokenCell.set('minted', true);
       const token = rtMethod('tailCall', clist<J.JExprT>(fCe.exp, jList(false, compiledArgs)));
       return clAppend(pre, clAppend(fnCheck, clSing(jReturn(token))));
-    } else if (isFlat || (compiler.fnTier === 'tail-flat' && compiler.tailPos)) {
-      // Flat callee: direct call, no await. TailFlat tier, tail position: the
-      // callee's result (flat value OR thenable) is RETURNED DIRECTLY -- the
-      // Awaitable ABI permits both, the caller's conditional await handles
-      // either, and every intermediate sync tail frame returns the SAME
-      // promise, so a suspended tail chain collapses to O(1) heap. This
-      // direct return IS the bounce: tokens are subsumed (mintsTokens is
-      // forced false for the tier in compileFunBody, so the mint branch
-      // above can never fire here). Keyed on compiler.fnTier -- the
-      // node-identity tier verdict, installed unconditionally at every
-      // compileFunBody entry, never inherited across a function boundary.
+    } else if (isFlat || ((compiler.fnTier === 'tail-flat' || compiler.fnTier === 'few-suspend') && compiler.tailPos)) {
+      // Flat callee: direct call, no await. Sync tier (TailFlat/FewSuspend),
+      // tail position: the callee's result (flat value OR thenable) is
+      // RETURNED DIRECTLY -- the Awaitable ABI permits both, the caller's
+      // conditional await handles either, and every intermediate sync tail
+      // frame returns the SAME promise, so a suspended tail chain collapses
+      // to O(1) heap. This direct return IS the bounce: tokens are subsumed
+      // (mintsTokens is forced false for both tiers in compileFunBody, so
+      // the mint branch above can never fire here). Keyed on
+      // compiler.fnTier -- the node-identity tier verdict, installed
+      // unconditionally at every compileFunBody entry, never inherited
+      // across a function boundary. (The tier walk counts these tail sites
+      // as non-capturing -- the ref's pattern C, zero capture.)
       const callBase = app(l, fCe.exp, compiledArgs);
       return clAppend(pre, clAppend(fnCheck, compiler.complete(callBase)));
+    } else if (compiler.fnTier === 'few-suspend') {
+      // FewSuspend capturing site: guarded return-then with the sync path
+      // falling through; the resume closure is the ANF continuation (see
+      // fewSuspendSite / the compileAexprAsync continuation thunks).
+      const callBase = app(l, fCe.exp, compiledArgs);
+      const t = freshId(compilerName('app'));
+      return clAppend(pre, clAppend(fnCheck, fewSuspendSite(compiler, t, callBase)));
     } else {
       // Conditional await (see callAndMaybeAwait): skip the microtask when the
       // callee returned a flat value synchronously; still await real thenables.
@@ -1130,13 +1401,16 @@ export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.
   // a tail token (the call is bounded). maybeMethodCall still does the dynamic
   // dispatch; only the await is elided.
   const isFlatMeth = node !== undefined && compiler.flatMethodApps.has(node);
-  // TailFlat tier, tail position: the method call's result (value or
-  // thenable) is returned DIRECTLY -- the Awaitable ABI analogue of the
-  // compileAppAsync tail direct return (see there). Must cover BOTH the
+  // Sync tier (TailFlat/FewSuspend), tail position: the method call's result
+  // (value or thenable) is returned DIRECTLY -- the Awaitable ABI analogue of
+  // the compileAppAsync tail direct return (see there). Must cover BOTH the
   // direct-dispatch arm and the maybeMethodCall funnel arm below; a missed
   // arm would emit a residual await in a sync body, which the O7 assertion
   // turns into an InternalCompilerError at compile time.
-  const tailDirect = compiler.fnTier === 'tail-flat' && compiler.tailPos;
+  const tailDirect = (compiler.fnTier === 'tail-flat' || compiler.fnTier === 'few-suspend') && compiler.tailPos;
+  // FewSuspend, non-tail non-flat: every method-app shape below funnels into
+  // ONE guarded suspend site (fewSuspendSite).
+  const fewSusp = compiler.fnTier === 'few-suspend' && !tailDirect && !isFlatMeth;
   // Direct method dispatch (de-funnelled): `obj.dict["m"].full_meth(obj, args)`
   // instead of `maybeMethodCall(obj, "m", ...)`. Fires when type-flow proved the
   // receiver is a data value on which `m` is a genuine method (node.directMethod),
@@ -1154,10 +1428,14 @@ export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.
     }
     const call = wrapWithSrcnode(l, directMethodDispatch(objExpr, methname, compiledArgs));
     if (isFlatMeth || tailDirect) {
-      // Flat method: no await. TailFlat tail position: direct return.
+      // Flat method: no await. Sync-tier tail position: direct return.
       return clAppend(pre, clAppend(preDecls, compiler.complete(call)));
     }
     const t = freshId(compilerName('mans'));
+    if (fewSusp) {
+      // FewSuspend capturing site (direct-dispatch shape).
+      return clAppend(pre, clAppend(preDecls, fewSuspendSite(compiler, t, call)));
+    }
     return clAppend(pre, clAppend(preDecls, clAppend(callAndMaybeAwait(t, call), compiler.complete(jId(t)))));
   }
   if (isFlatMeth || tailDirect) {
@@ -1188,13 +1466,30 @@ export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.
       rtMethod('maybeMethodTail',
         clAppend(clist<J.JExprT>(compiledObj, jStr(methname), compiler.getLoc(l)), compiledArgs)));
     return clAppend(pre, clSing(jReturn(token)));
-  } else if (J.isJId(compiledObj)) {
+  } else if (J.isJId(compiledObj) || fewSusp) {
+    // Funnel arm. FewSuspend NORMALIZES a non-JId receiver to a temp here
+    // (the same preDecls pattern as the flat/tail-direct arm above), so the
+    // two-armed raw-await fallback below is never reached from a sync tier:
+    // ONE guarded suspend site instead of two awaits inside a jIf (the ref
+    // counted that shape as 2 suspends + 1 branch; the fresh design and the
+    // tier walk both make it 1 site -- dossier B.3).
+    let objExpr = compiledObj;
+    let preDecls: CList<J.JStmt> = clEmpty;
+    if (!J.isJId(compiledObj)) {
+      const objId = freshId(compilerName('obj'));
+      preDecls = clSing<J.JStmt>(jVar(objId, compiledObj));
+      objExpr = jId(objId);
+    }
     const call = wrapWithSrcnode(l,
       rtMethod(helperName,
-        clAppend(clist<J.JExprT>(compiledObj, jStr(methname), compiler.getLoc(l)), compiledArgs)));
+        clAppend(clist<J.JExprT>(objExpr, jStr(methname), compiler.getLoc(l)), compiledArgs)));
     // Conditional await: a flat (synchronous) method returns a value directly;
     // only a suspending method returns a thenable. See callAndMaybeAwait.
     const t = freshId(compilerName('mans'));
+    if (fewSusp) {
+      // FewSuspend capturing site (funnel shape).
+      return clAppend(pre, clAppend(preDecls, fewSuspendSite(compiler, t, call)));
+    }
     return clAppend(pre, clAppend(callAndMaybeAwait(t, call), compiler.complete(jId(t))));
   } else {
     const objId = freshId(compilerName('obj'));
@@ -1228,6 +1523,12 @@ export function compileUpdateAsync(compiler: CompilerVisitor, l: Loc, obj: N.AVa
       jList(false, fieldLocs),
       compiler.getLoc(l),
       compiler.getLoc(obj.l)));
+  if (compiler.fnTier === 'few-suspend') {
+    // FewSuspend capturing site: checkRefAnns may run user refinement code
+    // (always a suspend site in the tier walk); same guarded form.
+    const t = freshId(compilerName('upd'));
+    return clAppend(pre, fewSuspendSite(compiler, t, call));
+  }
   return clAppend(pre, compiler.complete(jAwait(call)));
 }
 
@@ -1391,6 +1692,13 @@ export function compileLettableAsync(compiler: CompilerVisitor, e: N.ALettable):
         // Conditional await: skip the microtask when the prim returned a flat
         // value synchronously; still await a real thenable. See callAndMaybeAwait.
         const t = freshId(compilerName('prim'));
+        if (compiler.fnTier === 'few-suspend') {
+          // FewSuspend capturing site. needsStep prims capture even in tail
+          // position (the tier walk counts them so -- the pattern-C tail
+          // direct return covers only a-app/a-method-app; relaxing that must
+          // land together with its emission, or verdict/emission drift).
+          return clAppend(argsOtherStmts(argCes), fewSuspendSite(compiler, t, call));
+        }
         return clAppend(argsOtherStmts(argCes), clAppend(callAndMaybeAwait(t, call), compiler.complete(jId(t))));
       }
       return clAppend(argsOtherStmts(argCes), compiler.complete(call));
@@ -1436,10 +1744,9 @@ export function compileFunBody(
   // The function's tier verdict ('async' = the legacy -no-gen-functions
   // emission path and the toplevel module fn, which is never in the tier
   // map). Inside this function it carries the tier pass's allowTco (below);
-  // the CALLERS key their emission on it: every non-flat verdict currently
-  // takes the Gen generator+wrapper emission (see compileALam / aMethod --
-  // the TailFlat and FewSuspend bodies get their own sync forms in the next
-  // two commits, which will also key the fuel form here).
+  // the CALLERS key their emission on it: 'tail-flat' and 'few-suspend'
+  // bodies are sync jFuns (see compileALam / aMethod), 'gen' takes the
+  // generator+wrapper emission; the fuel form below keys on it too.
   tier: TIER.Tier | 'async' = 'async',
   // Gen tier: when provided, the arity-check statements are NOT emitted into
   // the body but handed back to the caller, which places them in the sync
@@ -1471,12 +1778,13 @@ export function compileFunBody(
   // token to its non-awaiting caller without leaking it). `tokenCell` records
   // whether the body actually minted one, so the caller (compile-a-lam) can choose
   // makeTailFunction (driver) vs makeFunction (zero overhead).
-  // The TailFlat tier never mints: a sync body must never return a token to a
-  // non-driving caller, and its tail direct return of the callee's (maybe-
-  // thenable) result IS the O(1) bounce -- tokens are subsumed. Forcing it
-  // here (keyed on the verdict tier) leaves tokenCell untouched, so the
-  // callers' maker selection stays makeFunction / makeMethod*.
-  const mintsTokens = canMintTokens && !isFlat && tier !== 'tail-flat';
+  // The sync tiers (TailFlat AND FewSuspend) never mint: a sync body must
+  // never return a token to a non-driving caller, and its tail direct return
+  // of the callee's (maybe-thenable) result IS the O(1) bounce -- tokens are
+  // subsumed. Forcing it here (keyed on the verdict tier) leaves tokenCell
+  // untouched, so the callers' maker selection stays makeFunction / makeMethod*.
+  const syncTier = tier === 'tail-flat' || tier === 'few-suspend';
+  const mintsTokens = canMintTokens && !isFlat && !syncTier;
   const localCompiler: CompilerVisitor = ext(compiler, {
     curStep: step,
     curApploc: apploc,
@@ -1494,6 +1802,16 @@ export function compileFunBody(
     // ext()-inherits-tailFlatMode generator leak stays structurally
     // impossible).
     fnTier: tier,
+    // RESET the FewSuspend continuation thunk at EVERY function entry.
+    // LANDMINE (risk register H; same shape as the retired ext()-inherits-
+    // tailFlatMode bug): `rest` is inheritable compile state on the ext()
+    // chain -- if a nested lambda compiled inside an outer function's RHS or
+    // continuation ever INHERITED the outer `rest`, its suspend sites would
+    // alias the OUTER function's continuation statements into the inner
+    // function's resume closures (returning the outer function's values from
+    // the inner one). Installing fnExitRest unconditionally here makes that
+    // structurally impossible, exactly like fnTier above.
+    rest: fnExitRest,
   });
   // Shadow formals, assigned immediately to the "real" arg names (mirrors the
   // cont backend; lets us reassign args for TCO without touching parameters).
@@ -1533,7 +1851,7 @@ export function compileFunBody(
     : CL.from_list(args.map((a) => jId(jsIdOf(a.id)) as J.JExprT));
   const fuelCheck: CList<J.JStmt> =
     isFlat ? clEmpty
-      : tier === 'tail-flat'
+      : syncTier
         ? clSing<J.JStmt>(jIf1(rtMethod('needsPause', clEmpty),
           jBlock1(jReturn(jMethod(rtMethod('checkPause', clEmpty), 'then',
             clSing<J.JExprT>(jFun(J.nextJFunId(), '',
@@ -1546,14 +1864,40 @@ export function compileFunBody(
   // resets step to 0 on a tail self-call, so it re-checks args too (parity). A flat
   // arg ann checks synchronously; a non-flat one awaits (ann-check-stmts gates this
   // on the same flatness verdict that decided this function is sync vs async).
-  let argAnnStmts: CList<J.JStmt> = clEmpty;
-  if (!noRealArgs) {
-    for (const arg of args) {
-      argAnnStmts = clAppend(argAnnStmts, annCheckStmts(localCompiler, arg));
+  let annsAndBody: CList<J.JStmt>;
+  if (tier === 'few-suspend' && !noRealArgs
+    && args.some((arg) => annSuspends(localCompiler, arg))) {
+    // FewSuspend: a suspend-class ARG annotation is itself a capturing
+    // suspend site whose continuation is "the remaining arg checks plus the
+    // whole body". Compile the body FIRST, then fold the checks in REVERSE,
+    // so each suspend-class check aliases its (already-compiled)
+    // continuation into the resume closure while the sync path falls
+    // through to the same statements. Sound inside the while(true) TCO
+    // loop: the verdict guarantees no TCO `continue` exists anywhere in the
+    // body when such a site exists (tier.ts sets loopUnsafe via the
+    // arg-ann capture's contTco), so the aliased continuation is
+    // `continue`-free.
+    let acc: CList<J.JStmt> = compileAexprAsync(localCompiler, body);
+    for (let i = args.length - 1; i >= 0; i--) {
+      const arg = args[i];
+      if (annSuspends(localCompiler, arg)) {
+        const contHere = acc;
+        acc = clAppend(fewSuspendAnnCheck(localCompiler, arg, () => contHere), contHere);
+      } else {
+        acc = clAppend(annCheckStmts(localCompiler, arg), acc);
+      }
     }
+    annsAndBody = acc;
+  } else {
+    let argAnnStmts: CList<J.JStmt> = clEmpty;
+    if (!noRealArgs) {
+      for (const arg of args) {
+        argAnnStmts = clAppend(argAnnStmts, annCheckStmts(localCompiler, arg));
+      }
+    }
+    annsAndBody = clAppend(argAnnStmts, compileAexprAsync(localCompiler, body));
   }
-  const visitedBodyStmts = compileAexprAsync(localCompiler, body);
-  const loopBody = clAppend(clAppend(fuelCheck, argAnnStmts), visitedBodyStmts);
+  const loopBody = clAppend(fuelCheck, annsAndBody);
   const bodyStmts: CList<J.JStmt> =
     useLoop ? clSing<J.JStmt>(jWhile(jTrue, jBlock(loopBody))) : loopBody;
   const preamble = clAppend(clAppend(profileEnter, arityStmts), copyFormalsToArgs);
@@ -2380,52 +2724,53 @@ export function compileALam(
   // the legacy async fns (the tier changes the body's FORM, not the token
   // protocol; the wrapper below is the appBody the driver pumps).
   const tokenCell: Map<string, boolean> = new Map();
-  // Emission tier. 'tail-flat' gets its own sync emission (plain jFun: every
-  // non-tail site is flat by the verdict's definition, tail sites return the
-  // callee's result directly, fuel re-enters via checkPause().then -- see
-  // compileFunBody); 'gen' and (until its sync emission lands in the next
-  // commit) 'few-suspend' take the generator+wrapper emission, a safe
-  // superset for any non-flat body. -no-tail-flat / -no-few-suspend demote
+  // Emission tier. 'tail-flat' and 'few-suspend' get sync emissions (plain
+  // jFun: tail sites return the callee's result directly and, for
+  // few-suspend, each capturing site is a guarded return-then over the ANF
+  // continuation -- see fewSuspendSite; fuel re-enters via
+  // checkPause().then in both -- see compileFunBody); 'gen' takes the
+  // generator+wrapper emission. -no-tail-flat / -no-few-suspend demote
   // inside tier.ts (the ONE demotion place -- a demoted function simply
   // arrives here with tier 'gen'); verdict === undefined is
   // -no-gen-functions (no tierMap at all): the legacy all-async emission.
   const useTailFlat = verdict !== undefined && verdict.tier === 'tail-flat';
-  const useGen = verdict !== undefined && verdict.tier !== 'flat' && !useTailFlat;
+  const useFewSuspend = verdict !== undefined && verdict.tier === 'few-suspend';
+  const useSync = isFlat || useTailFlat || useFewSuspend;
+  const useGen = verdict !== undefined && verdict.tier !== 'flat' && !useTailFlat && !useFewSuspend;
   const arityOut = useGen ? { stmts: clEmpty as CList<J.JStmt> } : undefined;
   const funBody = compileFunBody(l, newStep, temp, ext(compiler, { allowTco: true, tokenCell: tokenCell }), effectiveArgs, len, body, true, isFlat, false, true,
     verdict !== undefined ? verdict.tier : 'async', arityOut,
     verdict !== undefined ? verdict.allowTco : undefined);
   // O7: a sync (jFun) body must have ZERO residual awaits -- assert at compile
-  // time (a miss would be a JS SyntaxError at load time). Binds the Flat and
-  // TailFlat emissions; the FewSuspend arm hooks the same assertion when it
-  // lands. If a TailFlat verdict was wrong, this throw is the design working
-  // -- never a fallback to another emission.
-  if (isFlat || useTailFlat) {
+  // time (a miss would be a JS SyntaxError at load time). Binds the Flat,
+  // TailFlat and FewSuspend emissions. If a sync-tier verdict was wrong,
+  // this throw is the design working -- never a fallback to another emission.
+  if (useSync) {
     assertNoResidualAwaits(funBody, verdict !== undefined ? verdict.tier : 'flat', l);
   }
-  // TailFlat never mints (mintsTokens forced false in compileFunBody);
+  // Sync tiers never mint (mintsTokens forced false in compileFunBody);
   // tokenCell untouched is what keeps the maker below makeFunction. Tripwire,
   // not a decision: a mint here means the suppression regressed.
-  if (useTailFlat && tokenCell.has('minted')) {
+  if ((useTailFlat || useFewSuspend) && tokenCell.has('minted')) {
     throw new InternalCompilerError(
-      'tail-flat lambda "' + name + '" at ' + l.key() + ' minted a tail token');
+      (verdict as TIER.TierVerdict).tier + ' lambda "' + name + '" at ' + l.key() + ' minted a tail token');
   }
   if (verdict !== undefined && process.env.PYRET_TIER_SHADOW) {
     tierShadowCompare(verdict, funBody, 'lam', name, l);
   }
   const funArgs = CL.map_list((arg: N.ABind) => formalShadowName(arg.id), effectiveArgs);
-  // Flat AND TailFlat functions are plain synchronous jFuns (TailFlat's
-  // NAMED function expression is what its fuel check re-enters by name).
-  // Gen-tier functions compile to a generator body plus a synchronous
-  // driving wrapper (genFunStmts) so a non-suspending call returns its value
-  // flat. With -no-gen-functions (verdict === undefined) a non-flat body
-  // stays an async function so it can `await` non-flat calls and the fuel
-  // check.
+  // Flat, TailFlat AND FewSuspend functions are plain synchronous jFuns (the
+  // sync tiers' NAMED function expression is what their fuel check re-enters
+  // by name). Gen-tier functions compile to a generator body plus a
+  // synchronous driving wrapper (genFunStmts) so a non-suspending call
+  // returns its value flat. With -no-gen-functions (verdict === undefined) a
+  // non-flat body stays an async function so it can `await` non-flat calls
+  // and the fuel check.
   let funStmts: CList<J.JStmt>;
   if (useGen) {
     funStmts = genFunStmts(compiler, l, temp, funArgs, funBody, arityOut!.stmts);
   } else {
-    const theFun = (isFlat || useTailFlat)
+    const theFun = useSync
       ? jFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, funBody)
       : jAsyncFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, funBody);
     funStmts = clist<J.JStmt>(jVar(temp, theFun));
@@ -2736,6 +3081,17 @@ export class CompilerVisitor {
   // compileMethodAppAsync) and the dead-ann-check elision after a TCO
   // `continue` (compileAexprAsync).
   fnTier: TIER.Tier | 'async' = 'async';
+  // FewSuspend tier: the memoized CONTINUATION THUNK -- returns the
+  // statements from the current chain position to FUNCTION EXIT, maintained
+  // by compileAexprAsync's continuation-thunk links and consumed by
+  // fewSuspendSite to build resume closures that ALIAS the statements the
+  // sync path falls through to. LANDMINE (risk register H, the same shape
+  // as the retired ext()-inherits-tailFlatMode generator leak): this field
+  // MUST be overwritten (reset to fnExitRest) at EVERY compileFunBody entry
+  // -- see the reset there -- so a nested function can never alias an OUTER
+  // function's continuation into its own resume closures. Never read
+  // outside the 'few-suspend' tier.
+  rest: () => CList<J.JStmt> = fnExitRest;
 
   aModule(node: N.AModule): DAG.CExp {
     const l = node.l;
@@ -3000,38 +3356,41 @@ export class CompilerVisitor {
     }
     const funArgs = CL.map_list((a: N.ABind) => formalShadowName(a.id), node.args);
     const tokenCell: Map<string, boolean> = new Map();
-    // Emission tier -- same discipline as compileALam: 'tail-flat' gets the
-    // sync jFun emission; 'gen' (and 'few-suspend' until its emission lands)
-    // takes the generator+wrapper; the verdict is looked up per NODE, never
+    // Emission tier -- same discipline as compileALam: 'tail-flat' and
+    // 'few-suspend' get the sync jFun emission; 'gen' takes the
+    // generator+wrapper; the verdict is looked up per NODE, never
     // inherited compile state (retires the ref's ext()-mode-flag bug class).
     const useTailFlat = verdict !== undefined && verdict.tier === 'tail-flat';
-    const useGen = verdict !== undefined && verdict.tier !== 'flat' && !useTailFlat;
+    const useFewSuspend = verdict !== undefined && verdict.tier === 'few-suspend';
+    const useSync = isFlat || useTailFlat || useFewSuspend;
+    const useGen = verdict !== undefined && verdict.tier !== 'flat' && !useTailFlat && !useFewSuspend;
     const arityOut = useGen ? { stmts: clEmpty as CList<J.JStmt> } : undefined;
     const fullInner =
       compileFunBody(node.l, step, tempFull, ext(this, { allowTco: true, tokenCell: tokenCell }), node.args, len, node.body, true, isFlat, true, true,
         verdict !== undefined ? verdict.tier : 'async', arityOut,
         verdict !== undefined ? verdict.allowTco : undefined);
-    // O7: same assertion as compileALam's flat/tail-flat arms (see there).
-    if (isFlat || useTailFlat) {
+    // O7: same assertion as compileALam's sync-tier arms (see there).
+    if (useSync) {
       assertNoResidualAwaits(fullInner, verdict !== undefined ? verdict.tier : 'flat', node.l);
     }
-    // TailFlat mint tripwire, as in compileALam.
-    if (useTailFlat && tokenCell.has('minted')) {
+    // Sync-tier mint tripwire, as in compileALam.
+    if ((useTailFlat || useFewSuspend) && tokenCell.has('minted')) {
       throw new InternalCompilerError(
-        'tail-flat method "' + node.name + '" at ' + node.l.key() + ' minted a tail token');
+        (verdict as TIER.TierVerdict).tier + ' method "' + node.name + '" at ' + node.l.key() + ' minted a tail token');
     }
     if (verdict !== undefined && process.env.PYRET_TIER_SHADOW) {
       tierShadowCompare(verdict, fullInner, 'method', node.name, node.l);
     }
     // Gen-tier methods get the generator + sync-wrapper emission (genFunStmts);
-    // flat AND tail-flat methods are plain synchronous jFuns (tail-flat's
-    // named function expression is its fuel re-enter target);
-    // -no-gen-functions keeps the legacy async emission. Gen-tier methods keep
-    // the token protocol exactly as async methods did (the wrapper is the
-    // full_methBody the driver pumps); tail-flat methods never mint.
+    // flat, tail-flat AND few-suspend methods are plain synchronous jFuns
+    // (the sync tiers' named function expression is their fuel re-enter
+    // target); -no-gen-functions keeps the legacy async emission. Gen-tier
+    // methods keep the token protocol exactly as async methods did (the
+    // wrapper is the full_methBody the driver pumps); sync-tier methods
+    // never mint.
     const fullStmts: CList<J.JStmt> = useGen
       ? genFunStmts(this, node.l, tempFull, funArgs, fullInner, arityOut!.stmts)
-      : clist<J.JStmt>(jVar(tempFull, (isFlat || useTailFlat)
+      : clist<J.JStmt>(jVar(tempFull, useSync
         ? jFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, fullInner)
         : jAsyncFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, fullInner)));
     // A flat method never mints a token (isFlat forces mintsTokens=false), so
