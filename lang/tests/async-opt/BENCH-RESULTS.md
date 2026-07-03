@@ -60,6 +60,26 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-03 — Stage 3c': opt-facts provides section + cross-module method flatness)
+
+The schema-tagged `opt-facts` section (rule-3 design commit) + imported
+method flatness (`-no-imported-method-flat`).
+
+- New oracle `make ts-mf-test` all green: mf-01-dict 3-way differential sound
+  with flattening FIRED (guards 26 opt vs 33 base); the version-skew triple
+  (strip section / unknown field / schema-99) each run byte-identical output
+  with the conservative guard counts restored; the `Number%(p)`
+  refinement-alias pin holds (importer method stays non-flat; `:: Number`
+  control twin flattens). Fixture lesson recorded: `provide *` does not
+  export type aliases — `provide-types *`.
+- O1 cont byte-parity 16/16 PASS. O3 13210 green, O4 12778 green.
+- O5 N=5: parity 16/16, geomean **1.040** (from 1.048). spell 0.86.
+  plagiarism read 1.26 (up from 1.21) but the mechanism demonstrably fires
+  there — emitted guards drop 46 → 40 with imported flatness on — so the
+  reading is same-day noise; its structural drop waits on the tier stage.
+- O6 interleaved N=3 medians: cont 234.6 s vs promise 247.2 s → p/c 1.05
+  (1.03–1.05 band across the last two stages).
+
 ## Results (2026-07-03 — Stage 3b/3c: operator weakening + in-module method flatness)
 
 Two commits measured together (same-day frozen cont, fresh caches, jarr
