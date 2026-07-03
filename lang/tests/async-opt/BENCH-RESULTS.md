@@ -60,6 +60,32 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-04 — Stage 5 complete: TailFlat + FewSuspend land; WALL-CLOCK PARITY)
+
+The two sync tiers on top of the tier pass + Gen tier. All four tier oracles
+green (verdicts 36/36; gen 7/7; tail-flat 10/10 incl. 2M-deep suspending
+chains under a 256MB cap; few-suspend 10/10 incl. raise-identity pins both
+sides of the guard); PYRET_TIER_SHADOW sweep over the full main2-compile
+build: ZERO verdict-vs-emission mismatches; O7 zero across everything;
+-no-tail-flat / -no-few-suspend A/B output-identical across the 57-program
+tc corner suite.
+
+- O1 cont byte-parity 16/16 PASS. O3-compile 483 green. mf green. exec green.
+- O5 (primary, N=5): parity 16/16, geomean **0.886**. Signature moves:
+  **plagiarism 1.36 → 0.71** (few-suspend; the discovery branch measured
+  0.74 for the same lever), boids-compute-data 0.71, vec-methods 0.51,
+  matrix 0.80, car-compute 0.80, dtree 0.90, seam 0.92. Worst bench:
+  orbital-compute 1.06 (representation costs — Stage 7's target).
+- O6 interleaved N=3 medians: cont 228.3 s vs promise 228.9 s →
+  **p/c 1.00 — whole-suite wall-clock parity with frozen cont** (promise won
+  round 2 outright). Baseline was 1.19; the campaign's remaining stages
+  (runtime sweep, object representation) target the 0.80 acceptance bound.
+- Cross-box corroboration: the timing box reads geomean **0.891** against its
+  string-dict-enabled (harsher) frozen cont, parity 16/16. (Its first run
+  crashed with 'R.rejP is not a function' — the build/phaseA/js runtime copy
+  was stale there: the EMBEDDED-runtime landmine has TWO copies to refresh,
+  phaseA and ts-compiler, and the standalone embeds the phaseA one.)
+
 ## Results (2026-07-03 — Stage 5: tier analysis + Gen tier)
 
 Two commits: the ANF tier pass (emission-neutral; verdict oracle 11/11;
