@@ -19,6 +19,11 @@ define("pyret-base/js/exn-stack-parser", ["source-map"], function(sourceMap) {
     var matchedLoc2 = line.match(matchInnerEvalLocationFirefoxSafari);
     var matchedLoc3 = line.match(matchInnerEvalLocationIE);
     var matchedLoc = matchedLoc1 || matchedLoc2 || matchedLoc3;
+    // A generator resume trampoline frame ("at NAME.next (<anonymous>)", from
+    // the promise backend's generator-compiled functions) carries a hashed
+    // Pyret module name but no line/column; drop it rather than crash -- the
+    // body's own located frame appears separately in the same stack.
+    if (matchedLoc === null || matchedURI === null) { return null; }
     return {
       startLine: matchedLoc[1],
       startCol: matchedLoc[2],
@@ -28,7 +33,7 @@ define("pyret-base/js/exn-stack-parser", ["source-map"], function(sourceMap) {
 
   function parseStack(stacktrace) {
     var lines = stacktrace.split("\n");
-    return lines.filter(isSourcePyretFrame).map(parseFrame);
+    return lines.filter(isSourcePyretFrame).map(parseFrame).filter(function(f) { return f !== null; });
   }
 
   function convertExceptionToPyretStackTrace(e, realm) {
