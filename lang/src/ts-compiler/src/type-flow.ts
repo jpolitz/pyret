@@ -128,6 +128,27 @@ interface Ctx {
   // type. Imported types aren't here (their data-exprs aren't in this ANF) ->
   // those fields stay Any.
   typeVariants: Map<string, Map<string, A.Ann[]>>;
+  // dataId -> variantName -> set of that variant's OWN data-field names. Unlike
+  // fieldTypes (the cross-variant intersection), this is per-variant, so when a
+  // value's type is known down to its variant (e.g. `self` inside that variant's
+  // method) EVERY field of that variant is a safe direct read. Used by
+  // tagDirectFields.
+  variantFieldNames: Map<string, Map<string, Set<string>>>;
+  // dataId -> variantName -> set of method names defined in that variant's `with:`
+  // block, and dataId -> set of `sharing:` method names (present on every variant).
+  // Used by tagDirectMethods: `obj.m(args)` can dispatch directly when `m` is a
+  // shared method, the known variant's own method, or a method every variant has.
+  variantMethodNames: Map<string, Map<string, Set<string>>>;
+  sharedMethodNames: Map<string, Set<string>>;
+  // Cross-module direct dispatch: `uri#name#method` keys for every method an
+  // IMPORTED type declares in its serialized method-flatness table (the same
+  // provides channel cross-module method-flatness rides). A method in this table
+  // is genuine, present, and flat by construction -- so `obj.dict[m].full_meth`
+  // is safe (this also excludes function-valued fields, which never enter the
+  // flatness table). Lets `sd.get-value(k)` / imported List.map etc. dispatch
+  // directly even though their data-exprs aren't in this module's ANF. Empty
+  // unless the caller enabled importedMethodFlat.
+  importedMethods: Set<string>;
   // in-module type aliases: `type X = ann` binding key -> ann. Followed when
   // resolving an annotation so e.g. `type NonZeroNat = Number%(p)` resolves to
   // its base Number for the upper bound (while still never eliding its own
@@ -664,10 +685,27 @@ function collectBind(key: string, e: N.ALettable, ctx: Ctx, dataObjs: Map<string
     // field refinement.
     let vmap = ctx.typeVariants.get(id);
     if (vmap === undefined) { vmap = new Map(); ctx.typeVariants.set(id, vmap); }
+    let fnmap = ctx.variantFieldNames.get(id);
+    if (fnmap === undefined) { fnmap = new Map(); ctx.variantFieldNames.set(id, fnmap); }
+    let vmeth = ctx.variantMethodNames.get(id);
+    if (vmeth === undefined) { vmeth = new Map(); ctx.variantMethodNames.set(id, vmeth); }
+    let smeth = ctx.sharedMethodNames.get(id);
+    if (smeth === undefined) { smeth = new Set(); ctx.sharedMethodNames.set(id, smeth); }
+    // Initialize an (empty) method-name set per variant; recordMember below fills
+    // them with ONLY genuine methods. A with:/sharing: member can hold a plain
+    // FUNCTION (its value is an a-lam, not an a-method) -- `obj.dict[name]` is then
+    // a PFunction (.app), NOT a PMethod (.full_meth) -- so recording every member
+    // name blindly would mis-dispatch it via .full_meth. recordMember resolves the
+    // method bind node, so only true methods land in these sets.
     for (const v of e.variants) {
       if (N.isAVariant(v)) {
         vmap.set(v.name, v.members.map((m) => m.bind.ann));
+        fnmap.set(v.name, new Set(v.members.map((m) => m.bind.id.toname())));
+      } else {
+        // singleton variant: no fields
+        fnmap.set(v.name, new Set());
       }
+      if (!vmeth.has(v.name)) { vmeth.set(v.name, new Set()); }
     }
     // Associate each method member (a withMembers field on a variant, or a
     // data-level shared field, whose value is an a-id to the method's let-binding)
@@ -681,6 +719,9 @@ function collectBind(key: string, e: N.ALettable, ctx: Ctx, dataObjs: Map<string
         const node = ctx.methodBindNodes.get(val.id.key());
         if (node !== undefined) {
           ctx.methodOf.set(node, { dataId: id, methodName: fieldName, variant });
+          // Genuine method (its value is an a-method) -> safe for direct dispatch.
+          if (variant !== undefined) { ctx.variantMethodNames.get(id)?.get(variant)?.add(fieldName); }
+          else { ctx.sharedMethodNames.get(id)?.add(fieldName); }
           // Record the method's declared return-ann ub (joined over variants).
           const rt = annUpperBound(node.ret, ctx);
           if (rt !== undefined) {
@@ -828,6 +869,10 @@ function newCtx(
     funRet: new Map(),
     valueSources: new Map(),
     typeVariants: new Map(),
+    variantFieldNames: new Map(),
+    variantMethodNames: new Map(),
+    sharedMethodNames: new Map(),
+    importedMethods: new Set(),
     typeAliases: new Map(),
     typeBindings: pe.typeBindings,
     moduleBindings: pe.moduleBindings,
@@ -1132,6 +1177,140 @@ class WeakenVisitor extends N.DefaultMapVisitor {
     this.count.n += 1;
     const newFun = new N.AId(node._fun.l, new A.SGlobal(weak));
     return new N.AApp(node.l, newFun, node.args, node.appInfo);
+  }
+}
+
+// Does an imported/native type's serialized DataType carry `field` where the
+// receiver guarantees it? Mirrors directCases' resolver (env.datatypeByUri gives
+// the full variant structure cross-module): on the known variant, or -- variant
+// unknown -- on EVERY variant (so it is present on any value of the type). A `.`
+// read returns a ref field's box as-is, matching getField, so no ref handling.
+function importedFieldOk(obj: AbsType, field: string, ctx: Ctx): boolean {
+  if (obj.k !== 'data') { return false; }
+  const hash = obj.id.lastIndexOf('#');
+  if (hash < 0) { return false; }
+  const uri = obj.id.slice(0, hash), name = obj.id.slice(hash + 1);
+  if (!ctx.compileEnv.allModules.has(uri)) { return false; }
+  let de: C.DataExport | undefined;
+  try { de = ctx.compileEnv.datatypeByUri(uri, name); } catch (_e) { return false; }
+  if (de === undefined || !C.isDType(de)) { return false; }
+  const dt = de.typ;
+  if (dt === undefined) { return false; }
+  const hasField = (v: T.TypeVariant): boolean => T.variantFieldGet(v.fields, field) !== undefined;
+  if (obj.variant !== undefined) {
+    const v = dt.getVariant(obj.variant);
+    return v !== undefined && hasField(v);
+  }
+  return dt.variants.length > 0 && dt.variants.every(hasField);
+}
+
+// Is `obj.field` a safe direct data-field read? Yes when the receiver resolves to
+// a data type and `field` is (a) one of the receiver's KNOWN VARIANT's own fields
+// -- `self` inside that variant's method is exactly that variant, so every one of
+// its fields is present -- or, failing a known variant, (b) in the cross-variant
+// intersection (present on every variant). Excludes methods either way (neither
+// map records method members).
+function directFieldOk(obj: AbsType, field: string, ctx: Ctx): boolean {
+  if (obj.k !== 'data') { return false; }
+  if (obj.variant !== undefined) {
+    const vf = ctx.variantFieldNames.get(obj.id)?.get(obj.variant);
+    if (vf !== undefined && vf.has(field)) { return true; }
+  }
+  if (fieldTypeOf(obj, field, ctx) !== undefined) { return true; }
+  return importedFieldOk(obj, field, ctx);
+}
+
+// Is `obj.meth(...)` a safe direct method dispatch? Yes when the receiver resolves
+// to a data type and `meth` is guaranteed to be a genuine method in the runtime
+// value's dict: a `sharing:` method (on every variant), the KNOWN variant's own
+// `with:` method, or -- when the variant is unknown -- a method every variant
+// defines. Then `obj.dict["meth"]` is always a Method, so `.full_meth(obj,args)`
+// is exactly what maybeMethodCall's isMethod branch does, minus the funnel.
+function directMethodOk(obj: AbsType, meth: string, ctx: Ctx): boolean {
+  if (obj.k !== 'data') { return false; }
+  if (ctx.sharedMethodNames.get(obj.id)?.has(meth)) { return true; }
+  // Imported / native type (no in-module data-expr): fall back to its serialized
+  // flat-method table. `obj.id` is already `uri#name`.
+  if (ctx.importedMethods.has(obj.id + '#' + meth)) { return true; }
+  const vm = ctx.variantMethodNames.get(obj.id);
+  if (vm === undefined || vm.size === 0) { return false; }
+  if (obj.variant !== undefined) {
+    return vm.get(obj.variant)?.has(meth) ?? false;
+  }
+  // Unknown variant: safe only if every variant defines the method.
+  for (const [, mset] of vm) { if (!mset.has(meth)) { return false; } }
+  return true;
+}
+
+class TagDotVisitor extends N.DefaultMapVisitor {
+  constructor(private ctx: Ctx, private count: { n: number }) { super(); }
+  aDot(node: N.ADot): N.ALettable {
+    const newObj = node.obj.visit(this) as N.AVal;
+    if (directFieldOk(absOfVal(node.obj, this.ctx), node.field, this.ctx)) {
+      this.count.n += 1;
+      return new N.ADot(node.l, newObj, node.field, true);
+    }
+    return new N.ADot(node.l, newObj, node.field, node.directField);
+  }
+  aMethodApp(node: N.AMethodApp): N.ALettable {
+    const newObj = node.obj.visit(this) as N.AVal;
+    const newArgs = node.args.map((a) => a.visit(this) as N.AVal);
+    if (directMethodOk(absOfVal(node.obj, this.ctx), node.meth, this.ctx)) {
+      this.count.n += 1;
+      return new N.AMethodApp(node.l, newObj, node.meth, newArgs, true);
+    }
+    return new N.AMethodApp(node.l, newObj, node.meth, newArgs, node.directMethod);
+  }
+}
+
+// Tags each `obj.field` read whose receiver's upper-bound type resolves to a
+// data type carrying `field` as a plain data field on EVERY variant (exactly the
+// `fieldTypes` intersection collectBind already computes -- so this excludes
+// methods and partial fields). Such a read is guaranteed present and non-method,
+// so codegen can emit `obj.dict["field"]` directly instead of routing through the
+// one megamorphic `getField`. Mirrors directCases: sound because the receiver is
+// proven of that type by the type checker OR its runtime `_checkAnn` (the caller
+// gates on valueIsTyped). For `.`-access, a ref field is returned as-is by
+// getField, and the direct dict read returns the same box -- so no derefField.
+// Also tags each `obj.meth(args)` whose receiver/method pair passes directMethodOk
+// for direct `obj.dict["meth"].full_meth(obj, args)` dispatch. An ANF -> ANF
+// rewrite, so (like weakenOperators) it MUST run before the identity-keyed
+// pre-passes (makeProgMethodInfo) and codegen.
+export function tagDirectFields(
+  anfed: N.AProg,
+  postEnv: C.ComputedEnvironment,
+  env: C.CompileEnvironment,
+  moduleUri: string,
+  importedMethodFlat: boolean,
+): N.AProg {
+  const dummyFlat: FL.FlatnessEnv = [new Map(), new Map(), new Set(), new Set(), new Map()];
+  const ctx = newCtx(postEnv, env, dummyFlat, moduleUri, false);
+  // Seed cross-module direct-dispatchable methods from every imported type's
+  // serialized flat-method table (same source as buildImportedFlatMethods).
+  if (importedMethodFlat) {
+    for (const [uri, loadable] of env.allModules) {
+      for (const [name, de] of loadable.provides.dataDefinitions) {
+        if (C.isDType(de)) {
+          for (const [meth] of de.methodFlatness) { ctx.importedMethods.add(uri + '#' + name + '#' + meth); }
+        }
+      }
+    }
+  }
+  try {
+    runTypeFlow(anfed, ctx);
+    const count = { n: 0 };
+    const newBody = anfed.body.visit(new TagDotVisitor(ctx, count)) as N.AExpr;
+    const out = new N.AProgram(anfed.l, anfed.provides, anfed.imports, newBody);
+    if (process.env.PYRET_TF_DEBUG) {
+      process.stderr.write(`[direct-fields ${moduleUri}] tagged=${count.n}\n`);
+    }
+    return out;
+  } catch (_e) {
+    // Optimization only: fail safe to "tag nothing".
+    if (process.env.PYRET_TF_DEBUG) {
+      process.stderr.write(`[direct-fields ${moduleUri}] FAILED: ${(_e as any)?.stack ?? _e}\n`);
+    }
+    return anfed;
   }
 }
 

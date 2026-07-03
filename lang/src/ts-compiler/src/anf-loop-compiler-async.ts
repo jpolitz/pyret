@@ -309,6 +309,14 @@ export function getDictField(obj: J.JExprT, field: J.JExprT): J.JExprT {
   return jBracket(jDot(obj, 'dict'), field);
 }
 
+// Direct method dispatch: `obj.dict["m"].full_meth(obj, ...args)`. Sound only when
+// `m` is statically known to be a genuine method in obj's dict (see type-flow
+// directMethodOk); obj must be a JId (evaluated once). Mirrors what
+// maybeMethodCall's isMethod branch does, without the runtime-helper funnel.
+function directMethodDispatch(obj: J.JExprT, methname: string, args: CList<J.JExprT>): J.JExprT {
+  return jApp(jDot(getDictField(obj, jStr(methname)), 'full_meth'), clCons(obj, args));
+}
+
 // Use when we're sure the field will exist
 export function getFieldUnsafe(obj: J.JExprT, field: J.JExprT, locExpr: J.JExprT): J.JExprT {
   return jApp(getFieldLoc, clist(obj, field, locExpr));
@@ -909,6 +917,29 @@ export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.
   // a tail token (the call is bounded). maybeMethodCall still does the dynamic
   // dispatch; only the await is elided.
   const isFlatMeth = node !== undefined && compiler.flatMethodApps.has(node);
+  // Direct method dispatch (de-funnelled): `obj.dict["m"].full_meth(obj, args)`
+  // instead of `maybeMethodCall(obj, "m", ...)`. Fires when type-flow proved the
+  // receiver is a data value on which `m` is a genuine method (node.directMethod),
+  // so we skip the getColonFieldLoc/isMethod/isFunction funnel and give V8 a
+  // per-site constant-key call it can build an IC for. Handles every non-tail
+  // shape uniformly (flat -> no await; else conditional await); the safe-for-space
+  // tail-token path below still routes through maybeMethodTail.
+  if (node !== undefined && node.directMethod && !(compiler.mintsTokens && compiler.tailPos)) {
+    let objExpr = compiledObj;
+    let preDecls: CList<J.JStmt> = clEmpty;
+    if (!J.isJId(compiledObj)) {
+      const objId = freshId(compilerName('obj'));
+      preDecls = clSing<J.JStmt>(jVar(objId, compiledObj));
+      objExpr = jId(objId);
+    }
+    const call = wrapWithSrcnode(l, directMethodDispatch(objExpr, methname, compiledArgs));
+    if (isFlatMeth) {
+      // Flat method: no await.
+      return clAppend(pre, clAppend(preDecls, compiler.complete(call)));
+    }
+    const t = freshId(compilerName('mans'));
+    return clAppend(pre, clAppend(preDecls, clAppend(callAndMaybeAwait(t, call), compiler.complete(jId(t)))));
+  }
   if (isFlatMeth) {
     let objExpr = compiledObj;
     let preDecls: CList<J.JStmt> = clEmpty;
@@ -2481,7 +2512,14 @@ export class CompilerVisitor {
 
   aDot(node: N.ADot): DAG.CExp {
     const visitObj: DAG.CExp = node.obj.visit(this);
-    return cExp(getFieldSafe(node.l, visitObj.exp, jStr(node.field), this.getLoc(node.l)),
+    // A type-flow-proven plain data field (`directField`) reads straight from the
+    // dict -- no getField call, method-curry check, or missing/non-object guard,
+    // and each site is its own low-polymorphism access instead of the megamorphic
+    // getField funnel. Same soundness basis as directCases.
+    const baseRead = node.directField
+      ? getDictField(visitObj.exp, jStr(node.field))
+      : getFieldSafe(node.l, visitObj.exp, jStr(node.field), this.getLoc(node.l));
+    return cExp(baseRead,
       clSnoc(visitObj.otherStmts, jExpr(jAssign(this.curApploc, this.getLoc(node.l))) as J.JStmt));
   }
 

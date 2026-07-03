@@ -1,3 +1,5 @@
+import either as DF-E
+
 data MutCar:
   | mpair(ref car, cdr)
 end
@@ -218,4 +220,77 @@ check "direct cases: scrutinee not of the cases type raises the annotation error
   # garbage fields or fall through.
   cases(List) 5:     | empty => 0 | link(f, r) => f end raises "List"
   cases(Option) "x": | none => 0 | some(v) => v end raises "Option"
+end
+
+# Regression checks for the promise backend's direct field access / direct
+# method dispatch (the -no-direct-fields optimization, type-flow tagDirectFields).
+# These must behave identically with the optimization on or off and in both
+# backends -- the cont backend always uses the reflective getField /
+# maybeMethodCall path, so running this file in both backends pins the paths
+# against each other.
+
+data DfTree:
+  | dfleaf(val :: Number) with:
+    method sum(self) -> Number: self.val end
+  | dfnode(left :: DfTree, right :: DfTree) with:
+    # `self` here is known to be the dfnode variant, so self.left/self.right are
+    # per-variant direct reads (they are NOT in the cross-variant intersection:
+    # dfleaf has neither).
+    method sum(self) -> Number: self.left.sum() + self.right.sum() end
+end
+
+check "direct fields: per-variant self.field inside a variant's own method":
+  t = dfnode(dfleaf(1), dfnode(dfleaf(2), dfleaf(3)))
+  t.sum() is 6
+  dfleaf(7).sum() is 7
+end
+
+check "direct fields: cross-module field access via the imported DataType":
+  # Either's `left`/`right` variants both carry `v`, so a `:: Either`-annotated
+  # value's `.v` is a direct read resolved through env.datatypeByUri.
+  e1 :: DF-E.Either = DF-E.left(5)
+  e2 :: DF-E.Either = DF-E.right("ok")
+  e1.v is 5
+  e2.v is "ok"
+end
+
+data DfHelper:
+  | dfhelp(n :: Number) with:
+    # A with: member whose value is a plain FUNCTION, not a method: obj.dict["bump"]
+    # is a PFunction (.app), not a PMethod (.full_meth). Direct method dispatch must
+    # NOT fire for it (recordMember resolves the method bind node, so only genuine
+    # methods enter the direct-dispatch sets); the maybeMethodCall function branch
+    # must still handle it.
+    bump: lam(x :: Number) -> Number: x + 1 end
+end
+
+check "direct fields: a plain-function-valued with: member is not direct-dispatched":
+  h = dfhelp(0)
+  h.bump(41) is 42
+end
+
+data DfCell:
+  | dfcell(v :: Number) with:
+    method get(self) -> Number: self.v end
+end
+
+fun df-checked-get(c :: DfCell) -> Number:
+  # This call site IS eligible for direct dispatch (receiver ub is DfCell, `get`
+  # on its only variant) -- and stays sound because the `:: DfCell` check runs
+  # before it on every entry.
+  c.get()
+end
+
+check "direct fields: functional extend still dispatches to the override":
+  c = dfcell(3)
+  c.get() is 3
+  c2 = c.{get: method(self) -> Number: 42 end}
+  # Unannotated receiver: the extended value's ub is not DfCell (a-extend is
+  # Any), so no direct dispatch may be tagged here; the override must win.
+  c2.get() is 42
+  # Annotated path: the extend stripped the brand, so the direct-dispatch-tagged
+  # call in df-checked-get can never see an overridden receiver -- the `:: DfCell`
+  # check raises first.
+  df-checked-get(c) is 3
+  df-checked-get(c2) raises "DfCell"
 end

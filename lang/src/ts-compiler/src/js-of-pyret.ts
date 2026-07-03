@@ -128,11 +128,26 @@ export function traceMakeCompiledPyret(
   // identity for the method maps, bind keys for ann elision) the weakened ANF
   // object graph, never the raw one. Gated like ann elision: the ub facts rest on
   // the runtime ann checks.
-  const anfed =
+  const anfedWeak =
     (C.isPromise(options.stackBackend) && options.opWeakening
       && options.runtimeAnnotations && options.userAnnotations)
       ? addPhase('Operator weakening', TF.weakenOperators(anfedRaw, postEnv, env, provides.fromUri))
       : anfedRaw;
+  // Direct static field access (promise backend only): tag each `obj.field` whose
+  // receiver's upper-bound type resolves to a data type carrying `field` on every
+  // variant (and each `obj.m(...)` whose `m` is a proven genuine method), so
+  // codegen emits `obj.dict["field"]` / direct `.full_meth` dispatch instead of
+  // the reflective/megamorphic getField / maybeMethodCall funnel. An ANF->ANF
+  // rewrite like weakening, so it runs BEFORE the identity-keyed method-receiver
+  // pre-pass and codegen. Gated like directCases: the type facts rest on the
+  // runtime `_checkAnn` (or the static type proof), so self-disable unless
+  // annotations are intact or type-checking is on.
+  const valueIsTyped = options.typeCheck
+    || (options.runtimeAnnotations && options.userAnnotations);
+  const anfed =
+    (C.isPromise(options.stackBackend) && options.directFields && valueIsTyped)
+      ? addPhase('Direct field tagging', TF.tagDirectFields(anfedWeak, postEnv, env, provides.fromUri, options.importedMethodFlat))
+      : anfedWeak;
   // Method-call flatness (promise backend only): a receiver-type pre-pass resolves
   // each method call's receiver to a concrete in-module data type and feeds the
   // flatness pass so it can analyze that type's methods. Gated like the type-flow

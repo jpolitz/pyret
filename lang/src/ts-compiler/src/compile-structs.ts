@@ -1110,6 +1110,16 @@ export interface CompileOptions {
   // the static type proof under -type-check) guarantees the value is of the type,
   // making the static names sound. It's a codegen choice in the async backend.
   directCases: boolean;
+  // Direct (static) field access for `obj.field` reads and direct method dispatch
+  // for `obj.m(...)` calls (type-flow tagDirectFields; promise backend only). On
+  // by default; -no-direct-fields disables it for A/B. When the receiver's
+  // upper-bound type resolves to a data type carrying `field` on every variant
+  // (or on the statically-known variant), the read becomes a direct
+  // `obj.dict["field"]` instead of the reflective/megamorphic getField call; when
+  // `m` is a proven genuine method, the call dispatches via
+  // `obj.dict["m"].full_meth(obj, ...)` instead of the maybeMethodCall funnel.
+  // Same soundness basis as directCases (self-disables unless valueIsTyped).
+  directFields: boolean;
   // Redundant annotation-check elimination driven by the upper-bound type-flow
   // analysis (type-flow.ts; promise backend only). On by default; -no-ann-elision
   // disables it for A/B measurement. When the analysis proves an `:: T` bind's
@@ -1192,6 +1202,7 @@ export const defaultCompileOptions: CompileOptions = {
   properTailCalls: true,
   effectTailCalls: true,
   directCases: true,
+  directFields: true,
   annElision: true,
   methodFlatness: true,
   importedMethodFlat: true,
