@@ -60,6 +60,29 @@ tests/async-opt/run-bench-table.sh 3
 
 A full N=3 table runs in ~4–5 min (~90 s at N=1).
 
+## Results (2026-07-04 — Stage 6: runtime maybe-promise sweep — equality + iteration)
+
+Two runtime-only commits (equality core: scalar fast path before any
+worklist allocation, sync worklist escaping to async only on actual user
+_equals suspension, lazy equalFunPy, Map-based seen-pairs preserving the
+index/settle protocol; iteration: resumable-loop conversions for
+raw_array_*/raw_list_*/join_str_last/eachLoop/folds). Runtime drill done on
+BOTH embedded copies. New adversarial suite test-maybe-promise-equality.arr
+(44 pins: within(0) truthiness both paths, 131k-pair Map-cache stress, DAG +
+ref-cycle settle protocol, forced-suspension _equals, scalar member/is).
+First battery run caught the new test file matching `raises` against the
+rendered English instead of the value repr — fixed to the established
+"Roughnum" pin string; suite then 13004/13004 green.
+
+- O1 cont byte-parity 16/16 PASS. O3-compile 483 green. mf green.
+- O5 (primary, N=5): parity 16/16, geomean **0.861**. kmeans 1.02 → 0.88,
+  dtree 0.90 → 0.86, spell 0.83, plagiarism 0.70, vec-methods 0.47.
+  Above 1.02 now only: lander 1.07, orbital-ems 1.04 (record-allocation
+  benches — Stage 7's exact targets).
+- O6 interleaved N=3 medians: cont 228.1 s vs promise 178.0 s →
+  **p/c 0.78 — below the 0.80 acceptance bound** (from parity at Stage 5;
+  the suite's equality/iteration traffic is where this sweep lives).
+
 ## Results (2026-07-04 — Stage 5 complete: TailFlat + FewSuspend land; WALL-CLOCK PARITY)
 
 The two sync tiers on top of the tier pass + Gen tier. All four tier oracles
