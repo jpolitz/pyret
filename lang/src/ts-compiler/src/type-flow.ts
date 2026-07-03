@@ -1248,9 +1248,9 @@ class TagDotVisitor extends N.DefaultMapVisitor {
     const newObj = node.obj.visit(this) as N.AVal;
     if (directFieldOk(absOfVal(node.obj, this.ctx), node.field, this.ctx)) {
       this.count.n += 1;
-      return new N.ADot(node.l, newObj, node.field, true);
+      return new N.ADot(node.l, newObj, node.field, node.cacheVar, true);
     }
-    return new N.ADot(node.l, newObj, node.field, node.directField);
+    return new N.ADot(node.l, newObj, node.field, node.cacheVar, node.directField);
   }
   aMethodApp(node: N.AMethodApp): N.ALettable {
     const newObj = node.obj.visit(this) as N.AVal;

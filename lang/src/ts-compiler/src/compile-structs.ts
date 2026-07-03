@@ -1100,6 +1100,17 @@ export interface CompileOptions {
   // default; -no-effect-tail-calls disables it to recover the un-optimized
   // baseline (used as a differential-testing correctness oracle).
   effectTailCalls: boolean;
+  // ANF optimizer middle-end (inliner + CSE + LICM; promise backend only). On by
+  // default; -no-optimize disables it to recover the un-optimized baseline.
+  optimize: boolean;
+  // Loop-invariant code motion (field-read `??=` caching) within the optimizer.
+  // On by default; -no-licm disables just this pass (inliner + CSE still run),
+  // for A/B measurement. Inert unless `optimize` is on.
+  licm: boolean;
+  // Emit a `// inlined: <callee>` comment at each inliner splice site (promise
+  // backend). Off by default; -inline-comments turns it on for inspecting the
+  // optimizer. Inert unless the optimizer runs.
+  inlineComments: boolean;
   // Direct (static) field access for `cases` (promise backend only). On by
   // default; -no-direct-cases disables it for A/B measurement. When the cases
   // scrutinee's type resolves to concrete variant metadata, the matched branch
@@ -1201,6 +1212,9 @@ export const defaultCompileOptions: CompileOptions = {
   ignoreUnbound: false,
   properTailCalls: true,
   effectTailCalls: true,
+  optimize: true,
+  licm: true,
+  inlineComments: false,
   directCases: true,
   directFields: true,
   annElision: true,

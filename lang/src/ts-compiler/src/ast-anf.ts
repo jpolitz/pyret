@@ -612,7 +612,7 @@ export class AMethodApp extends ALettableBase {
   get $name(): 'a-method-app' { return 'a-method-app'; }
   // `directMethod`, when true, marks this call's receiver as statically known to
   // be a data type on which `meth` is a genuine method present on the runtime
-  // variant (resolved by type-flow's tagDirectFields). Codegen then dispatches
+  // variant (resolved by type-flow's tagDirectMethods). Codegen then dispatches
   // via `obj.dict["meth"].full_meth(obj, args)` instead of the reflective
   // `maybeMethodCall(obj, "meth", ...)` runtime helper -- skipping the
   // getColonFieldLoc / isMethod / isFunction funnel and, crucially, de-funnelling
@@ -707,6 +707,12 @@ export class AExtend extends ALettableBase {
 
 export class ADot extends ALettableBase {
   get $name(): 'a-dot' { return 'a-dot'; }
+  // `cacheVar`, when set, names a plain JS variable declared in the loop
+  // preheader that memoizes this (loop-invariant, immutable) field read across
+  // iterations -- the promise-backend codegen emits `cacheVar ??= getField(...)`
+  // (see optimize-anf.ts LICM and anf-loop-compiler-async.ts aDot). It is never
+  // set by anfProgram itself; only the ANF optimizer introduces it.
+  //
   // `directField`, when true, marks this read as a plain data field whose
   // receiver is statically known to be a data type carrying `field` on every
   // variant (resolved by type-flow's tagDirectFields). Codegen then emits the
@@ -714,12 +720,7 @@ export class ADot extends ALettableBase {
   // call -- skipping the method-curry / missing-field / non-object dispatch and,
   // crucially, de-funnelling: each read becomes its own low-polymorphism access
   // site instead of routing through the one megamorphic getField `dict[field]`.
-  //
-  // NOTE(param slot): the reference branch's ctor is
-  // `(l, obj, field, cacheVar?, directField?)` -- `cacheVar` is the Stage-4 LICM
-  // memoization cell, deliberately NOT ported here. When Stage 4 lands, insert
-  // `cacheVar?: A.Name` BEFORE `directField` to restore the reference signature.
-  constructor(public l: Loc, public obj: AVal, public field: string, public directField?: boolean) { super(); }
+  constructor(public l: Loc, public obj: AVal, public field: string, public cacheVar?: A.Name, public directField?: boolean) { super(); }
   visit(visitor: any): any { return visitor.aDot(this); }
   label(): string { return 'a-dot'; }
   tosource(): PP.PPrintDoc { return PP.infix(INDENT, 0, strPeriod, this.obj.tosource(), PP.str(this.field)); }
@@ -1174,7 +1175,7 @@ export class DefaultMapVisitor {
     return new AExtend(node.l, node.supe.visit(this), node.fields.map((f) => f.visit(this)));
   }
   aDot(node: ADot): ALettable {
-    return new ADot(node.l, node.obj.visit(this), node.field, node.directField);
+    return new ADot(node.l, node.obj.visit(this), node.field, node.cacheVar, node.directField);
   }
   aColon(node: AColon): ALettable {
     return new AColon(node.l, node.obj.visit(this), node.field);
@@ -1513,7 +1514,13 @@ export function freevarsLAcc(e: ALettable, seenSoFar: NameDict<A.Name>): NameDic
       }
       return acc;
     }
-    case 'a-dot': return freevarsVAcc(e.obj, seenSoFar);
+    case 'a-dot': {
+      const acc = freevarsVAcc(e.obj, seenSoFar);
+      // The memoization cell (set by the optimizer) is declared in the loop
+      // preheader, so it is free in this read's enclosing lambda.
+      if (e.cacheVar !== undefined) { acc.set(e.cacheVar.key(), e.cacheVar); }
+      return acc;
+    }
     case 'a-colon': return freevarsVAcc(e.obj, seenSoFar);
     case 'a-get-bang': return freevarsVAcc(e.obj, seenSoFar);
     case 'a-id-var': {

@@ -80,6 +80,12 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Run without proper tail calls')],
     ['no-effect-tail-calls',
       C.flag(C.once, 'Disable the tail-call-in-effect-position optimization (for differential testing)')],
+    ['no-optimize',
+      C.flag(C.once, 'Disable the ANF optimizer middle-end (inliner + CSE + LICM) on the promise backend')],
+    ['no-licm',
+      C.flag(C.once, 'Disable just the LICM field-read caching pass (inliner + CSE still run; for A/B measurement)')],
+    ['inline-comments',
+      C.flag(C.once, 'Emit a `// inlined: <callee>` comment at each inliner splice site (promise backend; for inspecting the optimizer)')],
     ['no-direct-cases',
       C.flag(C.once, 'Disable static field access for cases (promise backend; use the reflective $fieldNames/$mut_fields_mask chain, for A/B measurement)')],
     ['no-direct-fields',
@@ -134,6 +140,9 @@ export function main(args: string[]): number {
     const typeCheck = r.has('type-check');
     const tailCalls = !r.has('improper-tail-calls');
     const effectTailCalls = !r.has('no-effect-tail-calls');
+    const optimize = !r.has('no-optimize');
+    const licm = !r.has('no-licm');
+    const inlineComments = r.has('inline-comments');
     const directCases = !r.has('no-direct-cases');
     const directFields = !r.has('no-direct-fields');
     const annElision = !r.has('no-ann-elision');
@@ -215,6 +224,9 @@ export function main(args: string[]): number {
           ignoreUnbound: false,
           properTailCalls: tailCalls,
           effectTailCalls: effectTailCalls,
+          optimize: optimize,
+          licm: licm,
+          inlineComments: inlineComments,
           directCases: directCases,
           directFields: directFields,
           annElision: annElision,
@@ -256,6 +268,9 @@ export function main(args: string[]): number {
         ignoreUnbound: false,
         properTailCalls: tailCalls,
         effectTailCalls: effectTailCalls,
+        optimize: optimize,
+        licm: licm,
+        inlineComments: inlineComments,
         directCases: directCases,
         directFields: directFields,
         annElision: annElision,

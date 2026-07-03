@@ -26,6 +26,7 @@
 import { sha256 } from './sha256';
 import * as A from './ast';
 import * as N from './ast-anf';
+import { INLINE_MARKER_BASE } from './optimize-anf';
 import * as J from './js-ast';
 import * as CS from './compile-structs';
 import * as CL from './concat-lists';
@@ -110,6 +111,7 @@ const jAnd = J.jAnd;
 const jOr = J.jOr;
 const jLt = J.jLt;
 const jEq = J.jEq;
+const jNullish = J.jNullish;
 const jNeq = J.jNeq;
 const jEquals = J.jEquals;
 const jGeq = J.jGeq;
@@ -742,6 +744,15 @@ export function compileAexprAsync(compiler: CompilerVisitor, e: N.AExpr): CList<
     switch (cur.$name) {
       case 'a-let': {
         const b = cur.bind;
+        // Inline marker (-inline-comments, set by the ANF inliner): render as a
+        // `// inlined: <callee>` comment and emit no binding -- the value (callee name)
+        // is read here and the never-referenced binder is dropped.
+        if (b.id instanceof A.SAtom && b.id.base === INLINE_MARKER_BASE) {
+          const callee = (cur.e instanceof N.AVal && (cur.e as any).v instanceof N.AStr) ? (cur.e as any).v.s : 'fn';
+          acc = clAppend(acc, clSing<J.JStmt>(jExpr(jRawCode('// inlined: ' + callee))));
+          cur = cur.body;
+          continue;
+        }
         const bindComplete = (v: J.JExprT): CList<J.JStmt> => clSing(jExpr(jAssign(jsIdOf(b.id), v)));
         const eStmts = compileLettableAsync(ext(compiler, { complete: bindComplete, tailPos: false, curLetBind: new BLet(b) }), cur.e);
         acc = clAppend(acc, clCons(jVar(jsIdOf(b.id), UNDEFINED) as J.JStmt, eStmts));
@@ -2519,8 +2530,22 @@ export class CompilerVisitor {
     const baseRead = node.directField
       ? getDictField(visitObj.exp, jStr(node.field))
       : getFieldSafe(node.l, visitObj.exp, jStr(node.field), this.getLoc(node.l));
-    return cExp(baseRead,
-      clSnoc(visitObj.otherStmts, jExpr(jAssign(this.curApploc, this.getLoc(node.l))) as J.JStmt));
+    const stmts = clSnoc(visitObj.otherStmts, jExpr(jAssign(this.curApploc, this.getLoc(node.l))) as J.JStmt);
+    if (node.cacheVar !== undefined) {
+      // Cross-iteration write-once memoization of a loop-invariant immutable
+      // field read (ANF optimizer LICM): evaluate getField the first time the
+      // read is reached -- while the cell is still nullish -- and reuse it on
+      // every later iteration. Emitted as `cacheVar ?? (cacheVar = getField(...))`,
+      // i.e. the value form of `cacheVar ??= getField(...)`: a cached iteration
+      // does a single nullish load and NO store. The read stays at its original
+      // program point, so a preceding raise/effect (or a zero-trip loop) still
+      // wins -- unlike hoisting the read to the preheader, which reorders
+      // exceptions.
+      const cv = jId(jsIdOf(node.cacheVar));
+      const cached = jParens(jBinop(cv, jNullish, jParens(jAssign(jsIdOf(node.cacheVar), baseRead))));
+      return cExp(cached, stmts);
+    }
+    return cExp(baseRead, stmts);
   }
 
   aColon(node: N.AColon): DAG.CExp {

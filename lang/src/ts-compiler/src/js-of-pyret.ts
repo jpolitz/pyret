@@ -13,6 +13,7 @@ import * as AAL from './anf-loop-compiler-async';
 import * as C from './compile-structs';
 import * as CL from './concat-lists';
 import * as FL from './flatness';
+import * as OPT from './optimize-anf';
 import * as TF from './type-flow';
 import * as J from './js-ast';
 import * as PP from './pprint';
@@ -119,6 +120,14 @@ export function traceMakeCompiledPyret(
   options: C.CompileOptions
 ): [C.Provides, C.CompileResult<CompiledCodePrinter>] {
   const anfedRaw = addPhase('ANFed', N.anfProgram(programAst));
+  // ANF-to-ANF optimization middle-end (inliner/CSE/LICM; promise backend only:
+  // its passes mint fresh gensym atoms, which would perturb the cont backend's
+  // byte-parity oracle). Runs FIRST among the ANF-level rewrites so weakening,
+  // direct-field tagging, the method-receiver pre-pass, flatness, and codegen
+  // all key off the optimized ANF object graph.
+  const anfedOpt = (C.isPromise(options.stackBackend) && options.optimize)
+    ? addPhase('Optimized ANF', OPT.optimizeProgram(anfedRaw, options.inlineComments, options.licm))
+    : anfedRaw;
   // Typed operator weakening (promise backend only): rewrite polymorphic operator
   // apps (`_plus` ...) into monomorphic, known-flat globals (`_plus_nums` ...) where
   // upper-bound type-flow proves the operand types, so ORDINARY structural flatness
@@ -131,8 +140,8 @@ export function traceMakeCompiledPyret(
   const anfedWeak =
     (C.isPromise(options.stackBackend) && options.opWeakening
       && options.runtimeAnnotations && options.userAnnotations)
-      ? addPhase('Operator weakening', TF.weakenOperators(anfedRaw, postEnv, env, provides.fromUri))
-      : anfedRaw;
+      ? addPhase('Operator weakening', TF.weakenOperators(anfedOpt, postEnv, env, provides.fromUri))
+      : anfedOpt;
   // Direct static field access (promise backend only): tag each `obj.field` whose
   // receiver's upper-bound type resolves to a data type carrying `field` on every
   // variant (and each `obj.m(...)` whose `m` is a proven genuine method), so
