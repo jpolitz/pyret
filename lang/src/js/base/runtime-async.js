@@ -2108,39 +2108,96 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       if(tol === undefined) { // means that we aren't doing any kind of within
         var isIdentical = identical3(left, right);
         if (!thisRuntime.ffi.isNotEqual(isIdentical)) { return isIdentical; } // if Equal or Unknown...
+        // SCALAR FAST PATH: two primitives decide without building the worklist
+        // machinery below (per-call closures + caches), which otherwise runs
+        // even for "cat" == "dog". identical3 already returned Equal for ===
+        // primitives (JS === is value equality for string/boolean), and it fully
+        // decided exact-exact numbers -- so a same-typeof string/boolean pair
+        // here is definitively not equal, and numbers only need the
+        // roughnum/equals split. Answers match the worklist's first-iteration
+        // results exactly (incl. the "the-value" path and Roughnums reasons).
+        var tLeft = typeof left;
+        if (tLeft === typeof right && (tLeft === "string" || tLeft === "boolean")) {
+          return thisRuntime.ffi.notEqual.app("the-value", left, right);
+        }
+        if (isNumber(left) && isNumber(right)) {
+          if (jsnums.isRoughnum(left) || jsnums.isRoughnum(right)) {
+            return thisRuntime.ffi.unknown.app(
+              fromWithin ? "RoughnumZeroTolerances" : "Roughnums", left, right);
+          } else if (jsnums.equals(left, right)) {
+            return thisRuntime.ffi.equal;
+          } else {
+            return thisRuntime.ffi.notEqual.app("the-value", left, right);
+          }
+        }
+      } else if (isNumber(left) && isNumber(right)) {
+        // within(...)/equal-always/equal-now on two numbers: replicate the
+        // worklist number branch for the initial pair VERBATIM -- including
+        // its `if (tol)` TRUTHINESS test. SPEC LANDMINE (Stage 6, verbatim):
+        // "the number branch tests `if (tol)` -- TRUTHINESS -- so `within(0)`
+        // must take the RoughnumZeroTolerances Unknown path". A falsy
+        // tolerance (within(0), or the 0 that equal-always/equal-now pass)
+        // must NOT reach the comparison; getting that wrong flipped
+        // within(0)-on-roughnums from raise to Equal.
+        if (tol) {
+          var fcomp;
+          if (rel === TOL_IS_REL) {
+            fcomp = jsnums.roughlyEqualsRel(left, right, tol, false);
+          } else if (rel === TOL_IS_SMOOTH) {
+            fcomp = jsnums.roughlyEqualsRel(left, right, tol, true);
+          } else {
+            fcomp = jsnums.roughlyEquals(left, right, tol);
+          }
+          if (fcomp) { return thisRuntime.ffi.equal; }
+          return thisRuntime.ffi.notEqual.app("the-value", left, right);
+        } else if (jsnums.isRoughnum(left) || jsnums.isRoughnum(right)) {
+          return thisRuntime.ffi.unknown.app(
+            fromWithin ? "RoughnumZeroTolerances" : "Roughnums", left, right);
+        } else if (jsnums.equals(left, right)) {
+          return thisRuntime.ffi.equal;
+        } else {
+          return thisRuntime.ffi.notEqual.app("the-value", left, right);
+        }
       }
 
       var stackOfToCompare = [];
       var toCompare = { stack: [], curAns: thisRuntime.ffi.equal };
-      var cache = {left: [], right: [], equal: []};
+      // Seen-pairs cache. The old form was three parallel arrays with a LINEAR
+      // findPair scan -- measured growing to ~38k pairs inside a single equal3
+      // call on the test suite, making pair lookup O(pairs^2) overall (the
+      // dominant equality cost). Now a Map(left -> Map(right -> record)) with
+      // records also kept in insertion order (cache.list) so the index-based
+      // setCache protocol and the settle loop are unchanged. Records start at
+      // the optimistic Equal, exactly like the old cache.equal entries, which
+      // is what terminates cycles.
+      var cache = {map: new Map(), list: []};
       function findPair(obj1, obj2) {
-        for (var i = 0; i < cache.left.length; i++) {
-          if (cache.left[i] === obj1 && cache.right[i] === obj2)
-            return cache.equal[i];
-        }
-        return false;
-      }
-      function setCachePair(obj1, obj2, val) {
-        for (var i = 0; i < cache.left.length; i++) {
-          if (cache.left[i] === obj1 && cache.right[i] === obj2) {
-            cache.equal[i] = val;
-            return;
-          }
-        }
-// throw new Error("Internal error: tried to
+        var m = cache.map.get(obj1);
+        if (m === undefined) { return false; }
+        var rec = m.get(obj2);
+        if (rec === undefined) { return false; }
+        return rec.val;
       }
       function cachePair(obj1, obj2) {
-        cache.left.push(obj1);
-        cache.right.push(obj2);
-        cache.equal.push(thisRuntime.ffi.equal);
-        return cache.equal.length;
+        var rec = { val: thisRuntime.ffi.equal };
+        var m = cache.map.get(obj1);
+        if (m === undefined) { m = new Map(); cache.map.set(obj1, m); }
+        m.set(obj2, rec);
+        cache.list.push(rec);
+        return cache.list.length;
       }
-      async function equalHelp() {
+      // Maybe-promise equality (same discipline as the gen-compiled code and
+      // the arithmetic ops): the worklist drains SYNCHRONOUSLY and returns a
+      // flat EqualityResult -- no Promise, no microtask -- going async ONLY
+      // when a user _equals method actually suspends (returns a thenable),
+      // which gen-compiled methods only do on genuine suspension. This is the
+      // hot path of every `is` test on compound values.
+      function equalHelp() {
         var current, curLeft, curRight;
         while (toCompare.stack.length > 0 && !thisRuntime.ffi.isNotEqual(toCompare.curAns)) {
           current = toCompare.stack.pop();
           if(current.setCache) {
-            cache.equal[current.index - 1] = toCompare.curAns;
+            cache.list[current.index - 1].val = toCompare.curAns;
             continue;
           }
           curLeft = current.left;
@@ -2246,8 +2303,18 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
                 }
                 else if (isObject(curLeft) && curLeft.dict["_equals"]) {
                   /* Two objects with the same brands and the left has an _equals method */
-                  // _equals may run user code (async); await it.
-                  var newAns = await getColonField(curLeft, "_equals").full_meth(curLeft, curRight, equalFunPy);
+                  // _equals may run user code; a gen-compiled method returns a
+                  // flat result unless it genuinely suspends. equalFunPy is
+                  // allocated lazily -- only comparisons that dispatch to a
+                  // user _equals need the PFunction at all.
+                  if (equalFunPy === undefined) { equalFunPy = makeFunction(reenterEqualFun, "equalFun"); }
+                  var newAns = getColonField(curLeft, "_equals").full_meth(curLeft, curRight, equalFunPy);
+                  if (isThenable(newAns)) {
+                    return newAns.then(function(a) {
+                      toCompare.curAns = combineEquality(toCompare.curAns, a);
+                      return equalHelp();
+                    });
+                  }
                   toCompare.curAns = combineEquality(toCompare.curAns, newAns);
                 }
                 else if (isDataValue(curLeft) && isDataValue(curRight)) {
@@ -2289,24 +2356,28 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         }
         return toCompare.curAns;
       }
-      // Async-native equality (replaces the equalFun/reenterEqualFun trampoline).
-      // equalHelp drains the worklist, awaiting any user _equals method. Returns
-      // an EqualityResult. equalFunPy is handed to user _equals for recursion.
-      async function reenterEqualFun(left, right) {
+      // equalHelp drains the worklist (sync unless a user _equals suspends).
+      // Returns an EqualityResult or a thenable of one. equalFunPy (lazily
+      // created above) is handed to user _equals for recursion.
+      function reenterEqualFun(left, right) {
         stackOfToCompare.push(toCompare);
         toCompare = {stack: [{left: left, right: right, path: "the-value"}], curAns: thisRuntime.ffi.equal};
-        var ans = await equalHelp();
-        // If the loop short-circuited on NotEqual, settle any pending cache markers.
-        for(var i = 0; i < toCompare.stack.length; i++) {
-          var current = toCompare.stack[i];
-          if(current.setCache) {
-            cache.equal[current.index - 1] = ans;
+        function settle(ans) {
+          // If the loop short-circuited on NotEqual, settle any pending cache markers.
+          for(var i = 0; i < toCompare.stack.length; i++) {
+            var current = toCompare.stack[i];
+            if(current.setCache) {
+              cache.list[current.index - 1].val = ans;
+            }
           }
+          toCompare = stackOfToCompare.pop();
+          return ans;
         }
-        toCompare = stackOfToCompare.pop();
-        return ans;
+        var ans = equalHelp();
+        if (isThenable(ans)) { return ans.then(settle); }
+        return settle(ans);
       }
-      var equalFunPy = makeFunction(reenterEqualFun, "equalFun");
+      var equalFunPy = undefined;
       return reenterEqualFun(left, right);
     }
 
