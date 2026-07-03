@@ -86,6 +86,8 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Disable just the LICM field-read caching pass (inliner + CSE still run; for A/B measurement)')],
     ['inline-comments',
       C.flag(C.once, 'Emit a `// inlined: <callee>` comment at each inliner splice site (promise backend; for inspecting the optimizer)')],
+    ['no-unbox-vars',
+      C.flag(C.once, 'Disable function-local var box elimination (promise backend; keep all vars boxed, for A/B measurement)')],
     ['no-direct-cases',
       C.flag(C.once, 'Disable static field access for cases (promise backend; use the reflective $fieldNames/$mut_fields_mask chain, for A/B measurement)')],
     ['no-direct-fields',
@@ -143,6 +145,7 @@ export function main(args: string[]): number {
     const optimize = !r.has('no-optimize');
     const licm = !r.has('no-licm');
     const inlineComments = r.has('inline-comments');
+    const unboxVars = !r.has('no-unbox-vars');
     const directCases = !r.has('no-direct-cases');
     const directFields = !r.has('no-direct-fields');
     const annElision = !r.has('no-ann-elision');
@@ -227,6 +230,7 @@ export function main(args: string[]): number {
           optimize: optimize,
           licm: licm,
           inlineComments: inlineComments,
+          unboxVars: unboxVars,
           directCases: directCases,
           directFields: directFields,
           annElision: annElision,
@@ -271,6 +275,7 @@ export function main(args: string[]): number {
         optimize: optimize,
         licm: licm,
         inlineComments: inlineComments,
+        unboxVars: unboxVars,
         directCases: directCases,
         directFields: directFields,
         annElision: annElision,

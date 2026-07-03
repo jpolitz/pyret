@@ -425,6 +425,80 @@ function ext<T extends object>(obj: T, fields: Record<string, any>): T {
   return out as T;
 }
 
+// Box elimination for function-local `var`s. A Pyret `var` is normally compiled
+// to a `{$var: value}` heap box so its mutation is visible by-reference across
+// module/REPL boundaries (see the provide path's `s-local-ref`/`VbVar` case and
+// `aIdVarModref`). That visibility is the ONLY thing the box buys: a `var`
+// declared inside a function/lambda body can never be exported or read by
+// another module/the REPL, so for it the box is pure overhead -- a plain mutable
+// JS local is equivalent and far cheaper in a hot loop.
+//
+// This returns the `key()` set of every `var` declared in a nested scope (depth
+// >= 1, i.e. inside some a-lam/a-method body). Those are unboxed at the three
+// codegen sites (decl / a-assign / a-id-var). Top-level vars are left boxed:
+// they escape via provides and are mutable from the REPL.
+//
+// CRUCIAL: a Pyret `letrec` (every local `fun`/`rec`) is desugared in anf.ts to a
+// `var`-binding initialized to `undefined` plus an `s-assign` of the value (so
+// `fun f` becomes `var f = undefined; f := <lam>`). Its DECLARATION is therefore
+// an `AVar` -- indistinguishable here from a genuine `var` -- but its REFERENCES
+// are `AIdLetrec`/`AIdSafeLetrec`, which read `.$var` rather than `AIdVar`.
+//
+// A letrec binding is ALSO unboxable, with one extra condition. The box's only
+// letrec-specific job is the uninitialized-on-read guard for FORWARD references
+// (a read that executes during letrec init, before the binding is assigned):
+// `AIdLetrec` with `safe === false` reads `x.$var === undefined ? raise : x.$var`.
+// A reference marked SAFE (`AIdSafeLetrec`, or `AIdLetrec safe === true`) is
+// provably reached only AFTER initialization, so the box buys it nothing -- a
+// plain JS binding (captured by closures the same way, so mutual recursion still
+// works) is equivalent. So we unbox a nested letrec binding iff ALL its
+// references are safe; a single `AIdLetrec safe===false` reference forces it to
+// stay boxed. (The decl/assign already unbox via the shared `unboxedVars` set;
+// the safe `aId*Letrec` read sites are updated to read `x` instead of `x.$var`.)
+//
+// We therefore collect candidate decls (nested AVars: genuine vars AND letrec
+// decls) and SUBTRACT only the ids that have an unsafe-letrec reference. Genuine
+// vars (referenced via AIdVar) are never subtracted; safe-only letrec ids survive.
+// Top-level decls (depth 0) are never candidates: they escape via provides/REPL,
+// and a provided `VbLetrec` reads `x.$var` by value -- unboxing would break it.
+//
+// Post-ANF binding atoms are globally unique (`SAtom.key()` includes a serial),
+// so membership-by-key is unambiguous across the read/decl/assign sites.
+function collectUnboxableVarKeys(body: N.AExpr): Set<string> {
+  const candidates = new Set<string>();
+  const unsafeLetrecRefs = new Set<string>();
+  let depth = 0;
+  const visitor: any = ext(N.defaultMapVisitor as any, {
+    aVar(node: N.AVar): any {
+      if (depth > 0) { candidates.add(node.bind.id.key()); }
+      node.e.visit(this);
+      node.body.visit(this);
+      return node;
+    },
+    aIdLetrec(node: N.AIdLetrec): any {
+      // Only the unsafe (uninitialized-guard) reads force the binding to stay
+      // boxed; safe reads are fine unboxed.
+      if (!node.safe) { unsafeLetrecRefs.add(node.id.key()); }
+      return node;
+    },
+    aLam(node: N.ALam): any {
+      depth++;
+      node.body.visit(this);
+      depth--;
+      return node;
+    },
+    aMethod(node: N.AMethod): any {
+      depth++;
+      node.body.visit(this);
+      depth--;
+      return node;
+    },
+  });
+  body.visit(visitor);
+  for (const k of unsafeLetrecRefs) { candidates.delete(k); }
+  return candidates;
+}
+
 export function compileAnn(ann: A.Ann, optName: string | undefined, visitor: CompilerVisitor): DAG.CExp {
   switch (ann.$name) {
     case 'a-name':
@@ -775,7 +849,9 @@ export function compileAexprAsync(compiler: CompilerVisitor, e: N.AExpr): CList<
         const temp = jsIdOf(freshId(compilerName('var_init')));
         const tempComplete = (v: J.JExprT): CList<J.JStmt> => clSing(jExpr(jAssign(temp, v)));
         const eStmts = compileLettableAsync(ext(compiler, { complete: tempComplete, tailPos: false, curLetBind: undefined }), cur.e);
-        const varDecl = jVar(jsIdOf(b.id), jObj(clist<J.JFieldT>(jField('$var', jId(temp)))));
+        const varDecl = compiler.unboxedVars.has(b.id.key())
+          ? jVar(jsIdOf(b.id), jId(temp))
+          : jVar(jsIdOf(b.id), jObj(clist<J.JFieldT>(jField('$var', jId(temp)))));
         acc = clAppend(acc, clSnoc(clCons(jVar(temp, UNDEFINED) as J.JStmt, eStmts), varDecl as J.JStmt));
         cur = cur.body;
         continue;
@@ -2230,14 +2306,16 @@ function* aVarGen(compiler: CompilerVisitor, node: N.AVar): ChainGen<DAG.CBlock>
   const compiledBody: DAG.CBlock = yield { body: node.body, compiler };
   const compiledE: DAG.CExp = node.e.visit(compiler);
   // TODO: annotations here?
+  const init = compiler.unboxedVars.has(node.bind.id.key())
+    ? compiledE.exp
+    : jObj(clist<J.JFieldT>(jField('$var', compiledE.exp)
+      // NOTE(joe): This can be useful to turn on for debugging
+      //                     , j-field("$name", j-str(b.id.toname()))
+    ));
   return cBlock(
     jBlock(
       clCons(
-        jVar(jsIdOf(node.bind.id),
-          jObj(clist<J.JFieldT>(jField('$var', compiledE.exp)
-            // NOTE(joe): This can be useful to turn on for debugging
-            //                     , j-field("$name", j-str(b.id.toname()))
-          ))) as J.JStmt,
+        jVar(jsIdOf(node.bind.id), init) as J.JStmt,
         DAG.stmtsOf(compiledBody.block))),
     compiledBody.newCases);
 }
@@ -2276,6 +2354,9 @@ export class CompilerVisitor {
   options!: SplitCompileOptions;
   flatnessEnv!: FL.FEnv;
   typeFlatnessEnv!: FL.FEnv;
+  // key() set of function-local vars to compile without the {$var} box; see
+  // collectUnboxableVarKeys. Populated in aProgram (empty when -no-unbox-vars).
+  unboxedVars: Set<string> = new Set();
   // Method-application nodes proven flat (the receiver's data type resolves and
   // its method is flat); emitted as a direct call with NO conditional await. And
   // `a-method` nodes proven flat; emitted as a synchronous function (makeMethod,
@@ -2481,7 +2562,10 @@ export class CompilerVisitor {
 
   aAssign(node: N.AAssign): DAG.CExp {
     const visitValue: DAG.CExp = node.value.visit(this);
-    return cExp(rtField('nothing'), clSnoc(visitValue.otherStmts, jExpr(jDotAssign(jId(jsIdOf(node.id)), '$var', visitValue.exp)) as J.JStmt));
+    const assignStmt: J.JStmt = this.unboxedVars.has(node.id.key())
+      ? jExpr(jAssign(jsIdOf(node.id), visitValue.exp)) as J.JStmt
+      : jExpr(jDotAssign(jId(jsIdOf(node.id)), '$var', visitValue.exp)) as J.JStmt;
+    return cExp(rtField('nothing'), clSnoc(visitValue.otherStmts, assignStmt));
   }
 
   aApp(_node: N.AApp): never {
@@ -2662,24 +2746,34 @@ export class CompilerVisitor {
   }
 
   aIdVar(node: N.AIdVar): DAG.CExp {
+    if (this.unboxedVars.has(node.id.key())) {
+      return cExp(jId(jsIdOf(node.id)), clEmpty);
+    }
     return cExp(jDot(jId(jsIdOf(node.id)), '$var'), clEmpty);
   }
 
   aIdSafeLetrec(node: N.AIdSafeLetrec): DAG.CExp {
     const s = jId(jsIdOf(node.id));
-    return cExp(jDot(s, '$var'), clEmpty);
+    // Unboxed safe-letrec: read the bare JS binding (see collectUnboxableVarKeys).
+    const read = this.unboxedVars.has(node.id.key()) ? s : jDot(s, '$var');
+    return cExp(read, clEmpty);
   }
 
   aIdLetrec(node: N.AIdLetrec): DAG.CExp {
     const s = jId(jsIdOf(node.id));
+    // An unboxed letrec id has only safe references (collectUnboxableVarKeys
+    // excludes any id with an unsafe ref), so the `read` is the bare binding; the
+    // unsafe branch below only fires for still-boxed ids. Written generally so
+    // both branches stay correct regardless.
+    const read = this.unboxedVars.has(node.id.key()) ? s : jDot(s, '$var');
     if (node.safe) {
-      return cExp(jDot(s, '$var'), clEmpty);
+      return cExp(read, clEmpty);
     } else {
       return cExp(
         jTernary(
-          jBinop(jDot(s, '$var'), jEq, UNDEFINED),
+          jBinop(read, jEq, UNDEFINED),
           raiseIdExn(this.getLoc(node.l), node.id.toname()),
-          jDot(s, '$var')),
+          read),
         clEmpty);
     }
   }
@@ -3424,6 +3518,10 @@ export class SplittingCompiler extends CompilerVisitor {
     // add-phase("Remove useless ifs", simplified)
     const freevars = N.freevarsProg(new N.AProgram(node.l, node.provides, node.imports, node.body));
     this.addPhase('Freevars-e', freevars);
+    // Function-local var box elimination (promise backend codegen knob). Gated
+    // on -no-unbox-vars; see collectUnboxableVarKeys.
+    this.unboxedVars = this.options.unboxVars ? collectUnboxableVarKeys(node.body) : new Set();
+    this.addPhase('Unboxable vars: ' + this.unboxedVars.size, undefined);
     const ans = compileModule(this, node.l, node.provides, node.imports, node.body, freevars as Map<string, A.Name>, this.$provides, this.env);
     this.addPhase('Total simplification: ' + String(totalTime), undefined);
     return ans;

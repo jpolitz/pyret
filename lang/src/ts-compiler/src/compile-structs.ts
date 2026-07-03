@@ -1111,6 +1111,14 @@ export interface CompileOptions {
   // backend). Off by default; -inline-comments turns it on for inspecting the
   // optimizer. Inert unless the optimizer runs.
   inlineComments: boolean;
+  // Box-elimination for function-local Pyret `var`s (promise backend only). On
+  // by default; -no-unbox-vars disables it for A/B measurement. A `var` declared
+  // inside a function/lambda body cannot be exported or read across a module/REPL
+  // boundary, so its `{$var: ...}` heap box is pointless -- a plain mutable JS
+  // local suffices. Top-level vars keep the box (they escape via provides/REPL).
+  // It's a codegen-repr choice in the async backend, not an ANF pass, so it's
+  // independent of `optimize`.
+  unboxVars: boolean;
   // Direct (static) field access for `cases` (promise backend only). On by
   // default; -no-direct-cases disables it for A/B measurement. When the cases
   // scrutinee's type resolves to concrete variant metadata, the matched branch
@@ -1215,6 +1223,7 @@ export const defaultCompileOptions: CompileOptions = {
   optimize: true,
   licm: true,
   inlineComments: false,
+  unboxVars: true,
   directCases: true,
   directFields: true,
   annElision: true,
