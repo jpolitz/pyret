@@ -51,12 +51,52 @@ export interface MethodFlatInfo {
 
 // A function/method/annotation is "flat enough" for sync emission / await
 // elision when its flatness is within this limit. Exported as the single
-// source of truth: isFlatEnough (anf-loop-compiler-async.ts) and flatAnn
-// (type-flow.ts) must use the SAME limit as the method-flatness analysis
-// below, or the sync-vs-async emission decision could disagree with the
-// analysis (an `await` inside a sync function is a JS syntax error).
+// source of truth: isFlatEnough here is THE shared predicate (consumed by the
+// async codegen, the tier analysis in tier.ts, and the method-flatness
+// analysis below), and flatAnn (type-flow.ts) must use the SAME limit, or the
+// sync-vs-async emission decision could disagree with the analysis (an
+// `await` inside a sync function is a JS syntax error).
 export const FLAT_LIMIT = 5;
-function methodFlatEnough(f: Flatness): boolean { return f !== undefined && f <= FLAT_LIMIT; }
+export function isFlatEnough(f: Flatness): boolean { return f !== undefined && f <= FLAT_LIMIT; }
+
+// Is the (lambda) function bound to `funName` flat? The emitter's sync-vs-
+// async decision for compileALam and the tier analysis's Flat verdict both
+// resolve through this ONE helper (rule 2: never two parallel readings of the
+// flatness env).
+export function isFunctionFlat(valEnv: FEnv, funName: string): boolean {
+  return isFlatEnough(valEnv.get(funName));
+}
+
+// The classification of a bind's `:: T` annotation check at emission time --
+// the single source of truth shared by the async codegen (annCheckStmts) and
+// the tier analysis (tier.ts), so "is this ann check a suspend site" can
+// never disagree between analysis and emission (a disagreement would emit
+// `await` inside a sync function -- a JS syntax error -- or fail to await a
+// Promise).
+//   'none'        -- no check emitted: blank/any, or the type-flow analysis
+//                    proved the value already satisfies T (redundantAnnChecks)
+//   'tuple-shape' -- the synchronous checkTupleBind shape/length check (a
+//                    tuple-destructuring bind with no field annotations)
+//   'flat'        -- synchronous _checkAnn (flat annotation)
+//   'suspend'     -- awaited _checkAnn (the annotation may run a user
+//                    refinement, which can suspend)
+export type AnnCheckClass = 'none' | 'tuple-shape' | 'flat' | 'suspend';
+export function annCheckClass(
+  b: AA.ABind,
+  valEnv: FEnv,
+  annEnv: FEnv,
+  redundantAnnChecks: Set<string>,
+  mb: Map<string, C.ModuleBind>,
+  env: C.CompileEnvironment
+): AnnCheckClass {
+  if (A.isABlank(b.ann) || A.isAAny(b.ann) || redundantAnnChecks.has(b.id.key())) {
+    return 'none';
+  }
+  if (A.isATuple(b.ann) && (b.ann as A.ATuple).fields.every((a) => A.isABlank(a) || A.isAAny(a))) {
+    return 'tuple-shape';
+  }
+  return isFlatEnough(annFlatness(b.ann, valEnv, annEnv, mb, env)) ? 'flat' : 'suspend';
+}
 
 // Build the cross-module flat-method table (`uri#name#method` -> flatness) from the
 // method flatness carried on imported modules' provided DTypes (parsed out of the
@@ -633,7 +673,7 @@ export function makeLettableFlatnessEnv(
           // table (cross-module flatness; empty when -no-imported-method-flat). The
           // fallback survives the per-pass replacement of methodTablePrev.
           const f = nc.methodTablePrev.get(key) ?? nc.importedFlatMethods.get(key);
-          if (methodFlatEnough(f)) {
+          if (isFlatEnough(f)) {
             nc.flatMethodApps.add(lettable);
             return incrementFlatness(f);
           }
@@ -686,7 +726,7 @@ export function makeLettableFlatnessEnv(
           const key = mi.dataId + '#' + mi.methodName;
           const prev: Flatness = nc.methodTable.has(key) ? nc.methodTable.get(key) : 0;
           nc.methodTable.set(key, flatnessMax(prev, methF));
-          if (methodFlatEnough(methF)) { nc.flatMethods.add(lettable); }
+          if (isFlatEnough(methF)) { nc.flatMethods.add(lettable); }
         }
       }
       return defaultRet;
@@ -961,7 +1001,7 @@ export function getFlatProvides(
       const prefix = uri + '#' + name + '#';
       const mf = new Map<string, number>();
       for (const [k, f] of methodTable) {
-        if (k.startsWith(prefix) && methodFlatEnough(f) && typeof f === 'number') {
+        if (k.startsWith(prefix) && isFlatEnough(f) && typeof f === 'number') {
           mf.set(k.slice(prefix.length), f);
         }
       }

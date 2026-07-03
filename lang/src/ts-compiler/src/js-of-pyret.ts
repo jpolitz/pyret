@@ -15,6 +15,7 @@ import * as CL from './concat-lists';
 import * as FL from './flatness';
 import * as OPT from './optimize-anf';
 import * as TF from './type-flow';
+import * as TIER from './tier';
 import * as J from './js-ast';
 import * as PP from './pprint';
 
@@ -183,11 +184,26 @@ export function traceMakeCompiledPyret(
       ? addPhase('Type-flow ann elision',
         TF.makeProgTypeFlowEnv(anfed, postEnv, env, flatnessEnv, flatProvides.fromUri))
       : new Set<string>();
+  // Per-function tier analysis (Stage 5; promise backend only): the verdict
+  // (Flat | TailFlat | FewSuspend | Gen) per ALam/AMethod, computed on ANF via
+  // the shared site classifiers. ORDERING CONSTRAINT: this MUST stay the LAST
+  // ANF-consuming pass before codegen -- the map is keyed by ANF node identity
+  // (like methodInfo, see the comment on the optimizer above), so any ANF
+  // rewrite added after it would orphan the map and codegen throws an
+  // InternalCompilerError on the missing entry (loud, by design).
+  // -no-gen-functions disables the tier architecture wholesale (no tierMap;
+  // the async codegen keeps today's all-async emission as the A/B baseline);
+  // -no-tail-flat / -no-few-suspend demote just their tier inside the pass.
+  const tierMap =
+    (C.isPromise(options.stackBackend) && options.genFunctions)
+      ? addPhase('Tier analysis',
+        TIER.makeProgTierMap(anfed, flatnessEnv, redundantAnnChecks, postEnv, env, options))
+      : undefined;
   // Dispatch to the requested control-flow backend. `auto` is resolved to a
   // concrete promise|cont before reaching here (see compile-structs / the CLI),
   // but is defended to cont in case a caller passes it through.
   const compiled = C.isPromise(options.stackBackend)
-    ? anfed.visit(AAL.splittingCompiler(env, addPhase, flatnessEnv, flatProvides, postEnv, options, redundantAnnChecks))
+    ? anfed.visit(AAL.splittingCompiler(env, addPhase, flatnessEnv, flatProvides, postEnv, options, redundantAnnChecks, tierMap))
     : anfed.visit(AL.splittingCompiler(env, addPhase, flatnessEnv, flatProvides, postEnv, options));
   return [flatProvides, addPhase('Generated JS', C.ok(new CCPDict(compiled)))];
 }

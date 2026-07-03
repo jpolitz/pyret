@@ -1180,6 +1180,21 @@ export interface CompileOptions {
   // elision (the ub facts rest on the runtime annotation checks), so it self-
   // disables unless runtimeAnnotations && userAnnotations.
   opWeakening: boolean;
+  // Master switch for the per-function tier architecture (tier.ts; promise
+  // backend only). On by default; -no-gen-functions disables the tier
+  // ANALYSIS wholesale (no tierMap is computed; the async codegen keeps the
+  // legacy all-async emission) as the A/B baseline. Named for the Gen tier's
+  // generator-function emission, per the ref branch's flag naming; the
+  // per-tier sub-flags below demote individual verdicts instead.
+  genFunctions: boolean;
+  // TailFlat tier (sub-flag of genFunctions). On by default; -no-tail-flat
+  // demotes TailFlat verdicts to Gen inside the tier analysis, for A/B
+  // measurement of the sync-with-direct-tail-returns emission.
+  tailFlat: boolean;
+  // FewSuspend tier (sub-flag of genFunctions). On by default;
+  // -no-few-suspend demotes FewSuspend verdicts to Gen inside the tier
+  // analysis, for A/B measurement of the guarded-suspend-site sync emission.
+  fewSuspend: boolean;
   stackBackend: StackBackend;
   inlineCaseBodyLimit: number;
   moduleEval: boolean;
@@ -1230,6 +1245,9 @@ export const defaultCompileOptions: CompileOptions = {
   methodFlatness: true,
   importedMethodFlat: true,
   opWeakening: true,
+  genFunctions: true,
+  tailFlat: true,
+  fewSuspend: true,
   stackBackend: compiledStackBackend,
   inlineCaseBodyLimit: 5,
   moduleEval: true,

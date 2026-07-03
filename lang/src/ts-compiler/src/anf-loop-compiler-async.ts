@@ -31,6 +31,7 @@ import * as J from './js-ast';
 import * as CS from './compile-structs';
 import * as CL from './concat-lists';
 import * as FL from './flatness';
+import * as TIER from './tier';
 import * as DAG from './js-dag-utils';
 import * as AU from './ast-util';
 import * as T from './type-structs';
@@ -407,15 +408,12 @@ export function annLoc(ann: A.Ann): Loc {
   else { return (ann as any).l; }
 }
 
-export function isFlatEnough(flatness: FL.Flatness): boolean {
-  if (flatness === undefined) { return false; }
-  else { return flatness <= FL.FLAT_LIMIT; }
-}
-
-export function isFunctionFlat(flatnessEnv: FL.FEnv, funName: string): boolean {
-  const flatnessOpt = flatnessEnv.get(funName);
-  return isFlatEnough(flatnessOpt);
-}
+// MOVED to flatness.ts (the shared classifier seam consumed by both this
+// emitter and the tier analysis in tier.ts); re-exported here so existing
+// call sites keep one name. The cont compiler's copy stays frozen separately
+// (byte-parity oracle).
+export const isFlatEnough = FL.isFlatEnough;
+export const isFunctionFlat = FL.isFunctionFlat;
 
 // Pyret object extension `obj.{ f1: v1, ... }`: clone preserving prototype
 // (visitor methods), overriding the given fields.
@@ -803,6 +801,94 @@ function callAndMaybeAwait(t: A.Name, callBase: J.JExprT): CList<J.JStmt> {
     jIf1(jIsThenable(t), jBlock1(jExpr(jAssign(t, jAwait(jId(t)))))));
 }
 
+// --- O7: post-emission residual-await scan (Stage 5) ---------------------------
+// Count JAwait nodes in an emitted J AST fragment. The walk descends into
+// nested SYNC JFuns (an await there is a would-be JS SyntaxError at load time)
+// and SKIPS JAsyncFun bodies (awaits are legal there) -- plus any future
+// 'j-gen-fun' node by tag (yields/awaits legal; the js-ast JGenFun class lands
+// with the Gen tier and this scan must not depend on it). With
+// `skipFuelAwaits`, the fuel form `await R.checkPause()` is not counted (used
+// only by the non-fatal bring-up shadow below; the O7 assertion counts
+// everything, since a sync body has no fuel await either).
+//
+// NOTE (spec rule 1): this is an ASSERTION INPUT, never a decision procedure.
+// All sync-vs-async decisions live on ANF (tier.ts + the shared classifiers);
+// nothing may branch on this scan except to throw InternalCompilerError.
+export function countResidualAwaits(root: any, skipFuelAwaits: boolean): number {
+  let count = 0;
+  function isFuelAwait(a: J.JAwait): boolean {
+    const e = a.expr;
+    return e instanceof J.JMethod && e.meth === 'checkPause';
+  }
+  function walk(x: any): void {
+    if (x === null || typeof x !== 'object') { return; }
+    if (x instanceof J.JAwait) {
+      if (!(skipFuelAwaits && isFuelAwait(x))) { count++; }
+      walk(x.expr);
+      return;
+    }
+    if (x instanceof J.JAsyncFun) { return; }
+    if ((x as any).$name === 'j-gen-fun') { return; }
+    if (x instanceof CL.ConcatListBase) {
+      (x as CL.ConcatList<any>).each((el: any) => walk(el));
+      return;
+    }
+    if (x instanceof J.JBlockBase || x instanceof J.JStmtBase || x instanceof J.JExprBase
+      || x instanceof J.JCaseBase || x instanceof J.JFieldBase) {
+      for (const k of Object.keys(x)) { walk((x as any)[k]); }
+      return;
+    }
+    // Anything else hanging off a node (A.Name, Loc, strings, numbers,
+    // booleans, operator singletons) cannot contain a JAwait.
+  }
+  walk(root);
+  return count;
+}
+
+// The O7 assertion proper: after emitting any sync (jFun) function body,
+// a residual await means the tier/flatness verdict and the emission paths
+// disagreed about some site -- a real bug in the shared classifiers or an
+// emitter arm that missed its sync-tier form. Throw, never fall back, never
+// re-decide (the ref branch's hasAwaits-as-decider is exactly what this
+// design retires).
+export function assertNoResidualAwaits(body: J.JBlockT, tier: string, l: Loc): void {
+  const n = countResidualAwaits(body, false);
+  if (n > 0) {
+    throw new InternalCompilerError(
+      'residual await in ' + tier + ' (sync) function body at ' + l.key()
+      + ' (' + n + ' JAwait node(s)): tier/emission drift -- fix the shared'
+      + ' classifier or the emitter arm; never fall back');
+  }
+}
+
+// Bring-up shadow comparison, env-gated (PYRET_TIER_SHADOW=1): after each
+// tiered function's body is emitted, compare the tier verdict against a
+// hasAwaits-style scan of what WAS emitted and report mismatches to stderr
+// WITHOUT failing. Today's invariants (pre-tier-codegen): every
+// continuation-capturing site emits at least one await (capturing sites are
+// non-tail, so neither the TCO `continue` nor the tail-token mint can elide
+// them), and a body whose only sites are TCO continues / token-minted tails
+// emits none beyond fuel. Tail sites may legitimately await OR mint, so they
+// silence the second direction. Known benign report: a `-> T` TCO self-call
+// with a non-flat return ann leaves a DEAD awaited _checkAnn after `continue`
+// (the analysis rightly skips that unreachable site).
+// DESIGNED FOR DELETION: remove in the Stage-5 wrap-up commit once zero
+// mismatches across O3+O4 (it must not survive into steady state).
+export function tierShadowCompare(
+  verdict: TIER.TierVerdict, body: J.JBlockT, kind: string, name: string, l: Loc
+): void {
+  const nonFuel = countResidualAwaits(body, true);
+  const s = verdict.suspendSites;
+  const who = kind + ' "' + name + '" at ' + l.key();
+  if (s.capturing > 0 && nonFuel === 0) {
+    process.stderr.write('[tier-shadow] MISMATCH ' + who + ': verdict ' + verdict.tier
+      + ' counted S=' + s.capturing + ' capturing site(s) but the emitted body has no non-fuel await\n');
+  } else if (s.capturing === 0 && s.tail === 0 && nonFuel > 0) {
+    process.stderr.write('[tier-shadow] MISMATCH ' + who + ': verdict ' + verdict.tier
+      + ' found no capturing/tail sites but the emitted body has ' + nonFuel + ' non-fuel await(s)\n');
+  }
+}
+
 export function compileAexprAsync(compiler: CompilerVisitor, e: N.AExpr): CList<J.JStmt> {
   // Walk the AExpr "chain" (let / arr-let / var / seq / type-let) ITERATIVELY,
   // accumulating each link's straight-line statements, then advance to the body.
@@ -890,29 +976,33 @@ export function compileAexprAsync(compiler: CompilerVisitor, e: N.AExpr): CList<
 export function annCheckStmts(compiler: CompilerVisitor, b: N.ABind): CList<J.JStmt> {
   // Re-bind `b` to the result of checking its annotation. A non-flat annotation
   // may run a user refinement (async, returns a Promise), so we await it; a flat
-  // annotation's _checkAnn is synchronous. This gate must agree with the flatness
-  // analysis (which folds ann-flatness into the enclosing function's flatness),
-  // or we get `await` in a sync function (JS syntax error) or an unawaited Promise.
-  if (A.isABlank(b.ann) || A.isAAny(b.ann) || compiler.redundantAnnChecks.has(b.id.key())) {
-    // Blank/any, or the type-flow analysis proved the value is already `⊑ T`:
-    // no check to emit. The value is already bound to b.id (the elided check
-    // would only have re-bound the identical, brand-verified value).
-    return clEmpty;
-  } else if (A.isATuple(b.ann) && (b.ann as A.ATuple).fields.every((a) => A.isABlank(a) || A.isAAny(a))) {
-    // A tuple-destructuring bind with no field annotations: just check the tuple
-    // shape/length (checkTupleBind raises "bad-tuple-bind"). This mirrors the cont
-    // backend; the general tuple-ann _checkAnn gives a different ("annotation")
-    // error that a few tests pin on.
-    return clSing(jExpr(rtMethod('checkTupleBind',
-      clist(jId(jsIdOf(b.id)), jNum((b.ann as A.ATuple).fields.length), compiler.getLoc((b.ann as any).l)))));
-  } else {
-    const ca = compileAnn(b.ann, undefined, compiler);
-    const isFlat = isFlatEnough(FL.annFlatness(b.ann, compiler.flatnessEnv,
-      compiler.typeFlatnessEnv, compiler.moduleBindings, compiler.env));
-    const checkCall = rtMethod('_checkAnn',
-      clist(compiler.getLoc(annLoc(b.ann)), ca.exp, jId(jsIdOf(b.id))));
-    const checked = isFlat ? checkCall : jAwait(checkCall);
-    return clSnoc(ca.otherStmts, jExpr(jAssign(jsIdOf(b.id), checked)));
+  // annotation's _checkAnn is synchronous. The classification (none / tuple /
+  // flat / suspend) comes from the SHARED helper FL.annCheckClass -- the same
+  // one the tier analysis (tier.ts) uses to decide whether this check is a
+  // suspend site -- so analysis and emission can never disagree (a disagreement
+  // is `await` in a sync function: a JS syntax error).
+  const cls = FL.annCheckClass(b, compiler.flatnessEnv, compiler.typeFlatnessEnv,
+    compiler.redundantAnnChecks, compiler.moduleBindings, compiler.env);
+  switch (cls) {
+    case 'none':
+      // Blank/any, or the type-flow analysis proved the value is already `⊑ T`:
+      // no check to emit. The value is already bound to b.id (the elided check
+      // would only have re-bound the identical, brand-verified value).
+      return clEmpty;
+    case 'tuple-shape':
+      // A tuple-destructuring bind with no field annotations: just check the tuple
+      // shape/length (checkTupleBind raises "bad-tuple-bind"). This mirrors the cont
+      // backend; the general tuple-ann _checkAnn gives a different ("annotation")
+      // error that a few tests pin on.
+      return clSing(jExpr(rtMethod('checkTupleBind',
+        clist(jId(jsIdOf(b.id)), jNum((b.ann as A.ATuple).fields.length), compiler.getLoc((b.ann as any).l)))));
+    default: {
+      const ca = compileAnn(b.ann, undefined, compiler);
+      const checkCall = rtMethod('_checkAnn',
+        clist(compiler.getLoc(annLoc(b.ann)), ca.exp, jId(jsIdOf(b.id))));
+      const checked = cls === 'flat' ? checkCall : jAwait(checkCall);
+      return clSnoc(ca.otherStmts, jExpr(jAssign(jsIdOf(b.id), checked)));
+    }
   }
 }
 
@@ -952,10 +1042,12 @@ export function compileAppAsync(compiler: CompilerVisitor, l: Loc, f: N.AVal, ar
   // `continue` skips the per-iteration _checkAnn, which is sound: the returned value is
   // the base case's already-checked value (cont's trampoline skips it identically).
   // in-tco-loop ensures the `while(true)` continue-target exists.
+  // The TCO predicate itself is the SHARED helper TIER.isTcoSelfApp (also
+  // used by the tier analysis to classify the site); in-tco-loop additionally
+  // ensures the `while(true)` continue-target exists.
   const isTco = compiler.inTcoLoop &&
-    appInfo.isRecursive && appInfo.isTail &&
-    compiler.allowTco && compiler.options.properTailCalls &&
-    (compiledArgs.length() === compiler.args.length);
+    TIER.isTcoSelfApp(appInfo, compiledArgs.length(), compiler.args.length,
+      compiler.allowTco, compiler.options.properTailCalls);
   if (isTco) {
     // Explicit-loop tail-call optimization: rebind formals and loop.
     const argsList = map2((name: A.Name, exp: J.JExprT) => jAssign(name, exp) as J.JExprT, compiler.args, compiledArgs.toList());
@@ -1272,8 +1364,9 @@ export function compileLettableAsync(compiler: CompilerVisitor, e: N.ALettable):
       return compileUpdateAsync(compiler, e.l, e.supe, e.fields);
     case 'a-lam': {
       // Lambdas are lifted to let-RHS by ANF; use the enclosing binding (if any)
-      // for the flatness lookup that decides sync vs async emission.
-      const ce = compileALam(compiler, e.l, e.name, e.args, e.ret, e.body, compiler.curLetBind);
+      // for the flatness lookup that decides sync vs async emission. The node
+      // itself is passed for the node-identity tier-map lookup.
+      const ce = compileALam(compiler, e, e.l, e.name, e.args, e.ret, e.body, compiler.curLetBind);
       return clAppend(ce.otherStmts, compiler.complete(ce.exp));
     }
     default: {
@@ -1294,58 +1387,30 @@ export function compileFunBody(
   _shouldReportErrorFrame: boolean,
   isFlat: boolean,
   isMethod: boolean,
-  canMintTokens: boolean
+  canMintTokens: boolean,
+  // The function's tier verdict ('async' = the legacy -no-gen-functions
+  // emission path and the toplevel module fn, which is never in the tier
+  // map). Emission is NOT yet keyed on it (the per-tier emitters land in the
+  // Gen / TailFlat / FewSuspend commits); today it only carries the tier
+  // pass's allowTco (below) and feeds the O7/shadow checks in the callers.
+  tier: TIER.Tier | 'async' = 'async',
+  // Reserved for the Gen tier: the arity-check statements move into the sync
+  // wrapper (inside a generator, `arguments.length` would see the wrapper's
+  // fixed forwarding call, never the user's count). Unused until then.
+  arityOut?: { stmts: CList<J.JStmt> },
+  // The tier pass's allowTco for this function (verdict.allowTco); undefined
+  // on the 'async' path, which computes it via the shared detector below.
+  tierAllowTco?: boolean
 ): J.JBlockT {
-  // Detect whether a formal argument is captured by an inner lambda; if so we
-  // cannot do explicit-loop TCO (the loop would clobber the captured binding).
-  let inLam = false;
-  let argUsedInLambda = false;
-  const argNames = args.map((a) => a.id);
-  const dummyAnfLettable = new N.AObj(A.dummyLoc, []);
-  const pendingBodies: Array<{ body: N.AExpr; lam: boolean }> = [];
-  function enqueueChainBody(b: N.AExpr, lam: boolean): any {
-    pendingBodies.push({ body: b, lam });
-    return dummyAnfLettable;
-  }
-  const detector = ext(N.defaultMapVisitor as any, {
-    aLam(node: N.ALam): any {
-      return enqueueChainBody(node.body, true);
-    },
-    aMethod(node: N.AMethod): any {
-      return enqueueChainBody(node.body, true);
-    },
-    aTypeLet(node: N.ATypeLet): any {
-      return enqueueChainBody(node.body, inLam);
-    },
-    aLet(node: N.ALet): any {
-      node.e.visit(this);
-      return enqueueChainBody(node.body, inLam);
-    },
-    aArrLet(node: N.AArrLet): any {
-      node.e.visit(this);
-      return enqueueChainBody(node.body, inLam);
-    },
-    aVar(node: N.AVar): any {
-      node.e.visit(this);
-      return enqueueChainBody(node.body, inLam);
-    },
-    aSeq(node: N.ASeq): any {
-      node.e1.visit(this);
-      return enqueueChainBody(node.e2, inLam);
-    },
-    aId(node: N.AId): any {
-      if (inLam && !argUsedInLambda && argNames.some((an) => an.key() === node.id.key())) {
-        argUsedInLambda = true;
-      }
-      return new N.AId(node.l, node.id);
-    },
-  });
-  pendingBodies.push({ body, lam: false });
-  while (pendingBodies.length > 0 && !argUsedInLambda) {
-    const item = pendingBodies.pop()!;
-    inLam = item.lam;
-    item.body.visit(detector);
-  }
+  void arityOut;
+  // A formal argument captured by an inner lambda forbids explicit-loop TCO
+  // (the loop would clobber the captured binding). The detector itself lives
+  // in tier.ts (TIER.argUsedInNestedLambda -- ONE source of truth); when a
+  // tier verdict exists it already ran during the tier walk and arrives as
+  // tierAllowTco, so only the legacy 'async' path re-runs it here.
+  const argUsedInLambda = tier === 'async'
+    ? TIER.argUsedInNestedLambda(args, body)
+    : !(tierAllowTco as boolean);
   if (argUsedInLambda) {
     compiler = ext(compiler, { allowTco: false });
   }
@@ -2078,6 +2143,7 @@ export function* compileAApp(
 
 export function compileALam(
   compiler: CompilerVisitor,
+  node: N.ALam,
   l: Loc,
   name: string,
   args: N.ABind[],
@@ -2092,6 +2158,20 @@ export function compileALam(
   } else {
     isFlat = false;
   }
+  // Tier verdict for this lambda (node-identity lookup; a missing entry is an
+  // InternalCompilerError -- it means a pass after tier analysis rebuilt ANF
+  // nodes). The Flat verdict must agree exactly with the emitter's own
+  // flatness decision above (both resolve through FL.isFunctionFlat on the
+  // let-binding); assert it, never fall back.
+  let verdict: TIER.TierVerdict | undefined;
+  if (compiler.tierMap !== undefined) {
+    verdict = TIER.tierVerdictFor(compiler.tierMap, node, l.key());
+    if ((verdict.tier === 'flat') !== isFlat) {
+      throw new InternalCompilerError(
+        'tier/flatness disagreement for lambda "' + name + '" at ' + l.key()
+        + ': tier=' + verdict.tier + ' but emitter isFlat=' + isFlat);
+    }
+  }
   const newStep = freshId(compilerName('step'));
   const temp = freshId(compilerName('temp_lam'));
   const len = args.length;
@@ -2102,7 +2182,19 @@ export function compileALam(
   // tail position; if so the function value needs the driving `.app` wrapper
   // (makeTailFunction), otherwise it keeps app === appBody for zero overhead.
   const tokenCell: Map<string, boolean> = new Map();
-  const funBody = compileFunBody(l, newStep, temp, ext(compiler, { allowTco: true, tokenCell: tokenCell }), effectiveArgs, len, body, true, isFlat, false, true);
+  const funBody = compileFunBody(l, newStep, temp, ext(compiler, { allowTco: true, tokenCell: tokenCell }), effectiveArgs, len, body, true, isFlat, false, true,
+    verdict !== undefined ? verdict.tier : 'async', undefined,
+    verdict !== undefined ? verdict.allowTco : undefined);
+  // O7: a sync (jFun) body must have ZERO residual awaits -- assert at compile
+  // time (a miss would be a JS SyntaxError at load time). Binds today's Flat
+  // emissions; the TailFlat/FewSuspend arms hook the same assertion when they
+  // land.
+  if (isFlat) {
+    assertNoResidualAwaits(funBody, verdict !== undefined ? verdict.tier : 'flat', l);
+  }
+  if (verdict !== undefined && process.env.PYRET_TIER_SHADOW) {
+    tierShadowCompare(verdict, funBody, 'lam', name, l);
+  }
   const funArgs = CL.map_list((arg: N.ABind) => formalShadowName(arg.id), effectiveArgs);
   // Flat functions stay synchronous; everything else is an async function so its
   // body can `await` non-flat calls and the fuel check.
@@ -2213,7 +2305,7 @@ export function* compileLettable(
     case 'a-update':
       return yield* compileSplitUpdate(compiler, e.l, b, e.supe, e.fields, optBody);
     case 'a-lam': {
-      const compiledE = compileALam(compiler, e.l, e.name, e.args, e.ret, e.body, b);
+      const compiledE = compileALam(compiler, e, e.l, e.name, e.args, e.ret, e.body, b);
       return yield* elseCase(compiledE);
     }
     default: {
@@ -2370,6 +2462,12 @@ export class CompilerVisitor {
   // treating them like a blank annotation. Empty unless ann-elision is enabled.
   // See annCheckStmts / compileAnns / compileAnnotatedLet.
   redundantAnnChecks: Set<string> = new Set();
+  // Per-function tier verdicts (tier.ts; promise backend with gen-functions
+  // on). Keyed by ANF NODE IDENTITY (ALam/AMethod) -- when defined, a missing
+  // entry for a visited function node is an InternalCompilerError (a pass
+  // after tier analysis rebuilt nodes), never a fallback. undefined =
+  // -no-gen-functions legacy all-async emission (the A/B baseline).
+  tierMap: TIER.TierMap | undefined = undefined;
   bindings!: Map<string, CS.ValueBind>;
   typeBindings!: Map<string, CS.TypeBind>;
   moduleBindings!: Map<string, CS.ModuleBind>;
@@ -2650,10 +2748,31 @@ export class CompilerVisitor {
     // body is wrapped with makeTailMethod (a driving full_meth) when it does. The
     // token-cell records it, exactly like compile-a-lam.
     const isFlat = this.flatMethods.has(node);
+    // Tier verdict (node-identity; missing entry = InternalCompilerError) --
+    // the Flat verdict must agree exactly with the flatMethods decision above
+    // (both come from the same node-identity set). See compileALam.
+    let verdict: TIER.TierVerdict | undefined;
+    if (this.tierMap !== undefined) {
+      verdict = TIER.tierVerdictFor(this.tierMap, node, node.l.key());
+      if ((verdict.tier === 'flat') !== isFlat) {
+        throw new InternalCompilerError(
+          'tier/flatness disagreement for method "' + node.name + '" at ' + node.l.key()
+          + ': tier=' + verdict.tier + ' but emitter isFlat=' + isFlat);
+      }
+    }
     const funArgs = CL.map_list((a: N.ABind) => formalShadowName(a.id), node.args);
     const tokenCell: Map<string, boolean> = new Map();
     const fullInner =
-      compileFunBody(node.l, step, tempFull, ext(this, { allowTco: true, tokenCell: tokenCell }), node.args, len, node.body, true, isFlat, true, true);
+      compileFunBody(node.l, step, tempFull, ext(this, { allowTco: true, tokenCell: tokenCell }), node.args, len, node.body, true, isFlat, true, true,
+        verdict !== undefined ? verdict.tier : 'async', undefined,
+        verdict !== undefined ? verdict.allowTco : undefined);
+    // O7: same assertion as compileALam's flat arm (see there).
+    if (isFlat) {
+      assertNoResidualAwaits(fullInner, verdict !== undefined ? verdict.tier : 'flat', node.l);
+    }
+    if (verdict !== undefined && process.env.PYRET_TIER_SHADOW) {
+      tierShadowCompare(verdict, fullInner, 'method', node.name, node.l);
+    }
     const fullVar = jVar(tempFull, isFlat
       ? jFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, fullInner)
       : jAsyncFun(J.nextJFunId(), makeFunName(this, node.l), funArgs, fullInner));
@@ -3491,7 +3610,8 @@ export class SplittingCompiler extends CompilerVisitor {
     provides: CS.Provides,
     postEnv: CS.ComputedEnvironment,
     options: SplitCompileOptions,
-    redundantAnnChecks: Set<string> = new Set()
+    redundantAnnChecks: Set<string> = new Set(),
+    tierMap?: TIER.TierMap
   ) {
     super();
     this.uri = provides.fromUri;
@@ -3502,6 +3622,7 @@ export class SplittingCompiler extends CompilerVisitor {
     this.flatMethodApps = flatnessEnvs[2];
     this.flatMethods = flatnessEnvs[3];
     this.redundantAnnChecks = redundantAnnChecks;
+    this.tierMap = tierMap;
     // Pyret accesses these fields directly; a computed-none here would be a
     // field-not-found error there too.
     this.bindings = (postEnv as CS.ComputedEnv).bindings;
@@ -3535,7 +3656,8 @@ export function splittingCompiler(
   provides: CS.Provides,
   postEnv: CS.ComputedEnvironment,
   options: SplitCompileOptions,
-  redundantAnnChecks: Set<string> = new Set()
+  redundantAnnChecks: Set<string> = new Set(),
+  tierMap?: TIER.TierMap
 ): SplittingCompiler {
-  return new SplittingCompiler(env, addPhase, flatnessEnvs, provides, postEnv, options, redundantAnnChecks);
+  return new SplittingCompiler(env, addPhase, flatnessEnvs, provides, postEnv, options, redundantAnnChecks, tierMap);
 }
