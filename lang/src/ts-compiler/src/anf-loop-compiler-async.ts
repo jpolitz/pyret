@@ -3282,7 +3282,16 @@ export class CompilerVisitor {
 
   aObj(node: N.AObj): DAG.CExp {
     const visitFields = node.fields.map((f) => f.visit(this) as DAG.CField);
-    return cExp(rtMethod('makeObject', clist<J.JExprT>(jObj(CL.map_list(oGetField, visitFields)))), clEmpty);
+    // Emit the dict as an adopt-ready `{__proto__: R.$dictProto, …}` literal:
+    // the runtime's PObject constructor recognizes the shared dict prototype
+    // and adopts the (always fresh) literal without its normalizing copy, and
+    // V8 gives literals with a non-null prototype fast shape-tracked
+    // properties, where the old null-proto copy target was permanently
+    // dictionary-mode. `__proto__` is a reserved name in Pyret (cannot be a
+    // record key), so the marker field can never collide, and the quoted
+    // `"__proto__"` key is still the prototype-setting literal form per spec.
+    const protoField = jField('__proto__', rtField('$dictProto'));
+    return cExp(rtMethod('makeObject', clist<J.JExprT>(jObj(clCons(protoField as J.JFieldT, CL.map_list(oGetField, visitFields))))), clEmpty);
   }
 
   aGetBang(node: N.AGetBang): DAG.CExp {
