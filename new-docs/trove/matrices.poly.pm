@@ -1,5 +1,35 @@
 #lang pollen
 
+◊(require (only-in racket/system [system shell]))
+◊(define lualatex-path (path->string (find-executable-path "lualatex")))
+◊(define magick-path (path->string (find-executable-path "magick")))
+◊(define matrix-image-dir (path->string (current-directory)))
+
+◊(define (combine-strings ss)
+  (let loop ([ss (reverse ss)] [out ""])
+    (if (null? ss) out
+        (loop (cdr ss) (string-append out " " (car ss))))))
+
+◊(define (matrix-image mtx-file-basename . latex-fragments)
+   (let* ([mtx-dir matrix-image-dir]
+          [mtx-path-basename (path->string (build-path mtx-dir mtx-file-basename))]
+          [mtx-png-file (string-append mtx-path-basename ".png")])
+     (unless (file-exists? mtx-png-file)
+       (let ([mtx-latex-file (string-append mtx-path-basename ".tex")])
+         (call-with-output-file mtx-latex-file
+           (lambda (o)
+             (fprintf o "\\documentclass[preview]{standalone}\n")
+             (fprintf o "\\usepackage{amsmath}\n")
+             (fprintf o "\\begin{document}\n")
+             (for-each (lambda (x) (display x o) (display " " o)) latex-fragments)
+             (fprintf o "\n\\end{document}\n"))
+           #:exists 'replace)
+         (shell (format "~a -output-directory=~a ~a" lualatex-path mtx-dir mtx-path-basename))
+         (shell (format "~a -density 300 ~a.pdf -quality 90 ~a.png"
+                   magick-path mtx-path-basename mtx-path-basename))))
+     `(img ([src ,(string-append mtx-file-basename ".png")]
+            [alt ,(combine-strings latex-fragments)]
+            [width "100%"]))))
 
 ◊(define (matrix-method name #:args (args #f) #:return (return #f) #:contract (contract #f))
    (method-doc "Matrix" #f name #:alt-docstrings "" #:args args #:return return #:contract contract))
@@ -554,7 +584,19 @@ list of columns is {2, 3}, then the positions in the
 resulting submatrix will be the elements with (◊emph{row}, ◊emph{col}) positions
 {(1, 2), (1, 3), (2, 2), (2, 3)}.
 
-◊(image "matrix-submatrix.png")
+◊matrix-image["matrix-submatrix"]{
+\[
+\left[\begin{matrix} 
+       a_{11} & a_{12} & a_{13} \\
+       a_{21} & a_{22} & a_{23} \\
+       a_{31} & a_{32} & a_{33}
+       \end{matrix}\right]\mathtt{.submatrix([list: 1, 2], [list: 2, 3])}
+  =
+\left[\begin{matrix}
+       a_{12} & a_{13} \\
+       a_{22} & a_{23}\end{matrix}\right]
+\]
+}
 
 This is shown in the below example:
 
@@ -569,7 +611,14 @@ end
 
 Returns the transposition of the matrix. For example,
 
-◊(image "matrix-transpose.png")
+◊matrix-image["matrix-transpose"]{
+\[
+\begin{bmatrix}1 & 2 & 3 \\ 4 & 5 & 6\end{bmatrix}
+  \overrightarrow{Transpose}
+\begin{bmatrix}1 & 4 \\ 2 & 5 \\ 3 & 6\end{bmatrix}
+\]
+}
+
 
 ◊examples[#:load-preamble #t]{
 check:
@@ -790,7 +839,15 @@ multiplying the matrix with the transposition of ◊pyret{other} and taking
 the trace of the result. An example of this calculation (*
 denotes matrix multiplication):
 
-◊(image "matrix-frobenius.png")
+◊matrix-image["matrix-frobenius"]{
+\[
+\left(\left[\begin{smallmatrix}1 & 2 & 3\end{smallmatrix}\right]
+\ast\left[\begin{smallmatrix}4\\ 2\\ ^4/_3 \end{smallmatrix}\right]\right)\mathtt{.trace()}
+=
+\underbrace{\left[\begin{smallmatrix}(1\cdot 4)+(2\cdot 2)+(3\cdot \frac{4}{3})\end{smallmatrix}\right]}_{
+1\times 1 \text{ matrix}}\mathtt{.trace()}=12
+\]
+}
 
 ◊examples[#:load-preamble #t]{
 check:
@@ -859,7 +916,13 @@ end
 
 Returns the Reduced Row Echelon Form of the matrix. For example:
 
-◊(image "matrix-rref.png")
+◊matrix-image["matrix-rref"]{
+\[
+\begin{bmatrix}1 & 2 & 3 \\ 4 & 5 & 6\end{bmatrix}
+  \overrightarrow{RREF}
+\begin{bmatrix}1 & 0 & -1\\ 0 & 1 & 2\end{bmatrix}
+\]
+}
 
 ◊examples[#:load-preamble #t]{
 check:
@@ -873,7 +936,12 @@ Returns the inverse of the matrix, if it is invertible (found
 by augmenting the matrix with itself and finding the reduced-row
 echelon form). For example:
 
-◊(image "matrix-inverse.png")
+◊matrix-image["matrix-inverse"]{
+\[
+\begin{bmatrix}1 & 0 & 4\\ 1 & 1 & 6\\ -3 & 0 & -10\end{bmatrix}^{-1}
+= \begin{bmatrix}-5 & 0 & -2\\ -4 & 1 & -1\\ ^3/_2 & 0 & ^1/_2\end{bmatrix}
+\]
+}
 
 ◊examples[#:load-preamble #t]{
 check:
@@ -902,7 +970,25 @@ of this matrix, if possible.  This returns a pair of matrices, ◊pyret{L} and
 "upper-triangle")]{lower-triangular} and ◊seclink[(pyret-method-ref "Matrix"
 "upper-triangle")]{upper-triangular}, and whose product is this matrix:
 
-◊(image "matrix-decomp.png")
+◊matrix-image["matrix-decomp"]{
+\[
+  \begin{bmatrix}
+    a_{11} & a_{12} & a_{13} \\
+    a_{21} & a_{22} & a_{23} \\
+    a_{31} & a_{32} & a_{33}
+  \end{bmatrix} =
+  \begin{bmatrix}
+    \ell_{11} &         0 & 0         \\
+    \ell_{21} & \ell_{22} & 0         \\
+    \ell_{31} & \ell_{32} & \ell_{33}
+  \end{bmatrix}
+  \begin{bmatrix}
+    u_{11} & u_{12} & u_{13} \\
+         0 & u_{22} & u_{23} \\
+         0 &      0 & u_{33}
+  \end{bmatrix}
+\]
+}
 
 ◊examples[#:load-preamble #t]{
 check:
