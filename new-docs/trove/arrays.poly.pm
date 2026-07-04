@@ -1,44 +1,44 @@
 #lang pollen
 
-@(define a-of-a '(a-app (a-id "Array" (xref "arrays" "Array")) "a"))
+◊(define a-of-a '(a-app (a-id "Array" (xref "arrays" "Array")) "a"))
 
-@(define (a-method name #:args args #:return ret #:contract contract)
+◊(define (a-method name #:args args #:return ret #:contract contract)
   (method-doc "Array" "array" name #:alt-docstrings "" #:args args #:return ret #:contract contract))
-@(define (a-ref name)
+◊(define (a-ref name)
   (pyret-method "Array" "array" name "arrays"))
 
 
 
 
-@docmodule["arrays" #:noimport #t]{
+◊docmodule["arrays" #:noimport #t]{
 
-@section{The Array Type}
+◊section{The Array Type}
 
-@type-spec["Array" (list)]{
+◊type-spec["Array" (list)]{
 
-A @pyret{array} is a mutable, fixed-length collection indexed
-by non-negative intgers. Accessing and mutating a @pyret{array} takes
+A ◊pyret{array} is a mutable, fixed-length collection indexed
+by non-negative intgers. Accessing and mutating a ◊pyret{array} takes
 constant time in the size of the array.
 
 By default, Pyret users should use this library. If, however, you need
 a higher-performant but potentially less ergonomic array library, look at
-@seclink{raw-arrays} instead, which is primarily reserved for internal
+◊seclink{raw-arrays} instead, which is primarily reserved for internal
 use and for building other libraries. However, do not use that library
 unless you really cannot get what you need out of this one.
 
-Because arrays are @emph{mutable}, equality is not straightforward.
-Learn more at @seclink["equality"].
+Because arrays are ◊emph{mutable}, equality is not straightforward.
+Learn more at ◊seclink["equality"].
 
 }
 
-@section{Using Arrays in Programs}
+◊section{Using Arrays in Programs}
 
 Some of the names provided for arrays inevitably overlap with those
-provided for other data. Therefore, using the @pyret{include}
+provided for other data. Therefore, using the ◊pyret{include}
 form is likely to cause name-clashes. It is wiser to import arrays using a prefix name and
 use the names below through that prefix.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
 
 check:
@@ -48,24 +48,24 @@ check:
 end
 }
 
-@section{Constructing Arrays}
+◊section{Constructing Arrays}
 
-@collection-doc["array" #:fields (list (a-var-type "value" "a")) #:return (A-of "a")]
+◊collection-doc["array" #:fields (list (a-var-type "value" "a")) #:return (A-of "a")]
 
-Constructs an @pyret-id{Array} with the given elements.
+Constructs an ◊pyret-id{Array} with the given elements.
 
 Note that
-@pyret-id{Array}s are mutable, so comparisons using
-@secref["eq-fun-equal-always"]
+◊pyret-id{Array}s are mutable, so comparisons using
+◊secref["eq-fun-equal-always"]
 will only
-return @pyret{true} on @pyret-id{Array}s when they are also
-@secref["eq-fun-identical"], regardless of their contents.
+return ◊pyret{true} on ◊pyret-id{Array}s when they are also
+◊secref["eq-fun-identical"], regardless of their contents.
 Usually, the most appropriate comparison is
-@secref["eq-fun-equal-now"].
+◊secref["eq-fun-equal-now"].
 Tests should correspondingly use 
-@pyret-id["is=~" "testing"].
+◊pyret-id["is=~" "testing"].
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
 
 check:
@@ -83,25 +83,25 @@ check:
 end
 }
 
-@function["array-of"
+◊function["array-of"
   #:contract (a-arrow (a-var-type "value" "a") (a-var-type "count" N) (A-of "a"))
   #:args (list (list "value" #f) (list "count" #f))
   #:return (A-of "a")
 ]
 
-Constructs an @pyret{Array} of length @tt{count}, where every element is the value
-given as @pyret{value}.
+Constructs an ◊pyret{Array} of length ◊tt{count}, where every element is the value
+given as ◊pyret{value}.
 
-Note that @pyret{value} is not @emph{copied}, so,
-the elements of @pyret{Array}s created with @pyret-id{array-of} will always be
-@secref["eq-fun-identical"].
+Note that ◊pyret{value} is not ◊emph{copied}, so,
+the elements of ◊pyret{Array}s created with ◊pyret-id{array-of} will always be
+◊secref["eq-fun-identical"].
 
 To create an array of arrays where each sub-array is independent of the other, use
-@pyret-id{build-array}.
+◊pyret-id{build-array}.
 
-Similar to @pyret-id["raw-array-of" "raw-arrays"].
+Similar to ◊pyret-id["raw-array-of" "raw-arrays"].
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
 
 check:
@@ -125,17 +125,17 @@ check:
 end
 }
 
-@function["build-array"
+◊function["build-array"
   #:contract (a-ftype (a-var-type "f" (a-arrow N "a")) (a-var-type "size" N) (A-of "a"))
   #:return (A-of "a")
 ]
 
-Constructs an array of length @pyret{size}, and fills it with the result of
-calling the function @pyret{f} with each index from @pyret{0} to @pyret{size - 1}.
+Constructs an array of length ◊pyret{size}, and fills it with the result of
+calling the function ◊pyret{f} with each index from ◊pyret{0} to ◊pyret{size - 1}.
 
-Similar to @pyret-id["build-list" "lists"] and @pyret-id["raw-array-build" "raw-arrays"].
+Similar to ◊pyret-id["build-list" "lists"] and ◊pyret-id["raw-array-build" "raw-arrays"].
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
 
 check:
@@ -164,16 +164,16 @@ check:
 end
 }
 
-@function["array-from-list"
+◊function["array-from-list"
   #:contract (a-arrow (a-var-type "l" (L-of "a")) (A-of "a"))
   #:args (list (list "l" #f))
   #:return (A-of "a")]
 
-Converts a @pyret-id["List" "lists"] to an @pyret-id{Array} containing the same elements in the same order.
+Converts a ◊pyret-id["List" "lists"] to an ◊pyret-id{Array} containing the same elements in the same order.
 
-Similar to @pyret-id["raw-array-from-list" "raw-arrays"].
+Similar to ◊pyret-id["raw-array-from-list" "raw-arrays"].
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
 import lists as L
 
@@ -182,25 +182,25 @@ check:
 end
 }
 
-@section{Array Methods}
+◊section{Array Methods}
 
-@a-method["get-now"
+◊a-method["get-now"
   #:contract (a-arrow (p-a-var-type "index" N)  "a")
   #:args (list (list "self" #f) (list "index" #f))
   #:return "a"
 ]
 
-Returns the value at the given @tt{index}.  
+Returns the value at the given ◊tt{index}.  
 
 This method has a
-@pyret{-now} suffix because its answer can change from one call to the next if,
-for example, @a-ref["set-now"] is used.
+◊pyret{-now} suffix because its answer can change from one call to the next if,
+for example, ◊a-ref["set-now"] is used.
 
 Using an index too large, negative, or not a whole number raises an error.
 
-Similar to @pyret-id["get" "lists"] and @pyret-id["raw-array-get" "raw-arrays"].
+Similar to ◊pyret-id["get" "lists"] and ◊pyret-id["raw-array-get" "raw-arrays"].
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
 
 check:
@@ -214,25 +214,25 @@ check:
 end
 }
 
-@a-method["set-now"
+◊a-method["set-now"
   #:contract (a-ftype (a-var-type "index" N) (a-var-type "value" "a") No)
   #:args (list (list "self" #f) (list "index" #f) (list "value" #f))
   #:return No
 ]
 
-Updates the value at the given @tt{index}, returning @pyret-id["Nothing"
+Updates the value at the given ◊tt{index}, returning ◊pyret-id["Nothing"
 "<global>"].
 
 The update is stateful, so all references to the array see the
-update.  Hence the @pyret{-now} suffix; in the example below,
-calling @pyret{a.get-now()} at two different points
+update.  Hence the ◊pyret{-now} suffix; in the example below,
+calling ◊pyret{a.get-now()} at two different points
 in the program produces two different results.
 
 Using an index too large, negative, or not a whole number raises an error.
 
-Similar to @pyret-id["raw-array-set" "raw-arrays"].
+Similar to ◊pyret-id["raw-array-set" "raw-arrays"].
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
 
 check:
@@ -254,7 +254,7 @@ check:
 end
 }
 
-@a-method["length"
+◊a-method["length"
   #:contract (a-ftype N)
   #:args (list (list "self" #f))
   #:return N
@@ -263,9 +263,9 @@ end
 Returns the length of the array.  The length of an array is set when it is
 created and cannot be changed.
 
-Similar to @pyret-id["length" "lists"] and @pyret-id["raw-array-length" "raw-arrays"].
+Similar to ◊pyret-id["length" "lists"] and ◊pyret-id["raw-array-length" "raw-arrays"].
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
 
 check:
@@ -276,18 +276,18 @@ check:
 end
 }
 
-@a-method["filter"
+◊a-method["filter"
     #:contract (a-ftype (a-var-type "f" (p-a-arrow "a" B)) (A-of "a"))
     #:args (list (list "self" #f) (list "f" #f))
     #:return (A-of "a")]
     
-  Applies function @pyret{f} to each element of @pyret{self} from left to right,
-  constructing a new @pyret{Array} out of the elements for which @pyret{f}
-  returned @pyret{true}.
+  Applies function ◊pyret{f} to each element of ◊pyret{self} from left to right,
+  constructing a new ◊pyret{Array} out of the elements for which ◊pyret{f}
+  returned ◊pyret{true}.
 
-Similar to @pyret-id["filter" "lists"] and @pyret-id["raw-array-filter" "raw-arrays"].
+Similar to ◊pyret-id["filter" "lists"] and ◊pyret-id["raw-array-filter" "raw-arrays"].
 
-  @examples[#:show-try-it #t]{
+  ◊examples[#:show-try-it #t]{
 import arrays as A
 
 check:
@@ -297,21 +297,21 @@ check:
 end
   }
   
-@a-method["map"
+◊a-method["map"
     #:contract (a-ftype  (a-var-type "f" (p-a-arrow "a" "b")) (A-of "b"))
     #:args (list (list "self" #f) (list "f" #f))
     #:return (A-of "b")]
     
-Applies function @pyret{f} to each element of the arrays from left to right, and
-constructs a new @pyret{Array} out of the return values in the corresponding order.
+Applies function ◊pyret{f} to each element of the arrays from left to right, and
+constructs a new ◊pyret{Array} out of the return values in the corresponding order.
 The original array remains unchanged.
 
-@tt{a} represents the type of the elements in the original @pyret{Array}, @tt{b} is
-the type of the elements in the new @pyret{Array}.
+◊tt{a} represents the type of the elements in the original ◊pyret{Array}, ◊tt{b} is
+the type of the elements in the new ◊pyret{Array}.
 
-Similar to @pyret-id["map" "lists"] and @pyret-id["raw-array-map" "raw-arrays"].
+Similar to ◊pyret-id["map" "lists"] and ◊pyret-id["raw-array-map" "raw-arrays"].
 
-  @examples[#:show-try-it #t]{
+  ◊examples[#:show-try-it #t]{
 import arrays as A
 
 check:
@@ -322,19 +322,19 @@ check:
 end
   }
 
-@a-method["fold"
+◊a-method["fold"
     #:contract (a-ftype  (a-var-type "f" (p-a-ftype "b" "a" N "b")) (a-var-type "init" "b") (a-var-type "start-index" N) "b")
     #:args (list (list "self" #f) (list "f" #f) (list "init" #f) (list "start-index" #f))
     #:return "b"]
     
 Combines the elements in the array with a function that accumulates
 each element with an intermediate result. Has an
-argument order that works with @pyret{for}. The numeric argument to the
+argument order that works with ◊pyret{for}. The numeric argument to the
 accumulator is the index of the current element.
 
-Similar to @pyret-id["fold" "lists"] and @pyret-id["raw-array-fold" "raw-arrays"].
+Similar to ◊pyret-id["fold" "lists"] and ◊pyret-id["raw-array-fold" "raw-arrays"].
 
-  @examples[#:show-try-it #t]{
+  ◊examples[#:show-try-it #t]{
 import arrays as A
 
 fun sum-even-minus-odd(a :: Array<Number>):
@@ -363,17 +363,17 @@ check:
 end
   }
 
-@a-method["concat"
+◊a-method["concat"
     #:contract (a-ftype (a-var-type "other" (A-of "a")) (A-of "a"))
     #:args (list (list "self" #f) (list "other" #f))
     #:return (A-of "a")]
 
   Creates a new array with all the elements of the current array
-  followed by all the elements of @pyret{other}.
+  followed by all the elements of ◊pyret{other}.
 
-Similar to @pyret-id["append" "lists"] and @pyret-id["raw-array-concat" "raw-arrays"].
+Similar to ◊pyret-id["append" "lists"] and ◊pyret-id["raw-array-concat" "raw-arrays"].
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
 
 check:
@@ -388,17 +388,17 @@ end
 
 }
 
-@a-method["duplicate"
+◊a-method["duplicate"
     #:contract (a-arrow (A-of "a"))
     #:args (list (list "self" #f))
     #:return (A-of "a")]
 
   Returns a copy of the given array, such that corresponding elements in the
-  result are @secref["eq-fun-identical"] to those in the source array.
+  result are ◊secref["eq-fun-identical"] to those in the source array.
 
-Similar to @pyret-id["raw-array-duplicate" "raw-arrays"].
+Similar to ◊pyret-id["raw-array-duplicate" "raw-arrays"].
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
 
 data Person: p(ref name :: String, ref age :: Number) end
@@ -416,18 +416,18 @@ end
 
 }
 
-@a-method["sort-nums"
+◊a-method["sort-nums"
     #:contract (a-ftype (a-var-type "asc" B) (A-of "a"))
     #:args (list (list "self" #f) (list "asc" #f))
     #:return (A-of "a")]
 
-  Sorts the given array @emph{in-place} in ascending or descending order
-  according to the @pyret{asc} parameter. Returns a reference to the
+  Sorts the given array ◊emph{in-place} in ascending or descending order
+  according to the ◊pyret{asc} parameter. Returns a reference to the
   original array, which will have its contents mutably updated.
 
-Similar to @pyret-id["raw-array-sort-nums" "raw-arrays"].
+Similar to ◊pyret-id["raw-array-sort-nums" "raw-arrays"].
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
 
 check:
@@ -442,20 +442,20 @@ check:
 end
 }
 
-@a-method["sort-by"
+◊a-method["sort-by"
     #:contract (a-ftype (a-var-type "key" (a-arrow "a" N)) (a-var-type "asc" B) (A-of "a"))
     #:args (list (list "self" #f) (list "key" #f) (list "asc" #f))
     #:return (A-of "a")]
 
   Creates a new array containing the sorted contents of the given array. The sort
-  order is determined by calling the @pyret{key} function on each element to
+  order is determined by calling the ◊pyret{key} function on each element to
   get a number, and sorting the elements by their key value (in increasing key
-  order if @pyret{asc} is @pyret{true}, decreasing if @pyret{false}). Ties are
+  order if ◊pyret{asc} is ◊pyret{true}, decreasing if ◊pyret{false}). Ties are
   broken by the order in which the element is present in the initial array.
 
-Similar to @pyret-id["raw-array-sort-by" "raw-arrays"].
+Similar to ◊pyret-id["raw-array-sort-by" "raw-arrays"].
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
 
 check:
@@ -473,23 +473,23 @@ end
 }
 
 
-@a-method["to-list-now"
+◊a-method["to-list-now"
   #:contract (a-arrow  (L-of "a"))
   #:args (list (list "self" #f))
   #:return (L-of "a")
 ]
 
-    Converts a @pyret-id{Array} to a @pyret-id["List" "lists"] containing
+    Converts a ◊pyret-id{Array} to a ◊pyret-id["List" "lists"] containing
     the same elements in the same order. This method has a
-@pyret{-now} suffix because its answer can change from one call to the next if,
-for example, @a-ref["set-now"] is subsequently used.
+◊pyret{-now} suffix because its answer can change from one call to the next if,
+for example, ◊a-ref["set-now"] is subsequently used.
 
-    Note that it does @emph{not} recursively convert @pyret-id{Array}s;
+    Note that it does ◊emph{not} recursively convert ◊pyret-id{Array}s;
     only the top-level is converted.
 
-Similar to @pyret-id["raw-array-to-list" "raw-arrays"].
+Similar to ◊pyret-id["raw-array-to-list" "raw-arrays"].
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
 import lists as L
 
@@ -508,15 +508,15 @@ end
 
 
 
-@section{Array Functions}
+◊section{Array Functions}
 
-@function["array-get-now"
+◊function["array-get-now"
   #:contract (a-ftype (a-var-type "array" (A-of "a")) (a-var-type "index" N) "a")
 ]
 
-Equivalent to @pyret{array}@a-ref["get-now"]@pyret{(index)}.
+Equivalent to ◊pyret{array}◊a-ref["get-now"]◊pyret{(index)}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
 
 check:
@@ -525,14 +525,14 @@ check:
 end
 }
           
-@function["array-set-now"
+◊function["array-set-now"
   #:contract (a-ftype (a-var-type "array" (A-of "a")) (a-var-type "index" N) (a-var-type "value" "a") No)
   #:return No
 ]
 
-Equivalent to @pyret{array}@a-ref["set-now"]@pyret{(index, value)}.
+Equivalent to ◊pyret{array}◊a-ref["set-now"]◊pyret{(index, value)}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
          
 check:
@@ -544,14 +544,14 @@ check:
 end
 }
 
-@function["array-length"
+◊function["array-length"
   #:contract (a-ftype (a-var-type "array" (A-of "a")) N)
   #:return N
 ]
 
-Equivalent to @pyret{array}@a-ref["length"]@pyret{()}.
+Equivalent to ◊pyret{array}◊a-ref["length"]◊pyret{()}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
 
 check:
@@ -561,53 +561,53 @@ check:
 end
 }
 
-@function["array-filter"
+◊function["array-filter"
   #:contract (a-ftype (a-var-type "f" (p-a-ftype "a" B)) (a-var-type "array" (A-of "a")) (A-of "a"))
   #:return (A-of "a")
 ]
 
-Equivalent to @pyret{array}@a-ref["filter"]@pyret{(f)}, with an argument order
-designed for @pyret{for}.
+Equivalent to ◊pyret{array}◊a-ref["filter"]◊pyret{(f)}, with an argument order
+designed for ◊pyret{for}.
 
 
-@function["array-map"
+◊function["array-map"
   #:contract (a-ftype (a-var-type "f" (p-a-ftype "a" "b")) (a-var-type "array" (A-of "a")) (A-of "a"))
   #:return (A-of "b")
 ]
 
-Equivalent to @pyret{array}@a-ref["map"]@pyret{(f)}, with an argument order
-designed for @pyret{for}.
+Equivalent to ◊pyret{array}◊a-ref["map"]◊pyret{(f)}, with an argument order
+designed for ◊pyret{for}.
 
-@function["array-fold"
+◊function["array-fold"
   #:contract (a-ftype (a-var-type "f" (p-a-ftype "b" "a" N)) (a-var-type "init" "b") (a-var-type "array" (A-of "a")) N)
   #:return "b"
 ]
 
-Equivalent to @pyret{array}@a-ref["fold"]@pyret{(f, init, start-index)}, with an argument order
-designed for @pyret{for}.
+Equivalent to ◊pyret{array}◊a-ref["fold"]◊pyret{(f, init, start-index)}, with an argument order
+designed for ◊pyret{for}.
 
-@function["array-concat"
+◊function["array-concat"
   #:contract (a-ftype (a-var-type "array1" (A-of "a")) (a-var-type "array2" (A-of "a")) (A-of "a"))
   #:return (A-of "a")
 ]
 
-Equivalent to @pyret{array1}@a-ref["concat"]@pyret{(array2)}.
+Equivalent to ◊pyret{array1}◊a-ref["concat"]◊pyret{(array2)}.
 
-@function["array-duplicate"
+◊function["array-duplicate"
   #:contract (a-ftype (a-var-type "array" (A-of "a")) (A-of "a"))
   #:return (A-of "a")
 ]
 
-Equivalent to @pyret{array}@a-ref["duplicate"]@pyret{()}.
+Equivalent to ◊pyret{array}◊a-ref["duplicate"]◊pyret{()}.
 
-@function["array-sort-nums"
+◊function["array-sort-nums"
   #:contract (a-ftype (a-var-type "array" (A-of "a")) (a-var-type "asc" B) (A-of "a"))
   #:return (A-of "a")
 ]
 
-Equivalent to @pyret{array}@a-ref["sort-nums"]@pyret{(asc)}.
+Equivalent to ◊pyret{array}◊a-ref["sort-nums"]◊pyret{(asc)}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
 
 check:
@@ -622,14 +622,14 @@ check:
 end
 }
 
-@function["array-sort-by"
+◊function["array-sort-by"
   #:contract (a-ftype (a-var-type "array" (A-of "a")) (a-var-type "key" (p-a-ftype "a" N)) (a-var-type "asc" B) (A-of "a"))
   #:return (A-of "a")
 ]
 
-Equivalent to @pyret{array}@a-ref["sort-by"]@pyret{(key, asc)}.
+Equivalent to ◊pyret{array}◊a-ref["sort-by"]◊pyret{(key, asc)}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
 
 check:
@@ -646,15 +646,15 @@ check:
 end
 }
 
-@function["array-to-list-now"
+◊function["array-to-list-now"
   #:contract (a-arrow (A-of "a") (L-of "a"))
   #:args (list (list "array" #f))
   #:return (L-of "a")
 ]
 
-Equivalent to @pyret{array}@a-ref["to-list-now"]@pyret{()}.
+Equivalent to ◊pyret{array}◊a-ref["to-list-now"]◊pyret{()}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import arrays as A
 import lists as L
 

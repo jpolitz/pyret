@@ -1,33 +1,33 @@
 #lang pollen
 
-@(define (link T) (a-id T (xref "statistics" T)))
-@(define (t-field name ty) (a-field (tt name) ty))
+◊(define (link T) (a-id T (xref "statistics" T)))
+◊(define (t-field name ty) (a-field (tt name) ty))
 
-@(define (t-record . rest)
+◊(define (t-record . rest)
    (apply a-record (map tt (filter (lambda (x) (not (string=? x "\n"))) rest))))
 
 
-@docmodule["math"]{
+◊docmodule["math"]{
   The Pyret Math library.  It consists of functions for arithmetic
   calculations, optimization, and more to come!
 
-  Every function in this library is available on the @tt{math} module
-  object.  For example, if you used @pyret{import math as M}, you would
-  write @pyret{M.arg-max} to access @pyret{arg-max} below.  If you used
-  @pyret{include}, then you can refer to identifiers without writing @pyret{M.}
+  Every function in this library is available on the ◊tt{math} module
+  object.  For example, if you used ◊pyret{import math as M}, you would
+  write ◊pyret{M.arg-max} to access ◊pyret{arg-max} below.  If you used
+  ◊pyret{include}, then you can refer to identifiers without writing ◊pyret{M.}
   as a prefix.  
   
-  @;#########################################################################
-  @section{Arithmetic Functions}
-  @function["sum"
+  ◊;#########################################################################
+  ◊section{Arithmetic Functions}
+  ◊function["sum"
     #:contract (a-arrow (L-of N) N)
     #:args '(("l" #f))
     #:return N
   ]{
-  Calculates the arithmetic sum of the Numbers in @pyret{l}.  If @pyret{l}
+  Calculates the arithmetic sum of the Numbers in ◊pyret{l}.  If ◊pyret{l}
   contains at least one RoughNum, then the output will be a RoughNum.
 
-  @examples{
+  ◊examples{
     include math
     check:
       sum([list: ]) is 0
@@ -37,17 +37,17 @@
   }
   }
 
-  @;#########################################################################
-  @section{Minimization & Maximization}
+  ◊;#########################################################################
+  ◊section{Minimization & Maximization}
   
-  @function["max"
+  ◊function["max"
     #:contract (a-arrow (L-of N) N)
     #:args '(("l" #f))
     #:return N
   ]{
-  Calculates the maximal element of the set of Numbers in @pyret{l}.
+  Calculates the maximal element of the set of Numbers in ◊pyret{l}.
   
-  @examples{
+  ◊examples{
     include math
     check:
       max([list: ]) raises "Empty List"
@@ -57,14 +57,14 @@
   }
   }
   
-  @function["min"
+  ◊function["min"
     #:contract (a-arrow (L-of N) N)
     #:args '(("l" #f))
     #:return N
   ]{
-  Calculates the minimal element of the set of Numbers in @pyret{l}.
+  Calculates the minimal element of the set of Numbers in ◊pyret{l}.
 
-  @examples{
+  ◊examples{
     include math
     check:
       min([list: ]) raises "Empty List"
@@ -74,14 +74,14 @@
   }
   }
 
-  @function["arg-max"
+  ◊function["arg-max"
     #:contract (a-arrow (L-of N) N)
     #:args '(("l" #f))
     #:return N
   ]{
-  Calculates the index of the maximal element within @pyret{l}.
+  Calculates the index of the maximal element within ◊pyret{l}.
   
-  @examples{
+  ◊examples{
     include math
     check:
       arg-max([list: ]) raises "Empty List"
@@ -90,14 +90,14 @@
     end
   }
   }
-  @function["arg-min"
+  ◊function["arg-min"
     #:contract (a-arrow (L-of N) N)
     #:args '(("l" #f))
     #:return N
   ]{
-  Calculates the index of the minimal element within @pyret{l}.
+  Calculates the index of the minimal element within ◊pyret{l}.
   
-  @examples{
+  ◊examples{
     include math
     check:
       arg-max([list: ]) raises "Empty List"

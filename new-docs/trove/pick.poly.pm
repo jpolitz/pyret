@@ -1,33 +1,33 @@
 #lang pollen
 
-@(define s-pick-args (list `("elt" ("type" "normal") ("contract" ,(a-id "a"))) `("rest" ("type" "normal") ("contract" ,(a-id "b")))))
+◊(define s-pick-args (list `("elt" ("type" "normal") ("contract" ,(a-id "a"))) `("rest" ("type" "normal") ("contract" ,(a-id "b")))))
 
-@docmodule["pick"]{
+◊docmodule["pick"]{
 
 
-  @; Ignored type testers
-  @section{The Pick Datatype}
+  ◊; Ignored type testers
+  ◊section{The Pick Datatype}
 
-  @data-spec2["Pick" (list "a" "b") (list
-    @singleton-spec2["Pick" "pick-none"]
-    @constructor-spec["Pick" "pick-some" s-pick-args]
+  ◊data-spec2["Pick" (list "a" "b") (list
+    ◊singleton-spec2["Pick" "pick-none"]
+    ◊constructor-spec["Pick" "pick-some" s-pick-args]
   )]
 
-  @nested[#:style 'inset]{
-  @singleton-doc["Pick" "pick-none" (P-of "a" "b")]
-  @constructor-doc["Pick" "pick-some" s-pick-args (P-of "a" "b")]
+  ◊nested[#:style 'inset]{
+  ◊singleton-doc["Pick" "pick-none" (P-of "a" "b")]
+  ◊constructor-doc["Pick" "pick-some" s-pick-args (P-of "a" "b")]
 
-  @function["is-pick-none" #:contract (a-arrow (p-a-var-type "val" A) B)]
-  @function["is-pick-some" #:contract (a-arrow (p-a-var-type "val" A) B)]
+  ◊function["is-pick-none" #:contract (a-arrow (p-a-var-type "val" A) B)]
+  ◊function["is-pick-some" #:contract (a-arrow (p-a-var-type "val" A) B)]
   }
   
-The primary use of @pyret{pick} is as a way of obtaining values from sets.
-See the documentation of @pyret-method["Set" #f "pick" "sets"].
+The primary use of ◊pyret{pick} is as a way of obtaining values from sets.
+See the documentation of ◊pyret-method["Set" #f "pick" "sets"].
 
 However, nothing precludes other datatypes from also implementing the
-@pyret{Pick} interface. For instance, here's a simple queue definition that
-provides a @pyret{pick} method:
-@pyret-block{
+◊pyret{Pick} interface. For instance, here's a simple queue definition that
+provides a ◊pyret{pick} method:
+◊pyret-block{
 import pick as P
 
 data Queue<T>:
@@ -41,7 +41,7 @@ data Queue<T>:
 end
 }
 We can then write a function that uses that method to traverse the queue:
-@pyret-block{
+◊pyret-block{
 fun sum-queue(q :: Queue) -> Number:
   cases (P.Pick) q.pick():
     | pick-none => 0
@@ -50,7 +50,7 @@ fun sum-queue(q :: Queue) -> Number:
 end
 }
 with the expected behavior:
-@example-preamble{
+◊example-preamble{
 import pick as P
 
 data Queue<T>:
@@ -69,7 +69,7 @@ fun sum-queue(q :: Queue) -> Number:
   end
 end
 }
-@examples[#:load-preamble #t]{
+◊examples[#:load-preamble #t]{
 check:
   q = queue([list: 1, 2, 3])
   sum-queue(q) is 6

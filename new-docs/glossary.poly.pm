@@ -1,5 +1,5 @@
 #lang pollen
 
-@title{Glossary}
+◊title{Glossary}
 
-@(custom-index-block)
+◊(custom-index-block)

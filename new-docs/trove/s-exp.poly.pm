@@ -1,37 +1,37 @@
 #lang pollen
 
-@(define (sref s)
+◊(define (sref s)
   (a-id s (xref "s-exp-structs" s)))
 
 
-@docmodule["s-exp"]{
-@ignore[(list "s-sym" "s-str" "s-num" "s-list")]
-@ignore[(list "is-s-list" "is-s-num" "is-s-str" "is-s-sym")]
-  @para{
-  This module re-exports the constructors from @sref["S-Exp"],
+◊docmodule["s-exp"]{
+◊ignore[(list "s-sym" "s-str" "s-num" "s-list")]
+◊ignore[(list "is-s-list" "is-s-num" "is-s-str" "is-s-sym")]
+  ◊para{
+  This module re-exports the constructors from ◊sref["S-Exp"],
   which defines the result of parsing an s-exp.
   }
 
-  @function["read-s-exp" #:args '(("sexp-str" ""))
+  ◊function["read-s-exp" #:args '(("sexp-str" ""))
     #:contract (a-ftype (a-var-type "sexp-str" S)
                         (a-id "S-Exp" (xref "s-exp-structs" "S-Exp")))]{
-    Reads an @emph{s-expression} as a string, and returns it as a Pyret value.
+    Reads an ◊emph{s-expression} as a string, and returns it as a Pyret value.
 
     An s-expression is a string that satisfies the following grammar:
 
-    @verbatim{
+    ◊verbatim{
 s-exp = "(" s-exp ... ")"
       | <number>
       | <string>
       | <id>
     }
 
-    The first form parses to a @sref["s-list"] containing the nested
-    sub-expression results.  Numbers become @sref["s-num"]s, strings become
-    @sref["s-str"]s, and all other names not inside quotes
-    become @sref["s-sym"]s.
+    The first form parses to a ◊sref["s-list"] containing the nested
+    sub-expression results.  Numbers become ◊sref["s-num"]s, strings become
+    ◊sref["s-str"]s, and all other names not inside quotes
+    become ◊sref["s-sym"]s.
 
-@examples{
+◊examples{
 import s-exp as S
 
 p = S.read-s-exp
