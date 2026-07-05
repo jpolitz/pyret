@@ -1,9 +1,5 @@
 #lang pollen
 
-◊(append-gen-docs
-  `(module "fetch"
-    (path "src/arr/trove/fetch.arr")
-    (fun-spec (name "fetch") (arity 1))))
 
 ◊docmodule["fetch"]{
 

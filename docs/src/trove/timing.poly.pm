@@ -1,17 +1,5 @@
 #lang pollen
 
-◊(append-gen-docs
-  '(module "timing"
-    (path "src/arr/trove/timing.arr")
-    (fun-spec
-      (name "time-only")
-      (arity 1))
-    (fun-spec
-      (name "time-value")
-      (arity 1))
-    (fun-spec
-      (name "time-now")
-      (arity 0))))
 
 ◊(define (T-of typ) (a-arrow (list) typ))
 

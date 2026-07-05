@@ -1,14 +1,5 @@
 #lang pollen
 
-◊(append-gen-docs
-  `(module "modules" (path #f)
-    (form-spec (name "<id-import>"))
-    (form-spec (name "file"))
-    (form-spec (name "js-file"))
-    (form-spec (name "url"))
-    (form-spec (name "url-file"))
-    (form-spec (name "my-gdrive"))
-    (form-spec (name "shared-gdrive"))))
 
 ◊docmodule["modules" #:noimport #t #:friendly-title "Modules"]{
 

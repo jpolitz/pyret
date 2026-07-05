@@ -1,20 +1,5 @@
 #lang pollen
 
-◊(append-gen-docs
-  '(module "booleans"
-    (path "src/js/base/runtime-anf.js")
-    (form-spec (name "and"))
-    (form-spec (name "or"))
-    (data-spec
-      (name "Boolean")
-      (variants)
-      (shared))
-    (fun-spec
-      (name "not")
-      (arity 1)
-      (args ("b"))
-      (return (a-id "Boolean" (xref "<global>" "Boolean")))
-      (doc "Negates the boolean value"))))
 
 ◊docmodule["booleans" #:noimport #t #:friendly-title "Booleans"]{
   ◊type-spec["Boolean" (list)]{

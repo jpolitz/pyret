@@ -2,69 +2,7 @@
 
 ◊(define (g-id name) (seclink (xref "<global>" name)))
 
-◊(append-gen-docs
-  '(module "tables"
-    (path "src/js/base/runtime-anf.js")
-    (fun-spec (name "difference"))
-    (fun-spec (name "difference-from"))
-    (fun-spec (name "running-sum"))
-    (fun-spec (name "running-mean"))
-    (fun-spec (name "running-max"))
-    (fun-spec (name "running-min"))
-    (fun-spec (name "running-fold"))
-    (fun-spec (name "running-reduce"))
-    (fun-spec (name "raw-row"))
-    (fun-spec (name "table-from-rows"))
-    (fun-spec (name "table-from-columns"))
-    (fun-spec (name "table-from-column"))
-    
-    (type-spec (name "TableLoader"))
-    (data-spec
-      (name "Row")
-      (variants ("row"))
-      (shared (
-        (method-spec (name "get-value")) 
-        (method-spec (name "get-column-names")) 
-        (method-spec (name "get")) 
-      )))
-    (data-spec
-      (name "Table")
-      (variants ("table"))
-      (shared (
-        (method-spec (name "build-column"))
-        (method-spec (name "add-column"))
-        (method-spec (name "add-row"))
-        (method-spec (name "row"))
-        (method-spec (name "length"))
-        (method-spec (name "add-row"))
-        (method-spec (name "row-n"))
-        (method-spec (name "column"))
-        (method-spec (name "get-column"))
-        (method-spec (name "column-n"))
-        (method-spec (name "column-names"))
-        (method-spec (name "all-rows"))
-        (method-spec (name "all-columns"))
-        (method-spec (name "filter"))
-        (method-spec (name "filter-by"))
-        (method-spec (name "order-by"))
-        (method-spec (name "order-by-columns"))
-        (method-spec (name "increasing-by"))
-        (method-spec (name "decreasing-by"))
-        (method-spec (name "select-columns"))
-        (method-spec (name "transform-column"))
-        (method-spec (name "rename-column"))
-        (method-spec (name "stack"))
-        (method-spec (name "empty"))
-        (method-spec (name "drop"))
-        ;; What about new-row?
-      )))
-    (data-spec
-      (name "Reducer")
-      (type-vars ("Acc" "InVal" "OutVal"))
-      (variants ("reducer"))
-      (shared (
-        (method-spec (name "reduce"))
-        (method-spec (name "one")))))))
+
 
 ◊(define (table-method name #:args args #:return ret #:contract contract)
   (method-doc "Table" "table" name #:alt-docstrings "" #:args args #:return ret #:contract contract))

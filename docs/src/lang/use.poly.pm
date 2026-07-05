@@ -1,8 +1,5 @@
 #lang pollen
 
-◊(append-gen-docs
-  `(module "use" (path #f)
-    (form-spec (name "use context"))))
 
 ◊docmodule["use" #:noimport #t #:friendly-title "Use"]{
 

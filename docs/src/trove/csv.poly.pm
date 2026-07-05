@@ -2,14 +2,6 @@
 
 ◊(define TL (a-id "TableLoader" (xref "tables" "TableLoader")))
 
-◊(append-gen-docs
-  `(module "csv"
-    (path "src/arr/trove/csv.arr")
-    (value (name "default-options"))
-    (fun-spec (name "csv-table-str") (arity 2))
-    (fun-spec (name "csv-table-file") (arity 2))
-    (fun-spec (name "csv-table-url") (arity 2))
-    (type-spec (name "CSVOptions"))))
 
 ◊(define Opts (a-id "CSVOptions" (xref "csv" "CSVOptions")))
 

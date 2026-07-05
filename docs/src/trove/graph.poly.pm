@@ -13,28 +13,7 @@
   can be constructed via the ◊;◊secref{"s:extend-expr"}
   Extend Expression.}})
 
-◊(append-gen-docs
-  `(module "graph"
-    (path "src/js/base/runtime-anf.js")
-    (fun-spec (name "show-graph"))
-    (fun-spec (name "show-tree"))
-    (type-spec (name "TreeOptions"))
-    (type-spec (name "GraphOptions"))
-    (type-spec (name "VertexOptions"))
-    (type-spec (name "EdgeOptions"))
-    (data-spec
-      (name "Graph")
-      (variants ("graph")))
-    (data-spec
-      (name "Vertex")
-      (variants ("vertex")))
-    (data-spec
-      (name "Edge")
-      (variants ("vertex")))
-    (data-spec
-      (name "Tree")
-      (variants ("tree-node")))
-  ))
+
 
 ◊docmodule["graph"]{
   The Pyret Graph library. It consists of graph and tree visualization tools.

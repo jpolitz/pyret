@@ -1,7 +1,5 @@
 #lang pollen
 
-◊(append-gen-docs
-  `(module "type-check" (path "src/arr/compiler/type-check.arr")))
 
 ◊docmodule["type-check" #:noimport #t #:friendly-title "Type Checking"]{
 

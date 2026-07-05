@@ -1,8 +1,5 @@
 #lang pollen
 
-◊(append-gen-docs
-  `(module "image-structs"
-    (path "src/arr/trove/image-structs.arr")))
 
 ◊docmodule["image-structs"]{
 

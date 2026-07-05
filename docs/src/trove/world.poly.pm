@@ -1,20 +1,6 @@
 #lang pollen
 ◊(define WC (a-id "WorldConfig" (xref "world" "WorldConfig")))
 
-◊(append-gen-docs
-'(module "world"
-  (path "build/phase1/trove/world.js")
-  (unknown-item (name "big-bang"))
-  (unknown-item (name "on-tick"))
-  (unknown-item (name "on-tick-n"))
-  (unknown-item (name "to-draw"))
-  (unknown-item (name "stop-when"))
-  (unknown-item (name "on-key"))
-  (unknown-item (name "on-mouse"))
-  (fun-spec (name "is-world-config") (arity 1))
-  (fun-spec (name "is-key-equal") (arity 2))
-  (data-spec (name "WorldConfig") (variants) (shared))
-))
 
 ◊docmodule["world"]{
 

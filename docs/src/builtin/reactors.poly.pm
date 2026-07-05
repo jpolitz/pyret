@@ -1,34 +1,6 @@
 #lang pollen
 
-◊(append-gen-docs
-'(module
-  "reactors"
-  (path "src/arr/trove/reactors.arr")
-  (data-spec
-    (name "Event")
-    (type-vars ())
-    (variants ("time-tick") ("mouse") ("keypress")
-    (shared ())))
-  (data-spec
-    (name "Reactor")
-    (type-vars ("a"))
-    (variants ("reactor"))
-    (shared ()))
-  (constr-spec (name "time-tick"))
-  (constr-spec (name "mouse"))
-  (constr-spec (name "keypress"))
 
-  (fun-spec (name "get-value"))
-  (fun-spec (name "draw"))
-  (fun-spec (name "interact"))
-  (fun-spec (name "interact-trace"))
-  (fun-spec (name "simulate-trace"))
-  (fun-spec (name "start-trace"))
-  (fun-spec (name "stop-trace"))
-  (fun-spec (name "get-trace"))
-  (fun-spec (name "get-trace-as-table"))
-  (fun-spec (name "react"))
-  (fun-spec (name "is-stopped"))))
 
 
 

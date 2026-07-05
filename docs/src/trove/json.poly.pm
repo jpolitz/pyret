@@ -2,23 +2,6 @@
 ◊(define (sref s)
   (a-id s (xref "json-structs" s)))
 
-◊(append-gen-docs
-'(module "json"
-  (path "build/phase1/trove/json.js")
-  (fun-spec (name "j-obj") (arity 0))
-  (fun-spec (name "j-arr") (arity 0))
-  (fun-spec (name "j-num") (arity 0))
-  (fun-spec (name "j-str") (arity 0))
-  (fun-spec (name "j-bool") (arity 0))
-  (fun-spec (name "j-null") (arity 0))
-  (fun-spec (name "is-j-obj") (arity 1))
-  (fun-spec (name "is-j-arr") (arity 1))
-  (fun-spec (name "is-j-num") (arity 1))
-  (fun-spec (name "is-j-str") (arity 1))
-  (fun-spec (name "is-j-bool") (arity 1))
-  (fun-spec (name "is-j-null") (arity 1))
-  (fun-spec (name "read-json") (arity 1))
-))
 
 ◊docmodule["json"]{
 ◊ignore[(list "j-obj" "j-arr" "j-num" "j-str" "j-bool" "j-null")]

@@ -8,42 +8,7 @@
 ◊(define (msd-method name #:args args #:return ret #:contract contract)
   (method-doc "MutableStringDict" "string-dict" name #:alt-docstrings "" #:args args #:return ret #:contract contract))
 
-◊(append-gen-docs
-  `(module "string-dict"
-    (path "src/js/base/runtime-anf.js")
-    (fun-spec (name "make-mutable-string-dict"))
-    (fun-spec (name "make-string-dict"))
-    (fun-spec (name "string-dict"))
-    (fun-spec (name "mutable-string-dict"))
-    (data-spec
-      (name "StringDict")
-      (type-vars (a-id "a"))
-      (variants ("string-dict"))
-      (shared (
-        (method-spec (name "set"))
-        (method-spec (name "get"))
-        (method-spec (name "get-value"))
-        (method-spec (name "remove"))
-        (method-spec (name "keys"))
-        (method-spec (name "has-key"))
-        (method-spec (name "count"))
-        (method-spec (name "unfreeze"))
-        )))
-    (data-spec
-      (name "MutableStringDict")
-      (type-vars (a-id "a"))
-      (variants ("mutable-string-dict"))
-      (shared (
-        (method-spec (name "set-now"))
-        (method-spec (name "get-now"))
-        (method-spec (name "get-value-now"))
-        (method-spec (name "remove-now"))
-        (method-spec (name "keys-now"))
-        (method-spec (name "has-key-now"))
-        (method-spec (name "count-now"))
-        (method-spec (name "freeze"))
-        (method-spec (name "seal")))))
-  ))
+
 
 ◊docmodule["string-dict"]{
 

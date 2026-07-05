@@ -1,7 +1,5 @@
 #lang pollen
 
-◊(append-gen-docs
-  `(module "op-precedence" (path "src/js/base/runtime.js")))
 
 ◊docmodule["op-precedence" #:noimport #t #:friendly-title "Combining Multiple Operators"]
 

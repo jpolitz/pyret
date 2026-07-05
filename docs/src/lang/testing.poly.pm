@@ -32,9 +32,6 @@
 ◊(define (test-pred-use left opname pred right)
   (list ◊pyret[left] " " ◊pyret-id[opname]◊pyret{(}◊|pred|◊pyret{)} " " ◊pyret[left]))
 
-◊(append-gen-docs
-  '(module "testing"
-    (path "src/js/base/runtime-anf.js")))
 
 ◊docmodule["testing" #:friendly-title "Testing" #:noimport #t]{
 

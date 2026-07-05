@@ -7,30 +7,7 @@
 ◊(define (t-record . rest)
    (apply a-record (map tt (filter (lambda (x) (not (string=? x "\n"))) rest))))
 
-◊(append-gen-docs
-  `(module "plot"
-    (path "src/arr/trove/plot.arr")
 
-    (fun-spec (name "histogram") (arity 3))
-    (fun-spec (name "pie-chart") (arity 2))
-    (fun-spec (name "bar-chart") (arity 3))
-    (fun-spec (name "grouped-bar-chart") (arity 3))
-
-    (fun-spec (name "display-function") (arity 2))
-    (fun-spec (name "display-scatter") (arity 2))
-    (fun-spec (name "display-line") (arity 2))
-
-    (fun-spec (name "display-multi-plot") (arity 2))
-
-    (type-spec (name "PlotOptions"))
-    (type-spec (name "PlotWindowOptions"))
-    (data-spec
-      (name "Plot")
-      (variants ("line-plot" "scatter-plot" "function-plot")))
-    (constr-spec (name "line-plot"))
-    (constr-spec (name "scatter-plot"))
-    (constr-spec (name "function-plot"))
-  ))
 
 ◊docmodule["plot"]{
   ◊margin-note{Note that the plot library has been completely rewritten as the ◊secref["chart"]

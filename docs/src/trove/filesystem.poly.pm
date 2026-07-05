@@ -1,20 +1,5 @@
 #lang pollen
 
-◊(append-gen-docs
-  `(module "filesystem"
-    (path "src/arr/trove/filesystem.arr")
-    (fun-spec (name "read-file-string") (arity 1))
-    (fun-spec (name "write-file-string") (arity 2))
-    (fun-spec (name "stat") (arity 1))
-    (fun-spec (name "resolve") (arity 1))
-    (fun-spec (name "exists") (arity 1))
-    (fun-spec (name "join") (arity 2))
-    (fun-spec (name "create-dir") (arity 1))
-    (fun-spec (name "basename") (arity 1))
-    (fun-spec (name "dirname") (arity 1))
-    (fun-spec (name "relative") (arity 2))
-    (fun-spec (name "is-absolute") (arity 1))
-    ))
 
 ◊nested[#:style (make-style "script" (list (make-alt-tag "script") (make-attributes '((type . "module") (src . "filesystem.js")))))]
 

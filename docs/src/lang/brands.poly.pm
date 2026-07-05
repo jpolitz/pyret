@@ -1,34 +1,6 @@
 #lang pollen
 
-◊(append-gen-docs
-  `(module "brands"
-    (path "src/js/base/runtime-anf.js")
-    (data-spec
-      (name "Brand")
-      (type-vars (a-id "a"))
-      (variants ("brander"))
-      (shared
-        ((method-spec
-          (name "brand")
-          (arity 2)
-          (params [list: leaf("b")])
-          (args ("self" "arg"))
-          (return (a-id "a"))
-        )
-        (method-spec
-          (name "test")
-          (arity 2)
-          (params [list: leaf("a")])
-          (args ("self" "arg"))
-          (return (a-id "Boolean" (xref "<global>" "Boolean")))
-        ))))
-    (fun-spec
-      (name "brander")
-      (arity 0)
-      (args ())
-      (return (a-app (a-id "Brand" (xref "brands" "Brand")) "a"))
-      (doc ""))
-        ))
+
 
 ◊(define BR (a-id (a-id "Brand" (xref "<global>" "Brand"))))
 

@@ -1,31 +1,6 @@
 #lang pollen
 
-◊(append-gen-docs
-  `(module "gdrive-sheets"
-    (path "src/js/trove/gdrive-sheets.js")
-    (fun-spec (name "create-spreadsheet") (arity 1))
-    (fun-spec (name "my-spreadsheet") (arity 1))
-    (fun-spec (name "load-spreadsheet") (arity 1))
-    (fun-spec (name "open-sheet") (arity 3))
-    (fun-spec (name "open-sheet-by-index") (arity 3))
-    (data-spec
-      (name "Spreadsheet")
-      (type-vars)
-      (variants)
-      (shared (
-        (method-spec (name "sheet-names"))
-        (method-spec (name "sheet-by-name"))
-        (method-spec (name "sheet-by-index"))
-        ◊; (method-spec (name "delete-sheet-by-name"))
-        ◊; (method-spec (name "delete-sheet-by-index"))
-        ◊; (method-spec (name "add-sheet"))
-        )))
-    (data-spec
-      (name "Worksheet")
-      (type-vars)
-      (variants)
-      (shared ()))
-  ))
+
 
 ◊(define (ss-method name #:args args #:return ret #:contract contract)
   (method-doc "Spreadsheet" #f name #:alt-docstrings "" #:args args #:return ret #:contract contract))

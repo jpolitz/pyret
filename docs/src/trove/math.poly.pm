@@ -6,16 +6,7 @@
 ◊(define (t-record . rest)
    (apply a-record (map tt (filter (lambda (x) (not (string=? x "\n"))) rest))))
 
-◊(append-gen-docs
-  `(module "math"
-    (path "src/arr/trove/math.arr")
 
-    (fun-spec (name "sum") (arity 1))
-    (fun-spec (name "max") (arity 1))
-    (fun-spec (name "min") (arity 1))
-    (fun-spec (name "arg-min") (arity 1))
-    (fun-spec (name "arg-max") (arity 1))
-   ))
 
 ◊docmodule["math"]{
   The Pyret Math library.  It consists of functions for arithmetic
