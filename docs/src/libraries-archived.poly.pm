@@ -9,5 +9,5 @@ we recommend you no longer use them, and use a newer substitute instead.
 
 ◊(table-of-contents)
 
-◊include-section["trove/image-structs.js.rkt"]
-◊include-section["trove/world.js.rkt"]
+◊include-section["trove/image-structs.poly.pm"]
+◊include-section["trove/world.poly.pm"]

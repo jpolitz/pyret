@@ -48,14 +48,14 @@ updates over time.
 
 }
 
-◊include-section["getting-started.scrbl"]
+◊include-section["getting-started.poly.pm"]
 
-◊include-section["language-concepts.scrbl"]
+◊include-section["language-concepts.poly.pm"]
 
-◊include-section["libraries.scrbl"]
+◊include-section["libraries.poly.pm"]
 
-◊include-section["style-guide.scrbl"]
+◊include-section["style-guide.poly.pm"]
 
-◊include-section["internal.scrbl"]
+◊include-section["internal.poly.pm"]
 
-◊include-section["glossary.scrbl"]
+◊include-section["glossary.poly.pm"]

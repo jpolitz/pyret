@@ -7,8 +7,8 @@ its Javascript representations and FFI.}
 
 ◊(table-of-contents)
 
-◊include-section["internals/runtime.scrbl"]
-◊include-section["internals/ffi-helpers.scrbl"]
-◊include-section["internals/running.scrbl"]
-◊include-section["internals/modules.scrbl"]
+◊include-section["internals/runtime.poly.pm"]
+◊include-section["internals/ffi-helpers.poly.pm"]
+◊include-section["internals/running.poly.pm"]
+◊include-section["internals/modules.poly.pm"]
 

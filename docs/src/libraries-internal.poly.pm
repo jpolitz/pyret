@@ -10,10 +10,10 @@ the developer team; if you are, ask us for help directly.
 
 ◊(table-of-contents)
 
-◊include-section["builtin/raw-arrays.scrbl"]
-◊include-section["trove/data-source.scrbl"]
-◊include-section["trove/srcloc.js.rkt"]
-◊include-section["trove/pprint.js.rkt"]
-◊include-section["trove/s-exp.js.rkt"]
-◊include-section["trove/s-exp-structs.js.rkt"]
+◊include-section["builtin/raw-arrays.poly.pm"]
+◊include-section["trove/data-source.poly.pm"]
+◊include-section["trove/srcloc.poly.pm"]
+◊include-section["trove/pprint.poly.pm"]
+◊include-section["trove/s-exp.poly.pm"]
+◊include-section["trove/s-exp-structs.poly.pm"]
 

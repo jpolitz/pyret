@@ -7,9 +7,9 @@ This section contains information on libraries that come with Pyret.
 
 ◊(table-of-contents)
 
-◊include-section["libraries-general.scrbl"]
+◊include-section["libraries-general.poly.pm"]
 
-◊include-section["libraries-archived.scrbl"]
+◊include-section["libraries-archived.poly.pm"]
 
-◊include-section["libraries-internal.scrbl"]
+◊include-section["libraries-internal.poly.pm"]
 
