@@ -1,5 +1,4 @@
 #lang pollen
-◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
 
 ◊(append-gen-docs
   `(module "fetch"

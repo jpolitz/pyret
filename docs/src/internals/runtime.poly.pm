@@ -1,9 +1,5 @@
 #lang pollen
 
-◊(require
-  "../../scribble-api.rkt"
-  (only-in racket/list add-between)
-  scribble/core)
 
 ◊title[#:tag "runtime"]{Runtime API}
 

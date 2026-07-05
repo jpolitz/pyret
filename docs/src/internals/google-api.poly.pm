@@ -1,9 +1,5 @@
 #lang pollen
 
-◊(require
-  "../../scribble-api.rkt"
-  (only-in scriblib/footnote note)
-  scribble/core)
 
 ◊title[#:tag "s:gapi"]{Google API Integration}
 

@@ -1,5 +1,4 @@
 #lang pollen
-◊(require "../../scribble-api.rkt")
 ◊docmodule["contracts"]{
   ◊; Ignored type testers
   ◊ignore[

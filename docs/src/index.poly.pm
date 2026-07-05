@@ -1,7 +1,5 @@
 #lang pollen
 
-◊(require (for-syntax syntax/parse)
-          (for-syntax racket/base))
 
 ◊(define cca (current-command-line-arguments))
 ◊(define VERSION

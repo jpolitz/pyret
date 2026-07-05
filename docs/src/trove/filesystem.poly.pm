@@ -1,6 +1,4 @@
 #lang pollen
-◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
-◊(require (only-in scribble/manual link))
 
 ◊(append-gen-docs
   `(module "filesystem"

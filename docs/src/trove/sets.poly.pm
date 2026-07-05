@@ -1,6 +1,4 @@
 #lang pollen
-◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
-◊(require (only-in scribble/core delayed-block))
 
 ◊(define (set-method name #:alt-docstrings (docs "") #:contract (contract #f) #:return (return #f))
   (method-doc "Set" #f name #:alt-docstrings docs #:contract contract #:return return))

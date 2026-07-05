@@ -1,10 +1,4 @@
 #lang pollen
-◊(require "../../scribble-api.rkt"
-          "../Pyret-Tutorial/math-utilities.rkt"
-          (except-in "../abbrevs.rkt" L-of))
-◊(require (only-in scribble/core delayed-block)
-          (only-in scribble/manual math)
-          (only-in racket flatten))
 
 
 ◊(define (matrix-method name #:args (args #f) #:return (return #f) #:contract (contract #f))

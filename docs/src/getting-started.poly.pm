@@ -1,6 +1,5 @@
 #lang pollen
 
-◊(require (only-in scribble/manual link))
 
 ◊title[#:style '(toc)]{Getting Started and Running Pyret}
 

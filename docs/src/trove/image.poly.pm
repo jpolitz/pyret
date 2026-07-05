@@ -1,9 +1,5 @@
 #lang pollen
-◊(require "../../scribble-api.rkt"
-          "../abbrevs.rkt"
-          (prefix-in html: "../../manual-html.rkt")
-          2htdp/image lang/posn racket/list
-          scribble/manual)
+◊(require 2htdp/image lang/posn)
 
 ◊(define (transpose . args) (apply map list args))
 

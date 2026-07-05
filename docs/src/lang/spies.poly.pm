@@ -1,14 +1,5 @@
 #lang pollen
 
-◊(require
-  scribble/core
-  racket/list
-  racket/file
-  (only-in racket/string string-join)
-  (only-in scribble/core make-style)
-  (only-in scribble/html-properties attributes)
-  "../../scribble-api.rkt"
-  "../../ragged.rkt")
 
 ◊(define (spy-index-tag opname)
   (define tag (make-generated-tag))

@@ -1,6 +1,5 @@
 #lang pollen
 
-◊(require "../../scribble-api.rkt")
 
 ◊title[#:tag "platforms"]{Platforms}
 

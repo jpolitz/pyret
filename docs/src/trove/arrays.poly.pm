@@ -1,5 +1,4 @@
 #lang pollen
-◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
 
 ◊(define a-of-a '(a-app (a-id "Array" (xref "arrays" "Array")) "a"))
 

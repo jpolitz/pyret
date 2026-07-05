@@ -1,12 +1,5 @@
 #lang pollen
 
-◊(require scribble/core
-          scribble/decode
-          (only-in scribble/manual link)
-          scriblib/footnote
-          "../abbrevs.rkt"
-          "../../scribble-api.rkt"
-          scribble/html-properties)
 
 ◊(define (test-index-tag opname)
   (define tag (make-generated-tag))

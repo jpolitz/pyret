@@ -1,6 +1,4 @@
 #lang pollen
-◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
-◊(require (only-in scribble/core delayed-block))
 
 ◊(define (SD-of typ) (a-app (a-id "StringDict" (xref "string-dict" "StringDict")) typ))
 ◊(define (MSD-of typ) (a-app (a-id "MutableStringDict" (xref "string-dict" "MutableStringDict")) typ))

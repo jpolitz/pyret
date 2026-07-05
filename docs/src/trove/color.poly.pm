@@ -1,5 +1,4 @@
 #lang pollen
-◊(require "../../scribble-api.rkt" scribble/core (prefix-in html: "../../manual-html.rkt"))
 
 ◊(append-gen-docs
 '(module

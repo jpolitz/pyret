@@ -1,12 +1,5 @@
 #lang pollen
 
-◊(require scribble/core
-          scribble/decode
-          (only-in scribble/manual link)
-          scriblib/footnote
-          "../abbrevs.rkt"
-          "../../scribble-api.rkt"
-          scribble/html-properties)
 
 ◊(define boolean '(a-id "Boolean" (xref "<global>" "Boolean")))
 ◊(define eq '(a-id "EqualityResult" (xref "equality" "EqualityResult")))

@@ -1,5 +1,4 @@
 #lang pollen
-◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
 
 ◊(define (a-ref name)
   (pyret-method "List" "shared methods" name "lists"))

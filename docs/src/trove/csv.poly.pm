@@ -1,5 +1,4 @@
 #lang pollen
-◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
 
 ◊(define TL (a-id "TableLoader" (xref "tables" "TableLoader")))
 

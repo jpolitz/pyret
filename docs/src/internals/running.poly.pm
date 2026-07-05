@@ -1,10 +1,5 @@
 #lang pollen
 
-◊(require
-  "../../scribble-api.rkt"
-  (only-in racket/list add-between)
-  (only-in scriblib/footnote note)
-  scribble/core)
 
 ◊title[#:tag "s:running"]{Running Code (Safely)}
 

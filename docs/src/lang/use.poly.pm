@@ -1,6 +1,5 @@
 #lang pollen
 
-◊(require "../../scribble-api.rkt")
 ◊(append-gen-docs
   `(module "use" (path #f)
     (form-spec (name "use context"))))

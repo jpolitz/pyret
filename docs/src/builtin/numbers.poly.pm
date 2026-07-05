@@ -1,5 +1,4 @@
 #lang pollen
-◊(require "../../scribble-api.rkt" "../abbrevs.rkt" scribble/html-properties)
 
 ◊(define eq '(a-id "EqualityResult" (xref "equality" "EqualityResult")))
 ◊(define eqfun `(a-arrow ,A ,A ,B))

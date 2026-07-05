@@ -1,6 +1,4 @@
 #lang pollen
-◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
-◊(require (only-in scribble/core delayed-block))
 
 ◊(define (type T) (a-id T (xref "graph" T)))
 ◊(define (Color) (a-id "Color" (xref "color" "Color")))

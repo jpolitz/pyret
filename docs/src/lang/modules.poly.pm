@@ -1,6 +1,5 @@
 #lang pollen
 
-◊(require "../../scribble-api.rkt")
 ◊(append-gen-docs
   `(module "modules" (path #f)
     (form-spec (name "<id-import>"))

@@ -1,10 +1,6 @@
 #lang pollen
 
 
-◊(require
-  "../../scribble-api.rkt"
-  (only-in racket/list add-between)
-  scribble/core)
 
 ◊title[#:tag "ffi"]{FFI Helpers}
 

@@ -1,9 +1,4 @@
 #lang pollen
-◊(require "../../scribble-api.rkt"
-          "../abbrevs.rkt"
-          (prefix-in html: "../../manual-html.rkt")
-          2htdp/image
-          scribble/manual)
 
 ◊(append-gen-docs
   `(module "image-structs"

@@ -1,6 +1,4 @@
 #lang pollen
-◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
-◊(require (only-in scribble/core delayed-block))
 
 ◊(define (in-link T) (a-id T (xref "chart" T)))
 ◊(define (in-image f) (image (string-append "src/trove/chart-images/" f ".png") #:scale 0.4))

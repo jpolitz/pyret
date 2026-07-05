@@ -1,11 +1,5 @@
 #lang pollen
 
-◊(require
-  "../scribble-api.rkt"
-  (only-in scriblib/footnote note)
-  (only-in scribble/core make-style) 
-  (only-in scribble/manual link)
-  (only-in scribble/html-properties make-alt-tag))
 
 ◊(define output verbatim)
 

@@ -1,6 +1,5 @@
 #lang pollen
 
-◊(require "../../scribble-api.rkt")
 ◊(append-gen-docs
   `(module "op-precedence" (path "src/js/base/runtime.js")))
 

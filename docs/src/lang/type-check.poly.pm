@@ -1,6 +1,5 @@
 #lang pollen
 
-◊(require "../../scribble-api.rkt")
 ◊(append-gen-docs
   `(module "type-check" (path "src/arr/compiler/type-check.arr")))
 
