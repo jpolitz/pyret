@@ -11,29 +11,29 @@ wrapped around it that listens for special Pyret-specific exceptions.  That
 means when it's running, we can think of the stack frame of the function as
 having an extra layer around it: 
 
-◊image[#:scale 0.5 "src/internals/frames.png"]
+◊image[#:scale 0.5 "frames.png"]
 
 When a Pyret function detects (via a counter stored in the runtime) that the
 stack depth is approaching the maximum that JavaScript can tolerate, it throws
 an exception:
 
-◊image[#:scale 0.5 "src/internals/exception.png"]
+◊image[#:scale 0.5 "exception.png"]
 
 When the exception is encountered by one of the handlers, it attaches enough
 information to the exception to restart the handler's frame before allowing the
 exception to coninue:
 
-◊image[#:scale 0.5 "src/internals/first-frame.png"]
+◊image[#:scale 0.5 "first-frame.png"]
 
 This continues through the entire stack, storing a list of Pyret stack frames
 stored on the exception object:
 
-◊image[#:scale 0.5 "src/internals/many-frames.png"]
+◊image[#:scale 0.5 "many-frames.png"]
 
 Until finally, the entire Pyret stack is reified on the exception object, and
 all the JavaScript frames from the Pyret functions are gone:
 
-◊image[#:scale 0.5 "src/internals/stack.png"]
+◊image[#:scale 0.5 "stack.png"]
 
 This exception is caught by Pyret's toplevel, which restarts the
 ◊emph{bottommost} element of the stack, which now has nothing above it, instead
@@ -52,18 +52,18 @@ written as JavaScript code that emulates Pyret function calls.  However, if JS
 code calls back into Pyret code, care is in order.  Here's what the stack looks
 like if Pyret calls JavaScript that calls Pyret again:
 
-◊image[#:scale 0.5 "src/internals/callback.png"]
+◊image[#:scale 0.5 "callback.png"]
 
 If the stack limit is reached and an exception thrown, the bottom Pyret frames
 will have their intermediate state stored:
 
-◊image[#:scale 0.5 "src/internals/callback-bottom.png"]
+◊image[#:scale 0.5 "callback-bottom.png"]
 
 But the pure JavaScript frames have no stack management handlers installed, so
 they are skipped without consideration for any intermediate state they may
 contain.
 
-◊image[#:scale 0.5 "src/internals/callback-middle.png"]
+◊image[#:scale 0.5 "callback-middle.png"]
 
 The resulting stack doesn't accurately represent the program that was being
 executed.  It is, quite literally, nonsense, because a Pyret function will
@@ -71,7 +71,7 @@ return directly to another Pyret function, ignoring all of the intermediate
 JavaScript logic.  Using this pattern without any guards or protection will
 create programs that simply produce wrong answers.
 
-◊image[#:scale 0.5 "src/internals/callback-final.png"]
+◊image[#:scale 0.5 "callback-final.png"]
 
 Pyret's runtime defines a function called ◊internal-id["Runtime" "safeCall"]
 that allows pure JavaScript to participate in the Pyret stack.
@@ -81,20 +81,20 @@ that allows pure JavaScript to participate in the Pyret stack.
 ◊internal-id["Runtime" "safeCall"] combines the two provided functions in a
 special stack frame:
 
-◊image[#:scale 0.5 "src/internals/safe-call.png"]
+◊image[#:scale 0.5 "safe-call.png"]
 
 The first argument is called, and in normal execution, its return value is
 passed to the second function.  The second function's return value is then the
 return value of the whole call.  However, if a stack exception occurs, the
 ◊emph{second} function is registered as the frame stored on the Pyret stack:
 
-◊image[#:scale 0.5 "src/internals/safe-call-catch.png"]
+◊image[#:scale 0.5 "safe-call-catch.png"]
 
 This means that in the simulated stack, the second callback (blue in the
 picture), will receive the result of the last call to a stack-managed function
 from the first callback (pink in the picture):
 
-◊image[#:scale 0.5 "src/internals/return-1.png"]
+◊image[#:scale 0.5 "return-1.png"]
 
 Then, when the second callback (blue) is run, it's return value will be passed
 up the stack to the Pyret function that called into the use of ◊tt{safeCall}:

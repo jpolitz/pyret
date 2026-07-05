@@ -13,13 +13,13 @@ the Latin alphabet and numerals, but any Unicode character, including languages
 using non-Latin characters, such as Arabic, Russian or Chinese, as well as emoji
 defined in the Unicode specification.
 
-◊(image "src/builtin/valid-string.png")
+◊(image "valid-string.png")
 
 ◊margin-note{If you click on printed strings in the interactive window,
 the display will toggle between the character itself and the relevant
 Unicode escape code or codes.}
 
-◊(image "src/builtin/codes.png")
+◊(image "codes.png")
 
 Internally, a Pyret ◊pyret{String} is implemented as a JavaScript
 ◊tt{JSString}.  See the ◊seclink["runtime"] for more context.

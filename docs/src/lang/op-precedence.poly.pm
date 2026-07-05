@@ -20,7 +20,7 @@ Therefore, the following expressions are ◊bold{not} allowed:
 
 And will raise an error like: 
 
-◊(image "src/lang/binop-error.png")
+◊(image "binop-error.png")
 
 Pyret disallows mixing operators without clearly defining the operator
 precedence using parentheses.  Conversely, any number of identical operators

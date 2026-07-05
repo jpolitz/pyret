@@ -427,7 +427,7 @@ the resulting dialog.
 The published code can now be ◊pyret{import}ed using the provided
 code:
 
-◊(image "src/lang/publish.png")
+◊(image "publish.png")
 
 Any time you make changes to the providing program that you want to
 be available to ◊pyret{import}ing programs, you must re-publish the

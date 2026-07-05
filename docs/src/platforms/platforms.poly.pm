@@ -43,7 +43,7 @@ squares with the top right square at an angle). Search for “Pyret” and click
 the extension called “Pyret Interactive Editor for VScode” by the author “Pyret Programming Language”. You should see a
 screen like this, with an option to install, which you can click to add the extension:
 
-◊image["src/vscode-install.png"]
+◊image["../src/vscode-install.png"]
 
 
 ◊subsection{Opening Files in the VScode Extension}
@@ -55,7 +55,7 @@ etc). Once a folder is opened (for example with File -> Open Folder...),
 clicking on files with the ◊code{.arr} extension will open them in the editor.
 Then you can use the Run button and other editor features as usual.
 
-◊image["src/vscode-open.png"]
+◊image["../src/vscode-open.png"]
 
 Pyret programs in open editors save and synchronize to the filesystem like
 other open text files, respecting keyboard shortcuts like Ctrl/Cmd-s or
@@ -90,17 +90,17 @@ do this, you can open the context menu on a file and choose “Open With...”,
 which will allow you select the visual editor or the plain text editor, and
 optionally set your preferred default:
 
-◊image["src/open-with.png"]
+◊image["../src/open-with.png"]
 
-◊image["src/open-with-default.png"]
+◊image["../src/open-with-default.png"]
 
 In plain text editors for Pyret files, there is a ▶ icon at the top of the tab.
 Clicking this button will run the program (like using the run button in the
 visual editor), and open the interactions area in a new VScode pane to the side.
 
-◊image["src/play-button.png"]
+◊image["../src/play-button.png"]
 
-◊image["src/split-run.png"]
+◊image["../src/split-run.png"]
 
 ◊section{Command Line}
 

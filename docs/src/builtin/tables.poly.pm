@@ -53,7 +53,7 @@ the following.}
 Evaluating ◊pyret{my-table} in the interactions window after running the
 program above will display a formatted version of the table:
 
-◊(image "src/builtin/table-print.png")
+◊(image "table-print.png")
   
   ◊section[#:tag "s:tables:loading"]{Loading Tables}
 
@@ -77,14 +77,14 @@ optional single header row at the top.
 As a simple and consistent example, let's say we wanted to import the
 ◊tt{my-table} data from a spreadsheet.
 
-◊(image "src/builtin/gsheet-1.png")
+◊(image "gsheet-1.png")
 
 To import this data into a Pyret program, you need to get the
 spreadsheet's
 unique Google ID.  The easiest way to do this is to click
 on the blue ◊tt{Share} button in the upper right.
 
-◊(image "src/builtin/gsheet-2.png")
+◊(image "gsheet-2.png")
 
 If you don't
 want to share your spreadsheet with anyone else, click
@@ -92,7 +92,7 @@ want to share your spreadsheet with anyone else, click
 dialog, then copy the ◊tt{Link to share}, highlighted in orange below,
 and paste it into your Pyret definitions area (or another editor).
 
-◊(image "src/builtin/gsheet-3.png")
+◊(image "gsheet-3.png")
 
 The URL will look something like
 
@@ -378,7 +378,7 @@ batting-avg-and-slugging = extend batting
 end
 }
 
-◊(image "src/builtin/baseball.png")
+◊(image "baseball.png")
 
 ◊margin-note{As in ◊seclink["s:tables:transform"]{◊pyret{transform}},
 you must specify which columns will be used to calculate the
@@ -424,7 +424,7 @@ end
 print(running-total-delegates)
 }
 
-◊(image "src/builtin/primaries.png")
+◊(image "primaries.png")
 
 ◊value["difference" (Red-of N N N)]{
 
@@ -452,7 +452,7 @@ changes-by-year = extend test-scores using math-score, reading-score:
   reading-change-from-previous: T.difference of reading-score
 end
 }
-◊(image "src/builtin/difference-table.png")                           
+◊(image "difference-table.png")                           
 }
 
 ◊function["difference-from"

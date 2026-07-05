@@ -37,7 +37,7 @@ Spying (at file:///spies.arr:2:0-2:10)
 
 On code.pyret.org, you'll see output like:
 
-◊image[#:scale 0.3 "src/lang/simple-spy.png"]
+◊image[#:scale 0.3 "simple-spy.png"]
 
 Both of these outputs indicate that the name was ◊tt{x} and the value was
 ◊tt{10}. In the text output, the line and column information is printed (this

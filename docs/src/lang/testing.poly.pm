@@ -403,7 +403,7 @@ end
 
 Pyret will show us
 
-◊image[#:scale 0.5]{src/lang/test-inconsistent.png}
+◊image[#:scale 0.5]{test-inconsistent.png}
 
 Here, even if the function is defined properly, the explanation and the
 expected result are inconsistent.  Pyret will show this inconsistency as a test
