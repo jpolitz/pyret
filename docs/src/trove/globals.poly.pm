@@ -1,7 +1,7 @@
 #lang scribble/base
-@(require "../../scribble-api.rkt" "../abbrevs.rkt")
+◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
 
-@(append-gen-docs
+◊(append-gen-docs
 '(module
   "<global>"
   (path "src/js/base/runtime-anf.js")
@@ -118,29 +118,29 @@
 
 ))
 
-@docmodule["<global>" #:noimport #t #:friendly-title "Global Utilities"]{
+◊docmodule["<global>" #:noimport #t #:friendly-title "Global Utilities"]{
 
-@section[#:tag "global-builtins"]{Built-in Utility Functions}
+◊section[#:tag "global-builtins"]{Built-in Utility Functions}
 
-@function["print" #:contract (a-arrow "a" "a") #:return "a" #:alt-docstrings ""]
+◊function["print" #:contract (a-arrow "a" "a") #:return "a" #:alt-docstrings ""]
 
-Displays the provided value after first calling @pyret-id["to-repr"] on it,
+Displays the provided value after first calling ◊pyret-id["to-repr"] on it,
 then returns the value.
 
-@function["torepr" #:contract (a-arrow A S) #:alt-docstrings ""]
-@function["to-repr" #:contract (a-arrow A S) #:alt-docstrings ""]
+◊function["torepr" #:contract (a-arrow A S) #:alt-docstrings ""]
+◊function["to-repr" #:contract (a-arrow A S) #:alt-docstrings ""]
 
 Creates a string representation of the value that resembles an expression that
 could be used to construct it.
 
-The @pyret{to-repr} of a string yields a string containing the Pyret syntax
+The ◊pyret{to-repr} of a string yields a string containing the Pyret syntax
 needed to write the original value as string literal: most characters are unchanged,
 but quotes, newlines, tabs, and backslashes are all escaped, and the whole
 value surrounded by quotes.
 
-Functions are simply represented as @tt{"<function>"}.
+Functions are simply represented as ◊tt{"<function>"}.
 
-@examples{
+◊examples{
 check:
   to-repr([list: 3, 5, 9]) is "[list: 3, 5, 9]"
   torepr("Hello, world.") is "\"Hello, world.\""
@@ -149,14 +149,14 @@ check:
 end
 }
 
-@function["tostring" #:contract (a-arrow A S) #:alt-docstrings ""]
-@function["to-string" #:contract (a-arrow A S) #:alt-docstrings ""]
+◊function["tostring" #:contract (a-arrow A S) #:alt-docstrings ""]
+◊function["to-string" #:contract (a-arrow A S) #:alt-docstrings ""]
 
 Creates a string representation of the value for display that is
 value-dependent in some cases, such as error messages.  For built-in types
-the output is identical to @pyret-id["torepr"], except for @pyret{String}s.
+the output is identical to ◊pyret-id["torepr"], except for ◊pyret{String}s.
 
-@examples{
+◊examples{
 check:
   # tostring does not wrap strings in quotes
   tostring("Hello, world.") is "Hello, world."
@@ -164,88 +164,88 @@ check:
 end
 }
 
-@function["raise" #:contract (a-arrow A No) #:alt-docstrings ""]
+◊function["raise" #:contract (a-arrow A No) #:alt-docstrings ""]
 
 Raises the value as an error.  This usually stops the program and reports the
 raised value, but errors can be caught and checked in tests by
-@pyret-id["raises" "testing"] and by @seclink["testing-blocks"]{@pyret{check:}
+◊pyret-id["raises" "testing"] and by ◊seclink["testing-blocks"]{◊pyret{check:}
 blocks}.
 
-@(image "src/trove/raise.png")
+◊(image "src/trove/raise.png")
 
 
-@section{Built-in Types}
+◊section{Built-in Types}
 
-@type-spec["Any" (list)]{
+◊type-spec["Any" (list)]{
 
 A type specification that permits all values.  This is mainly useful 
-in built-in language forms, like in @secref["equality"] or 
-@pyret-id{torepr}, which truly do handle any value.  
+in built-in language forms, like in ◊secref["equality"] or 
+◊pyret-id{torepr}, which truly do handle any value.  
 
-Pyret programs that use @pyret{Any} on their own can usually be 
+Pyret programs that use ◊pyret{Any} on their own can usually be 
 restructured to use a specific type declaration to be more clear about 
 what data they are working with.
 
-Specifying @pyret{Any} will prevent Pyret from attempting to infer types, as
+Specifying ◊pyret{Any} will prevent Pyret from attempting to infer types, as
 it will if no type specification is provided.}
 
-@type-spec["Boolean" (list)]{
+◊type-spec["Boolean" (list)]{
 
-The type of @seclink["booleans"].}
+The type of ◊seclink["booleans"].}
 
-@type-spec["Number" (list)]{
+◊type-spec["Number" (list)]{
 
-The type of @seclink["numbers"].}
+The type of ◊seclink["numbers"].}
 
-@type-spec["String" (list)]{
+◊type-spec["String" (list)]{
 
-The type of @seclink["strings"].}
+The type of ◊seclink["strings"].}
 
-@type-spec["RawArray" (list)]{
+◊type-spec["RawArray" (list)]{
 
-The type of @seclink["raw-arrays"].}
+The type of ◊seclink["raw-arrays"].}
 
-@type-spec["Nothing" (list)]{
+◊type-spec["Nothing" (list)]{
 
-The type of the special value @pyret{nothing}, used in contexts where the
+The type of the special value ◊pyret{nothing}, used in contexts where the
 program evaluates but has no meaningful answer by design (see, for example
-@pyret-id["each" "lists"]).  Note that @pyret{nothing} is still a value.
+◊pyret-id["each" "lists"]).  Note that ◊pyret{nothing} is still a value.
 
-@examples{
+◊examples{
 check:
   [list: nothing, nothing, nothing].length() is 3
 end
 }
 }
 
-@type-spec["Function" (list)]{
+◊type-spec["Function" (list)]{
 
-The type of all @seclink["functions-tour" "function values"].}
+The type of all ◊seclink["functions-tour" "function values"].}
 
-@type-spec["Method" (list)]{
+◊type-spec["Method" (list)]{
 
 The type of all method values.}
 
-@type-spec["Object" (list)]{
+◊type-spec["Object" (list)]{
 
-The type of all values constructed from @pyret{data} @seclink["s:data-decl" "constructors and
-singletons"], and by @seclink["s:obj-expr" "object literals"].}
+The type of all values constructed from ◊pyret{data} ◊seclink["s:data-decl" "constructors and
+singletons"], and by ◊seclink["s:obj-expr" "object literals"].}
 
-@type-spec["Table" (list)]{
+◊type-spec["Table" (list)]{
 
-The type of @seclink["tables"].}
+The type of ◊seclink["tables"].}
 
-@section{Type Predicates}
+◊section{Type Predicates}
 
 A number of functions are available to tell which kind of builtin value a
 particular value is.
 
-@function["is-boolean" #:contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean")))]
+◊function["is-boolean" #:contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean")))]
 
-Returns @pyret{true} if the provided argument is a @pyret{Boolean},
- @pyret{false} if not.
+Returns ◊pyret{true} if the provided argument is a ◊pyret{Boolean},
+ ◊pyret{false} if not.
 
-@examples{
+◊examples{
 check:
   is-boolean(true) is true
   is-boolean(false) is true
@@ -253,19 +253,19 @@ check:
 end
 }
 
-@function["is-number" #:contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean")))]
+◊function["is-number" #:contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean")))]
 
-Returns @pyret{true} if the provided argument is a @pyret{Number},
- @pyret{false} if not.
+Returns ◊pyret{true} if the provided argument is a ◊pyret{Number},
+ ◊pyret{false} if not.
 
-  Numbers are @itemlist[
-     @item{Integers, e.g. @tt{345} or @tt{-321}}
-     @item{Rationals, e.g. @tt{355/113} or @tt{-321/6789}}
-     @item{Inexact numbers, e.g. @tt{123.4567} or @tt{-0.987}}
-     @item{Complex numbers, e.g. @tt{1+2i}, where the real and imaginary components may be integers, rationals or inexact numbers}
+  Numbers are ◊itemlist[
+     ◊item{Integers, e.g. ◊tt{345} or ◊tt{-321}}
+     ◊item{Rationals, e.g. ◊tt{355/113} or ◊tt{-321/6789}}
+     ◊item{Inexact numbers, e.g. ◊tt{123.4567} or ◊tt{-0.987}}
+     ◊item{Complex numbers, e.g. ◊tt{1+2i}, where the real and imaginary components may be integers, rationals or inexact numbers}
   ]
 
-@examples{
+◊examples{
 check:
   is-number(-42) is true
   is-number(~6.022e+23) is true
@@ -274,23 +274,23 @@ check:
 end
 }
   
-@function["is-string" #:contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean")))]
+◊function["is-string" #:contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean")))]
 
-Returns @pyret{true} if the provided argument is a @pyret{String},
- @pyret{false} if not.
+Returns ◊pyret{true} if the provided argument is a ◊pyret{String},
+ ◊pyret{false} if not.
 
-  @para{ Strings can be written @tt{@literal{"}text@literal{"}} or @tt{@literal{'}text@literal{'}},
-  and may not span multiple lines.  Allowed escapes are @tt{\n} (newline),
-  @tt{\r} (carriage return), @tt{\t} (tab), @tt{\[0-8]{1,3}} for octal escapes,
-  @tt{\x[0-9a-fA-F]{1,2}} for single-byte hexadecimal escapes, or @tt{\u[0-9a-fA-F]{1,4}}
-  for double-byte Unicode escapes.  Additionally, @tt{@literal{\"}} escapes a double-quote within a
-  double-quoted string, and @tt{@literal{\'}} escapes a single quote within a single-quoted string.}
+  ◊para{ Strings can be written ◊tt{◊literal{"}text◊literal{"}} or ◊tt{◊literal{'}text◊literal{'}},
+  and may not span multiple lines.  Allowed escapes are ◊tt{\n} (newline),
+  ◊tt{\r} (carriage return), ◊tt{\t} (tab), ◊tt{\[0-8]{1,3}} for octal escapes,
+  ◊tt{\x[0-9a-fA-F]{1,2}} for single-byte hexadecimal escapes, or ◊tt{\u[0-9a-fA-F]{1,4}}
+  for double-byte Unicode escapes.  Additionally, ◊tt{◊literal{\"}} escapes a double-quote within a
+  double-quoted string, and ◊tt{◊literal{\'}} escapes a single quote within a single-quoted string.}
 
-  @para{Multi-line string literals may be written @tt{@literal{```} text @literal{```}}.  The same escape sequences
+  ◊para{Multi-line string literals may be written ◊tt{◊literal{```} text ◊literal{```}}.  The same escape sequences
   are valid as for single-line strings.  Leading and trailing whitespace of the string are
   trimmed.}
 
-@examples{
+◊examples{
 check:
   is-string("Hello, world!") is true
   is-string(```Multi
@@ -299,23 +299,23 @@ check:
 end
 }
   
-@function["is-raw-array" #:contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean")))]
+◊function["is-raw-array" #:contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean")))]
 
-Returns @pyret{true} if the provided argument is a @pyret{RawArray},
- @pyret{false} if not.
+Returns ◊pyret{true} if the provided argument is a ◊pyret{RawArray},
+ ◊pyret{false} if not.
 
-@examples{
+◊examples{
 check:
   is-raw-array([raw-array: 3, "Jones", false]) is true
 end
 }
 
-@function["is-nothing" #:contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean")))]
+◊function["is-nothing" #:contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean")))]
 
-Returns @pyret{true} if the provided argument is a @pyret{Nothing},
- @pyret{false} if not.
+Returns ◊pyret{true} if the provided argument is a ◊pyret{Nothing},
+ ◊pyret{false} if not.
 
-@examples{
+◊examples{
 check:
   is-nothing(nothing) is true
   is-nothing(0) is false
@@ -324,12 +324,12 @@ check:
 end
 }
 
-@function["is-function" #:contract (a-arrow "Any" (a-id "Function" (xref "<global>" "Boolean")))]
+◊function["is-function" #:contract (a-arrow "Any" (a-id "Function" (xref "<global>" "Boolean")))]
 
-Returns @pyret{true} if the provided argument is a @pyret{Function},
- @pyret{false} if not.
+Returns ◊pyret{true} if the provided argument is a ◊pyret{Function},
+ ◊pyret{false} if not.
 
-@examples{
+◊examples{
 fun inc(x): x + 1 end
 check:
   is-function(inc) is true
@@ -339,12 +339,12 @@ check:
 end
 }
 
-@function["is-object" #:contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean")))]
+◊function["is-object" #:contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean")))]
 
-Returns @pyret{true} if the provided argument is a @pyret{Object},
- @pyret{false} if not.
+Returns ◊pyret{true} if the provided argument is a ◊pyret{Object},
+ ◊pyret{false} if not.
 
-@examples{
+◊examples{
 data Point: pt(x, y) end
 check:
   is-object(pt(3, 4)) is true

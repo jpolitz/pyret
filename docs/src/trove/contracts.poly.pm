@@ -1,8 +1,8 @@
 #lang scribble/base
-@(require "../../scribble-api.rkt")
-@docmodule["contracts"]{
-  @; Ignored type testers
-  @ignore[
+◊(require "../../scribble-api.rkt")
+◊docmodule["contracts"]{
+  ◊; Ignored type testers
+  ◊ignore[
     (list
       "is-ok"
       "is-fail"
@@ -14,24 +14,24 @@
       "is-record-fields-fail"
       "is-dot-ann-not-present")
   ]
-  @section[#:tag "contracts_DataTypes"]{Data types}
-  @data-spec["ContractResult"]{
-    @variants{
-      @singleton-spec["ok"]{@with-members{}}
-      @constr-spec["fail"]{
-        @members{@member-spec["loc"] @member-spec["reason"]}
-        @with-members{
-          @method-spec[
+  ◊section[#:tag "contracts_DataTypes"]{Data types}
+  ◊data-spec["ContractResult"]{
+    ◊variants{
+      ◊singleton-spec["ok"]{◊with-members{}}
+      ◊constr-spec["fail"]{
+        ◊members{◊member-spec["loc"] ◊member-spec["reason"]}
+        ◊with-members{
+          ◊method-spec[
             "_tostring"
             ;; N.B. Pyret contract: (ContractResult -> Any)
             
           ]
         }
       }
-      @constr-spec["fail-arg"]{
-        @members{@member-spec["loc"] @member-spec["reason"]}
-        @with-members{
-          @method-spec[
+      ◊constr-spec["fail-arg"]{
+        ◊members{◊member-spec["loc"] ◊member-spec["reason"]}
+        ◊with-members{
+          ◊method-spec[
             "_tostring"
             ;; N.B. Pyret contract: (ContractResult -> Any)
             
@@ -39,29 +39,29 @@
         }
       }
     }
-    @shared{}
+    ◊shared{}
   }
   
-  @data-spec["FieldFailure"]{
-    @variants{
-      @constr-spec["field-failure"]{
-        @members{
-          @member-spec["loc"]
-          @member-spec["field"]
-          @member-spec["reason"]
+  ◊data-spec["FieldFailure"]{
+    ◊variants{
+      ◊constr-spec["field-failure"]{
+        ◊members{
+          ◊member-spec["loc"]
+          ◊member-spec["field"]
+          ◊member-spec["reason"]
         }
-        @with-members{
-          @method-spec[
+        ◊with-members{
+          ◊method-spec[
             "_tostring"
             ;; N.B. Pyret contract: (FieldFailure -> Any)
             
           ]
         }
       }
-      @constr-spec["missing-field"]{
-        @members{@member-spec["loc"] @member-spec["field"]}
-        @with-members{
-          @method-spec[
+      ◊constr-spec["missing-field"]{
+        ◊members{◊member-spec["loc"] ◊member-spec["field"]}
+        ◊with-members{
+          ◊method-spec[
             "_tostring"
             ;; N.B. Pyret contract: (FieldFailure -> Any)
             
@@ -69,45 +69,45 @@
         }
       }
     }
-    @shared{}
+    ◊shared{}
   }
   
-  @data-spec["FailureReason"]{
-    @variants{
-      @constr-spec["type-mismatch"]{
-        @members{@member-spec["val"] @member-spec["name"]}
-        @with-members{
-          @method-spec[
+  ◊data-spec["FailureReason"]{
+    ◊variants{
+      ◊constr-spec["type-mismatch"]{
+        ◊members{◊member-spec["val"] ◊member-spec["name"]}
+        ◊with-members{
+          ◊method-spec[
             "_tostring"
             ;; N.B. Pyret contract: (FailureReason -> Any)
             
           ]
         }
       }
-      @constr-spec["predicate-failure"]{
-        @members{@member-spec["val"] @member-spec["pred-name"]}
-        @with-members{
-          @method-spec[
+      ◊constr-spec["predicate-failure"]{
+        ◊members{◊member-spec["val"] ◊member-spec["pred-name"]}
+        ◊with-members{
+          ◊method-spec[
             "_tostring"
             ;; N.B. Pyret contract: (FailureReason -> Any)
             
           ]
         }
       }
-      @constr-spec["record-fields-fail"]{
-        @members{@member-spec["val"] @member-spec["field-failures"]}
-        @with-members{
-          @method-spec[
+      ◊constr-spec["record-fields-fail"]{
+        ◊members{◊member-spec["val"] ◊member-spec["field-failures"]}
+        ◊with-members{
+          ◊method-spec[
             "_tostring"
             ;; N.B. Pyret contract: (FailureReason -> Any)
             
           ]
         }
       }
-      @constr-spec["dot-ann-not-present"]{
-        @members{@member-spec["name"] @member-spec["field"]}
-        @with-members{
-          @method-spec[
+      ◊constr-spec["dot-ann-not-present"]{
+        ◊members{◊member-spec["name"] ◊member-spec["field"]}
+        ◊with-members{
+          ◊method-spec[
             "_tostring"
             ;; N.B. Pyret contract: (FailureReason -> Any)
             
@@ -115,6 +115,6 @@
         }
       }
     }
-    @shared{}
+    ◊shared{}
   }
 }

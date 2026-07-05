@@ -1,9 +1,9 @@
 #lang scribble/base
-@(require "../../scribble-api.rkt" "../abbrevs.rkt")
-@(define (sref s)
+◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
+◊(define (sref s)
   (a-id s (xref "s-exp-structs" s)))
 
-@(append-gen-docs
+◊(append-gen-docs
 '(module "s-exp"
   (path "build/phase1/trove/s-exp.js")
   (fun-spec (name "s-list") (arity 0))
@@ -17,34 +17,34 @@
   (fun-spec (name "read-s-exp") (arity 1))
 ))
 
-@docmodule["s-exp"]{
-@ignore[(list "s-sym" "s-str" "s-num" "s-list")]
-@ignore[(list "is-s-list" "is-s-num" "is-s-str" "is-s-sym")]
-  @para{
-  This module re-exports the constructors from @sref["S-Exp"],
+◊docmodule["s-exp"]{
+◊ignore[(list "s-sym" "s-str" "s-num" "s-list")]
+◊ignore[(list "is-s-list" "is-s-num" "is-s-str" "is-s-sym")]
+  ◊para{
+  This module re-exports the constructors from ◊sref["S-Exp"],
   which defines the result of parsing an s-exp.
   }
 
-  @function["read-s-exp" #:args '(("sexp-str" ""))
+  ◊function["read-s-exp" #:args '(("sexp-str" ""))
     #:contract (a-arrow (a-id "String" (xref "<global>" "String"))
                         (a-id "S-Exp" (xref "s-exp-structs" "S-Exp")))]{
-    Reads an @emph{s-expression} as a string, and returns it as a Pyret value.
+    Reads an ◊emph{s-expression} as a string, and returns it as a Pyret value.
 
     An s-expression is a string that satisfies the following grammar:
 
-    @verbatim{
+    ◊verbatim{
 s-exp = "(" s-exp ... ")"
       | <number>
       | <string>
       | <id>
     }
 
-    The first form parses to a @sref["s-list"] containing the nested
-    sub-expression results.  Numbers become @sref["s-num"]s, strings become
-    @sref["s-str"]s, and all other names not inside quotes
-    become @sref["s-sym"]s.
+    The first form parses to a ◊sref["s-list"] containing the nested
+    sub-expression results.  Numbers become ◊sref["s-num"]s, strings become
+    ◊sref["s-str"]s, and all other names not inside quotes
+    become ◊sref["s-sym"]s.
 
-@examples{
+◊examples{
 import s-exp as S
 
 p = S.read-s-exp

@@ -1,7 +1,7 @@
 #lang scribble/base
-@(require "../../scribble-api.rkt")
+◊(require "../../scribble-api.rkt")
 
-@(append-gen-docs
+◊(append-gen-docs
 '(module
   "srcloc"
   (path "src/arr/trove/srcloc.arr")
@@ -189,54 +189,54 @@
     (contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean"))))
     (doc "Checks whether the provided argument is in fact a srcloc"))))
 
-@docmodule["srcloc"]{
-  @; Ignored type testers
-  @ignore[(list "is-builtin" "is-srcloc")]
-  @section[#:tag "srcloc_DataTypes"]{Data types}
-  @data-spec["Srcloc"]{
-    @variants{
-      @constr-spec["builtin"]{
-        @members{@member-spec["module-name"]}
-        @with-members{
-          @method-spec[
+◊docmodule["srcloc"]{
+  ◊; Ignored type testers
+  ◊ignore[(list "is-builtin" "is-srcloc")]
+  ◊section[#:tag "srcloc_DataTypes"]{Data types}
+  ◊data-spec["Srcloc"]{
+    ◊variants{
+      ◊constr-spec["builtin"]{
+        ◊members{◊member-spec["module-name"]}
+        ◊with-members{
+          ◊method-spec[
             "format"
             ;; N.B. Pyret contract: (Srcloc, Any -> Any)
             
           ]
-          @method-spec[
+          ◊method-spec[
             "same-file"
             ;; N.B. Pyret contract: (Srcloc, Any -> Any)
             
           ]
-          @method-spec[
+          ◊method-spec[
             "before"
             ;; N.B. Pyret contract: (Srcloc, Any -> Any)
             
           ]
         }
       }
-      @constr-spec["srcloc"]{
-        @members{
-          @member-spec["source"]
-          @member-spec["start-line"]
-          @member-spec["start-column"]
-          @member-spec["start-char"]
-          @member-spec["end-line"]
-          @member-spec["end-column"]
-          @member-spec["end-char"]
+      ◊constr-spec["srcloc"]{
+        ◊members{
+          ◊member-spec["source"]
+          ◊member-spec["start-line"]
+          ◊member-spec["start-column"]
+          ◊member-spec["start-char"]
+          ◊member-spec["end-line"]
+          ◊member-spec["end-column"]
+          ◊member-spec["end-char"]
         }
-        @with-members{
-          @method-spec[
+        ◊with-members{
+          ◊method-spec[
             "format"
             ;; N.B. Pyret contract: (Srcloc, Any -> Any)
             
           ]
-          @method-spec[
+          ◊method-spec[
             "same-file"
             ;; N.B. Pyret contract: (Srcloc, Srcloc60 -> Any)
             
           ]
-          @method-spec[
+          ◊method-spec[
             "before"
             ;; N.B. Pyret contract: (Srcloc, Srcloc60 -> Any)
             
@@ -244,8 +244,8 @@
         }
       }
     }
-    @shared{
-      @method-spec[
+    ◊shared{
+      ◊method-spec[
         "after"
         ;; N.B. Pyret contract: (Srcloc, Any -> Any)
         
@@ -253,5 +253,5 @@
     }
   }
   
-  @section[#:tag "srcloc_Functions"]{Functions}
+  ◊section[#:tag "srcloc_Functions"]{Functions}
 }

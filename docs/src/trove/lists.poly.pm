@@ -1,14 +1,14 @@
 #lang scribble/manual
-@(require "../../scribble-api.rkt" "../abbrevs.rkt")
+◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
 
-@(define (a-ref name)
+◊(define (a-ref name)
   (pyret-method "List" "shared methods" name "lists"))
 
-@; WARNING in report-undocumented: Undocumented export "join-str" from module "lists"
-@; WARNING in report-undocumented: Undocumented export "push" from module "lists"
+◊; WARNING in report-undocumented: Undocumented export "join-str" from module "lists"
+◊; WARNING in report-undocumented: Undocumented export "push" from module "lists"
 
 
-@(append-gen-docs
+◊(append-gen-docs
 '(module
   "lists"
   (path "src/arr/base/lists.arr")
@@ -1132,31 +1132,31 @@
     ;; { make: lam(arr499): raw-array-to-list(arr499) end }
     )))
 
-@(define (list-method name)
+◊(define (list-method name)
   (method-doc "List" #f name #:alt-docstrings ""))
 
-@docmodule["lists"]{
-  @ignore[(list)]
+◊docmodule["lists"]{
+  ◊ignore[(list)]
 
-  @section{The List Datatype}
+  ◊section{The List Datatype}
 
-  @data-spec2["List" (list "a") (list
-  @singleton-spec2["List" "empty"]
-  @constructor-spec["List" "link" (list `("first" ("type" "normal") ("contract" ,(a-id "a"))) `("rest" ("type" "normal") ("contract" ,(L-of "a"))))])]
+  ◊data-spec2["List" (list "a") (list
+  ◊singleton-spec2["List" "empty"]
+  ◊constructor-spec["List" "link" (list `("first" ("type" "normal") ("contract" ,(a-id "a"))) `("rest" ("type" "normal") ("contract" ,(L-of "a"))))])]
 
-  @nested[#:style 'inset]{
-  @singleton-doc["List" "empty" (L-of "a")]
-  @constructor-doc["List" "link" (list `("first" ("type" "normal") ("contract" ,(a-id "a"))) `("rest" ("type" "normal") ("contract" ,(L-of "a")))) (L-of "a")]{
+  ◊nested[#:style 'inset]{
+  ◊singleton-doc["List" "empty" (L-of "a")]
+  ◊constructor-doc["List" "link" (list `("first" ("type" "normal") ("contract" ,(a-id "a"))) `("rest" ("type" "normal") ("contract" ,(L-of "a")))) (L-of "a")]{
   }
 
-  @function["is-empty" #:alt-docstrings ""]
+  ◊function["is-empty" #:alt-docstrings ""]
 
-  @function["is-link" #:alt-docstrings ""]
+  ◊function["is-link" #:alt-docstrings ""]
 
-A @pyret{List} is an immutable, fixed-length collection indexed by
+A ◊pyret{List} is an immutable, fixed-length collection indexed by
 non-negative integers.
   
-As in most programming languages, you can use @pyret{List}s in Pyret
+As in most programming languages, you can use ◊pyret{List}s in Pyret
 without understanding much, if anything, about how they are 
 implemented internally in the language.  
 
@@ -1166,21 +1166,21 @@ role for both historical and practical reasons, and a fuller
 understanding of linked lists goes hand in hand with a fuller
 understanding of Pyret.  If you have not encountered linked
 lists before and would like to know more, we recommend reading
-@link["http://dcic-world.org/" "the material on
+◊link["http://dcic-world.org/" "the material on
 lists in DCIC"].
 
 In lieu of a full explanation on this page, here are a few quick points
 to help parse some of the following examples:
-@itemlist[@item{A @pyret{List} is made up of elements, usually
-referred to as @tt{elt}s in examples.}
-@item{Elements are of two types: @pyret{link} and @pyret{empty}.}
-@item{Every @pyret{link} actually has two parts: a @bold{first} value and the
-@bold{rest} of the @pyret{List}.}
-@item{The rest of the @pyret{List} is itself a @pyret{link}, or if you
-have reached the end of the @pyret{List}, the rest will be @pyret{empty}.}
+◊itemlist[◊item{A ◊pyret{List} is made up of elements, usually
+referred to as ◊tt{elt}s in examples.}
+◊item{Elements are of two types: ◊pyret{link} and ◊pyret{empty}.}
+◊item{Every ◊pyret{link} actually has two parts: a ◊bold{first} value and the
+◊bold{rest} of the ◊pyret{List}.}
+◊item{The rest of the ◊pyret{List} is itself a ◊pyret{link}, or if you
+have reached the end of the ◊pyret{List}, the rest will be ◊pyret{empty}.}
 ]
 and here are some illustrative examples:
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 check:
   l0 = empty
   l1 = link(1, l0)
@@ -1198,17 +1198,17 @@ end
 
   }
 
-@section{List Creation Functions}
+◊section{List Creation Functions}
 
-@collection-doc["list" #:contract `(a-arrow ("elt" "a") ,(L-of "a"))]
+◊collection-doc["list" #:contract `(a-arrow ("elt" "a") ,(L-of "a"))]
 
-@margin-note{This illustrates the underlying structure created when
-you define a @pyret{List} with @pyret{[list: ...]}}
+◊margin-note{This illustrates the underlying structure created when
+you define a ◊pyret{List} with ◊pyret{[list: ...]}}
 
-Constructs a @pyret{List} out of @pyret{elt}s by chaining @pyret-id{link}s,
-ending in a single @pyret-id{empty}.
+Constructs a ◊pyret{List} out of ◊pyret{elt}s by chaining ◊pyret-id{link}s,
+ending in a single ◊pyret-id{empty}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1220,11 +1220,11 @@ end
 
 Though it is neither required nor enforced by the language,
 conventionally, when writing the empty list using the constructor
-notation, we write an extra spce between the @pyret{:} and @pyret{]}.
+notation, we write an extra spce between the ◊pyret{:} and ◊pyret{]}.
 
-@bold{Note}: You should @emph{not} write a trailing @pyret-id{empty}
-when using this constructor notation. Everything you write is an @emph{element} of the list. Thus,
-@examples[#:show-try-it #t]{
+◊bold{Note}: You should ◊emph{not} write a trailing ◊pyret-id{empty}
+when using this constructor notation. Everything you write is an ◊emph{element} of the list. Thus,
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1233,18 +1233,18 @@ check:
 end
 }
 
-@function["build-list"
+◊function["build-list"
   #:contract (a-arrow (a-arrow N "a") N (L-of "a"))
   #:args (list (list "f" #f) (list "size" #f))
   #:return (L-of "a")
 ]
 
-Constructs a list of length @pyret{size}, and fills it with the result of
-calling the function @pyret{f} with each index from @pyret{0} to @pyret{size - 1}.
+Constructs a list of length ◊pyret{size}, and fills it with the result of
+calling the function ◊pyret{f} with each index from ◊pyret{0} to ◊pyret{size - 1}.
 
-Similar to @pyret-id["build-array" "arrays"].
+Similar to ◊pyret-id["build-array" "arrays"].
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1269,15 +1269,15 @@ end
 }
 
 
-@section{List Methods}
+◊section{List Methods}
 
-These methods are available on all @pyret{List}s whether empty or a link.
+These methods are available on all ◊pyret{List}s whether empty or a link.
 
-@list-method["length"]
+◊list-method["length"]
 
-Returns the number of elements in the @pyret{List}.
+Returns the number of elements in the ◊pyret{List}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1287,15 +1287,15 @@ check:
 end
 }
 
-@list-method["map"]
+◊list-method["map"]
 
-Applies function @pyret{f} to each element of the list from left to right, and
-constructs a new @pyret{List} out of the return values in the corresponding order.
+Applies function ◊pyret{f} to each element of the list from left to right, and
+constructs a new ◊pyret{List} out of the return values in the corresponding order.
 
-@tt{a} represents the type of the elements in the original @pyret{List}, @tt{b} is
-the type of the elements in the new @pyret{List}.
+◊tt{a} represents the type of the elements in the original ◊pyret{List}, ◊tt{b} is
+the type of the elements in the new ◊pyret{List}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1306,14 +1306,14 @@ check:
 end
 }
 
-@list-method["each"]
+◊list-method["each"]
 
-Applies @pyret{f} to each element of the @pyret{List} from left to right, and
-returns @pyret{nothing}.  Because it returns @pyret{nothing},
-use @pyret-id{each} instead of @pyret-id{map} when the function
-@pyret{f} is needed only for its side-effects.
+Applies ◊pyret{f} to each element of the ◊pyret{List} from left to right, and
+returns ◊pyret{nothing}.  Because it returns ◊pyret{nothing},
+use ◊pyret-id{each} instead of ◊pyret-id{map} when the function
+◊pyret{f} is needed only for its side-effects.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1323,16 +1323,16 @@ check:
 end
 }
 
-@list-method["filter"]
+◊list-method["filter"]
 
-Applies function @pyret{f} to each element of @pyret{List} from left to right,
-constructing a new @pyret{List} out of the elements for which @pyret{f}
-returned @pyret{true}.
+Applies function ◊pyret{f} to each element of ◊pyret{List} from left to right,
+constructing a new ◊pyret{List} out of the elements for which ◊pyret{f}
+returned ◊pyret{true}.
 
-The original @pyret{List} elements are of type @tt{a}
-and the function @pyret{f} must return a @pyret{Boolean}.
+The original ◊pyret{List} elements are of type ◊tt{a}
+and the function ◊pyret{f} must return a ◊pyret{Boolean}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1345,11 +1345,11 @@ check:
 end
 }
 
-@list-method["push"]
+◊list-method["push"]
 
-Returns @tt{link(elt, self)}.
+Returns ◊tt{link(elt, self)}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1358,10 +1358,10 @@ check:
 end
 }
 
-In other words, returns a @pyret{List} with @tt{elt} appended to the
-beginning of the original @pyret{List}.
+In other words, returns a ◊pyret{List} with ◊tt{elt} appended to the
+beginning of the original ◊pyret{List}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1370,15 +1370,15 @@ end
 }
   
 
-@list-method["split-at"]
-Produces a record containing two @pyret{List}s, consisting of the items before
+◊list-method["split-at"]
+Produces a record containing two ◊pyret{List}s, consisting of the items before
 and the items at-or-after the
-splitting index of the current @pyret{List}.  The index is 0-based, so
-splitting a @pyret{List} at index @math{n} will produce a prefix of length
-exactly @math{n}.  Moreover, @pyret-id{append}ing the two @pyret{List}s
-together will be equivalent to the original @pyret{List}.
+splitting index of the current ◊pyret{List}.  The index is 0-based, so
+splitting a ◊pyret{List} at index ◊math{n} will produce a prefix of length
+exactly ◊math{n}.  Moreover, ◊pyret-id{append}ing the two ◊pyret{List}s
+together will be equivalent to the original ◊pyret{List}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1394,12 +1394,12 @@ check:
 end
 }
 
-@list-method["take"]
-Given a length @tt{n}, returns a new @pyret{List} containing the first
-@tt{n} items of the @pyret{List}.
+◊list-method["take"]
+Given a length ◊tt{n}, returns a new ◊pyret{List} containing the first
+◊tt{n} items of the ◊pyret{List}.
 
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1409,10 +1409,10 @@ check:
 end
 }
 
-@list-method["drop"]
-Given a length @tt{n}, returns a @pyret{List} containing all but the first @tt{n} items of the @pyret{List}.
+◊list-method["drop"]
+Given a length ◊tt{n}, returns a ◊pyret{List} containing all but the first ◊tt{n} items of the ◊pyret{List}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1420,12 +1420,12 @@ check:
 end
 }
 
-@list-method["get"]
-Returns the @tt{n}th element of the given @pyret{List}.
+◊list-method["get"]
+Returns the ◊tt{n}th element of the given ◊pyret{List}.
 
 Using an index too large, negative, or not a whole number raises an error.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1437,11 +1437,11 @@ check:
 end
 }
 
-@list-method["set"]
-Returns a new @pyret{List} with the same values as the given @pyret{List} but with the @tt{n}th element set to the
-given value, or raises an error if @tt{n} is out of range.
+◊list-method["set"]
+Returns a new ◊pyret{List} with the same values as the given ◊pyret{List} but with the ◊tt{n}th element set to the
+given value, or raises an error if ◊tt{n} is out of range.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1450,16 +1450,16 @@ check:
 end
 }
 
-@list-method["foldl"]
+◊list-method["foldl"]
 
-Computes @pyret{f(last-elt, ... f(second-elt, f(first-elt, base))...)}.  For
-@pyret-id{empty}, returns @pyret{base}.
+Computes ◊pyret{f(last-elt, ... f(second-elt, f(first-elt, base))...)}.  For
+◊pyret-id{empty}, returns ◊pyret{base}.
 
-In other words, @pyret{.foldl} uses the function @tt{f}, starting with the @tt{base}
-value, of type @tt{Base}, to calculate the return value of type @tt{Base} from each
-item in the @pyret{List}, of input type @tt{Elt}, starting the sequence from the @emph{left} (hence, fold@bold{l}).
+In other words, ◊pyret{.foldl} uses the function ◊tt{f}, starting with the ◊tt{base}
+value, of type ◊tt{Base}, to calculate the return value of type ◊tt{Base} from each
+item in the ◊pyret{List}, of input type ◊tt{Elt}, starting the sequence from the ◊emph{left} (hence, fold◊bold{l}).
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1473,16 +1473,16 @@ check:
 end
 }
 
-@list-method["foldr"]
+◊list-method["foldr"]
 
-Computes @pyret{f(first-elt, f(second-elt, ... f(last-elt, base)))}.  For
-@pyret-id{empty}, returns @pyret{base}. 
+Computes ◊pyret{f(first-elt, f(second-elt, ... f(last-elt, base)))}.  For
+◊pyret-id{empty}, returns ◊pyret{base}. 
 
-In other words, @pyret{.foldr} uses the function @tt{f}, starting with the @tt{base}
-value, of type @tt{Base}, to calculate the return value of type @tt{Base} from each
-item in the @pyret{List}, of input type @tt{Elt}, starting the sequence from the @emph{right} (hence, fold@bold{r}).
+In other words, ◊pyret{.foldr} uses the function ◊tt{f}, starting with the ◊tt{base}
+value, of type ◊tt{Base}, to calculate the return value of type ◊tt{Base} from each
+item in the ◊pyret{List}, of input type ◊tt{Elt}, starting the sequence from the ◊emph{right} (hence, fold◊bold{r}).
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1496,13 +1496,13 @@ check:
 end
 }
 
-@list-method["member"]
-@margin-note{Passing a @pyret{Roughnum} as an argument will raise
+◊list-method["member"]
+◊margin-note{Passing a ◊pyret{Roughnum} as an argument will raise
 an error.}
-Returns true if the current @pyret{List} contains the given value, as compared
-by @pyret{==}.
+Returns true if the current ◊pyret{List} contains the given value, as compared
+by ◊pyret{==}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1520,11 +1520,11 @@ check:
 end
 }
 
-@list-method["append"]
-Produces a new @pyret{List} with all the elements of the current @pyret{List},
-followed by all the elements of the @tt{other} @pyret{List}.
+◊list-method["append"]
+Produces a new ◊pyret{List} with all the elements of the current ◊pyret{List},
+followed by all the elements of the ◊tt{other} ◊pyret{List}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1534,9 +1534,9 @@ check:
 end
 }
 
-@list-method["last"]
-Returns the last item of the @pyret{List}.
-@examples[#:show-try-it #t]{
+◊list-method["last"]
+Returns the last item of the ◊pyret{List}.
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1545,9 +1545,9 @@ check:
 end
 }
 
-@list-method["reverse"]
-Produces a new @pyret{List} with the items of the original @pyret{List} in reversed order.
-@examples[#:show-try-it #t]{
+◊list-method["reverse"]
+Produces a new ◊pyret{List} with the items of the original ◊pyret{List} in reversed order.
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1556,14 +1556,14 @@ check:
 end
 }
 
-@list-method["sort"]
-Produces a new @pyret{List} whose contents are the same as those of the
-current @pyret{List}, sorted by @pyret-id["<" "equality"] and
-@pyret-id["==" "equality"].  This requires that
-the items of the @pyret{List} be comparable by @pyret-id["<" "equality"] (see
-@secref["s:binop-expr"]).
+◊list-method["sort"]
+Produces a new ◊pyret{List} whose contents are the same as those of the
+current ◊pyret{List}, sorted by ◊pyret-id["<" "equality"] and
+◊pyret-id["==" "equality"].  This requires that
+the items of the ◊pyret{List} be comparable by ◊pyret-id["<" "equality"] (see
+◊secref["s:binop-expr"]).
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1574,13 +1574,13 @@ check:
 end
 }
 
-@list-method["sort-by"]
-Like @pyret-id{sort}, but the comparison and equality operators can be
-specified.  This allows for sorting @pyret{List}s whose contents are not
-comparable by @pyret{<}, or sorting by custom comparisons, for example,
+◊list-method["sort-by"]
+Like ◊pyret-id{sort}, but the comparison and equality operators can be
+specified.  This allows for sorting ◊pyret{List}s whose contents are not
+comparable by ◊pyret{<}, or sorting by custom comparisons, for example,
 sorting by string length instead of alphabetically.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1595,10 +1595,10 @@ check:
 end
 }
 
-@list-method["join-str"]
-Combines the values of the current @pyret{List} by converting them to strings
-with @pyret{tostring} and joining them with the given separator @pyret{sep}.
-@examples[#:show-try-it #t]{
+◊list-method["join-str"]
+Combines the values of the current ◊pyret{List} by converting them to strings
+with ◊pyret{tostring} and joining them with the given separator ◊pyret{sep}.
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1609,12 +1609,12 @@ end
 }
 
 
-@list-method["join-str-last"]
-Combines the values of the current @pyret{List} by converting them to strings
-with @pyret{tostring} and joining them with the given separator @pyret{sep}.
-If the list has more than one element, the function will use @pyret{last-sep}
-to join the last element instead of the regular @pyret{sep}.
-@examples[#:show-try-it #t]{
+◊list-method["join-str-last"]
+Combines the values of the current ◊pyret{List} by converting them to strings
+with ◊pyret{tostring} and joining them with the given separator ◊pyret{sep}.
+If the list has more than one element, the function will use ◊pyret{last-sep}
+to join the last element instead of the regular ◊pyret{sep}.
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1626,21 +1626,21 @@ check:
 end
 }
 
-@section{List Functions}
+◊section{List Functions}
 
-  These functions are available on the @pyret{lists} module object.
-  Some of the functions require the @pyret{lists} module to be
-  @pyret{import}ed, as indicated in the examples.
+  These functions are available on the ◊pyret{lists} module object.
+  Some of the functions require the ◊pyret{lists} module to be
+  ◊pyret{import}ed, as indicated in the examples.
 
-  @function["length"
+  ◊function["length"
     #:contract (a-arrow (L-of "a") N)
     #:args '(("lst" #f))
     #:return N
   ]{
 
-  Returns the number of elements in the @pyret{List}.
+  Returns the number of elements in the ◊pyret{List}.
 
-  @examples[#:show-try-it #t]{
+  ◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1653,13 +1653,13 @@ end
   }
 
   
-  @function[
+  ◊function[
     "get"
   ]
 
-Equivalent to @pyret{list}@a-ref["get"]@pyret{(n)}.
+Equivalent to ◊pyret{list}◊a-ref["get"]◊pyret{(n)}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1671,10 +1671,10 @@ check:
 end
     }
 
-  @function[
+  ◊function[
     "set"
     #:examples
-    '@{
+    '◊{
 import lists as L
 
 check:
@@ -1685,14 +1685,14 @@ end
   ]
   
 
-@function["sort"
+◊function["sort"
   #:contract (a-arrow (L-of "A") (L-of "A"))
   #:args '(("lst" #f))
   #:return (L-of "A")]{
-Produces a new @pyret{List} whose contents are the same as those of the
-current @pyret{List}, sorted by @pyret-id["<" "equality"] and @pyret-id["==" "equality"].  This requires that
-the items of the @pyret{List} be comparable by @pyret-id["<" "equality"] (see @secref["s:binop-expr"]).
-@examples[#:show-try-it #t]{
+Produces a new ◊pyret{List} whose contents are the same as those of the
+current ◊pyret{List}, sorted by ◊pyret-id["<" "equality"] and ◊pyret-id["==" "equality"].  This requires that
+the items of the ◊pyret{List} be comparable by ◊pyret-id["<" "equality"] (see ◊secref["s:binop-expr"]).
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1704,15 +1704,15 @@ end
 }
 }
 
-@function["sort-by"
+◊function["sort-by"
   #:contract (a-arrow (L-of "A") (a-arrow "A" "A" (a-id "Boolean" (xref "<global>" "Boolean"))) (a-arrow "A" "A" (a-id "Boolean" (xref "<global>" "Boolean"))) (L-of "A"))
   #:args '(("lst" #f) ("cmp" #f) ("eq" #f))
   #:return (L-of "A")]{
-Like @pyret-id{sort}, but the comparison and equality operators can be
-specified.  This allows for sorting @pyret{List}s whose contents are not
-comparable by @pyret-id["<" "equality"],  or sorting by custom comparisons, for example,
+Like ◊pyret-id{sort}, but the comparison and equality operators can be
+specified.  This allows for sorting ◊pyret{List}s whose contents are not
+comparable by ◊pyret-id["<" "equality"],  or sorting by custom comparisons, for example,
 sorting by string length instead of alphabetically.
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1728,12 +1728,12 @@ end
 }
 }
 
-@function["join-str"
+◊function["join-str"
           #:contract (a-arrow (L-of "A") S S)
           #:args '(("lst" #f) ("sep" #f))
           #:return S
 #:examples
-'@{
+'◊{
 import lists as L
 
 check:
@@ -1746,10 +1746,10 @@ end
 
 
 
-  @function[
+  ◊function[
     "range"
     #:examples
-    '@{
+    '◊{
     check:
       range(0, 0) is [list: ]
       range(0, 1) is [list: 0]
@@ -1757,8 +1757,8 @@ end
     end
     }
   ]
-  @function["range-by"]{
-  @examples[#:show-try-it #t]{
+  ◊function["range-by"]{
+  ◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1771,10 +1771,10 @@ check:
 end
   }
   }
-  @function[
+  ◊function[
     "repeat"
     #:examples
-    '@{
+    '◊{
 import lists as L
 
 check:
@@ -1785,20 +1785,20 @@ check:
 end
     }
   ]
-  @function["distinct"
+  ◊function["distinct"
     #:contract (a-arrow (L-of "a") (L-of "a"))
     #:args '(("lst" #f))
     #:return (L-of "a")
   ]{
 
-  Given a @pyret{List}, returns a new @pyret{List} containing only one copy of each element
-  that is duplicated in the @pyret{List}.
+  Given a ◊pyret{List}, returns a new ◊pyret{List} containing only one copy of each element
+  that is duplicated in the ◊pyret{List}.
 
-  The last (latest in the @pyret{List}) copy is kept.
-  @pyret{Roughnums} are not compared for equality, and so will always appear in the
-  output @pyret{List}.
+  The last (latest in the ◊pyret{List}) copy is kept.
+  ◊pyret{Roughnums} are not compared for equality, and so will always appear in the
+  output ◊pyret{List}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1813,10 +1813,10 @@ end
   }
 
 
-  @function[
+  ◊function[
     "filter"
     #:examples
-    '@{
+    '◊{
 import lists as L
 
 check:
@@ -1830,10 +1830,10 @@ check:
 end
     }
   ]
-  @function[
+  ◊function[
     "partition"
     #:examples
-    '@{
+    '◊{
 import lists as L
 
 check:
@@ -1846,9 +1846,9 @@ check:
 end
     }
   ]
-@function[
+◊function[
     "find"]
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 import option as O
 
@@ -1861,10 +1861,10 @@ check:
 end
     }
 
-  @function[
+  ◊function[
     "split-at"
     #:examples
-    '@{
+    '◊{
 import lists as L
 
 check:
@@ -1881,15 +1881,15 @@ check:
 end
     }
   ]
-  @function["last"
+  ◊function["last"
     #:contract (a-arrow (L-of "A") "A")
     #:return "A"
     #:args '(("lst" #f))]{
 
-  Returns the last element in @pyret{lst}.  Raises an error if the @pyret{List} is
+  Returns the last element in ◊pyret{lst}.  Raises an error if the ◊pyret{List} is
   empty.
 
-  @examples[#:show-try-it #t]{
+  ◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1901,13 +1901,13 @@ end
 
   }
 
-@function["push"
+◊function["push"
 #:contract (a-arrow (L-of "A") "A" (L-of "A"))
 #:args '(("l" #f) ("elt" #f))
 #:return (L-of "A")]{
 Constructs a list with the given element prepended to the front of the given
 list.
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -1917,15 +1917,15 @@ end
 }
 }
 
-  @function["append"
+  ◊function["append"
     #:contract (a-arrow (L-of "A") (L-of "A") (L-of "A"))
     #:return (L-of "A")
     #:args '(("front" #f) ("back" #f))]{
 
-    Produce a new @pyret{List} with the elements of @pyret{front} followed by the
-    elements of @pyret{back}.
+    Produce a new ◊pyret{List} with the elements of ◊pyret{front} followed by the
+    elements of ◊pyret{back}.
 
-    @pyret-block[#:style "good-ex"]{
+    ◊pyret-block[#:style "good-ex"]{
 import lists as L
 
 check:
@@ -1936,9 +1936,9 @@ check:
 end
     }
 
-    Note that it does @emph{not} change either @pyret{List}:
+    Note that it does ◊emph{not} change either ◊pyret{List}:
 
-    @pyret-block[#:style "bad-ex"]{
+    ◊pyret-block[#:style "bad-ex"]{
 import lists as L
 
 check:
@@ -1950,10 +1950,10 @@ end
 
   }
 
-  @function[
+  ◊function[
     "any"
     #:examples
-    '@{
+    '◊{
 import lists as L
 
 check:
@@ -1964,10 +1964,10 @@ check:
 end
     }
   ]
-  @function[
+  ◊function[
     "all"
     #:examples
-    '@{
+    '◊{
 import lists as L
 
 check:
@@ -1978,14 +1978,14 @@ check:
 end
     }
   ]
-  @function[
+  ◊function[
     "all2"]
 
-When the @pyret{List}s are of different length, the function is only
-called when both @pyret{List}s have a value at a given index.  In other words,
-Pyret iterates over the shortest @pyret{List} and stops.
+When the ◊pyret{List}s are of different length, the function is only
+called when both ◊pyret{List}s have a value at a given index.  In other words,
+Pyret iterates over the shortest ◊pyret{List} and stops.
   
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2000,11 +2000,11 @@ check:
 end
     }
   
-  @function[
+  ◊function[
     "map"]
 
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2012,14 +2012,14 @@ check:
   L.map(lam(x): x + 1 end, [L.list: 1, 2]) is [L.list: 2, 3]
 end
 }
-  @function[
+  ◊function[
     "map2"]
 
-When the @pyret{List}s are of different length, the function is only
-called when both @pyret{List}s have a value at a given index.  In other words,
-Pyret iterates over the shortest @pyret{List} and stops.
+When the ◊pyret{List}s are of different length, the function is only
+called when both ◊pyret{List}s have a value at a given index.  In other words,
+Pyret iterates over the shortest ◊pyret{List} and stops.
   
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2034,13 +2034,13 @@ check:
 end
     }
  
-  @function["map3"]
+  ◊function["map3"]
 
-When the @pyret{List}s are of different length, the function is only
-called when all @pyret{List}s have a value at a given index.  In other words,
-Pyret iterates over the shortest @pyret{List} and stops.
+When the ◊pyret{List}s are of different length, the function is only
+called when all ◊pyret{List}s have a value at a given index.  In other words,
+Pyret iterates over the shortest ◊pyret{List} and stops.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2053,13 +2053,13 @@ check:
   [L.list: "Martin Luther King", "Mohandas Karamchand Gandhi"]
 end
 }
-  @function["map4"]
+  ◊function["map4"]
 
-When the @pyret{List}s are of different length, the function is only
-called when all @pyret{List}s have a value at a given index.  In other words,
-Pyret iterates over the shortest @pyret{List} and stops.
+When the ◊pyret{List}s are of different length, the function is only
+called when all ◊pyret{List}s have a value at a given index.  In other words,
+Pyret iterates over the shortest ◊pyret{List} and stops.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2072,12 +2072,12 @@ check:
   [L.list: "Reverend Martin Luther King", "Mahātmā Mohandas Karamchand Gandhi"]
 end
 }
-  @function["map_n"]
+  ◊function["map_n"]
 
-  Like map, but also includes a numeric argument for the position in the @pyret{List}
+  Like map, but also includes a numeric argument for the position in the ◊pyret{List}
   that is currently being mapped over.
 
-  @examples[#:show-try-it #t]{
+  ◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2089,15 +2089,15 @@ check:
 end
   }
 
-  @function["map2_n"]
+  ◊function["map2_n"]
 
-Like @pyret-id{map_n}, but for two-argument functions.
+Like ◊pyret-id{map_n}, but for two-argument functions.
 
-When the @pyret{List}s are of different length, the function is only
-called when all @pyret{List}s have a value at a given index.  In other words,
-Pyret iterates over the shortest @pyret{List} and stops.
+When the ◊pyret{List}s are of different length, the function is only
+called when all ◊pyret{List}s have a value at a given index.  In other words,
+Pyret iterates over the shortest ◊pyret{List} and stops.
   
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2108,13 +2108,13 @@ end
  }
 
 
-  @function["map3_n"]
+  ◊function["map3_n"]
 
-When the @pyret{List}s are of different length, the function is only
-called when all @pyret{List}s have a value at a given index.  In other words,
-Pyret iterates over the shortest @pyret{List} and stops.
+When the ◊pyret{List}s are of different length, the function is only
+called when all ◊pyret{List}s have a value at a given index.  In other words,
+Pyret iterates over the shortest ◊pyret{List} and stops.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2127,9 +2127,9 @@ check:
     [L.list: 'c', 'c']) is [L.list: 'abc', 'aabbcc']
 end
 }
-  @function["map4_n"]
+  ◊function["map4_n"]
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2144,10 +2144,10 @@ check:
 end
 }
 
-  @function[
+  ◊function[
     "each"
     #:examples
-    '@{
+    '◊{
 import lists as L
 
 check:
@@ -2168,8 +2168,8 @@ end
     }
   ]
 
-  @function["each2"]
-@examples[#:show-try-it #t]{
+  ◊function["each2"]
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2180,8 +2180,8 @@ check:
 end
 }
   
-  @function["each3"]
-@examples[#:show-try-it #t]{
+  ◊function["each3"]
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2191,8 +2191,8 @@ check:
   counter is 222
 end
 }
-  @function["each4"]
-@examples[#:show-try-it #t]{
+  ◊function["each4"]
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2206,12 +2206,12 @@ check:
 end
 }
 
-  @function["each_n"]
+  ◊function["each_n"]
 
-Like @pyret-id{each}, but also includes a numeric argument for
-the current index in the @pyret{List}.
+Like ◊pyret-id{each}, but also includes a numeric argument for
+the current index in the ◊pyret{List}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2223,8 +2223,8 @@ check:
 end
 }
 
-  @function["each2_n"]
-@examples[#:show-try-it #t]{
+  ◊function["each2_n"]
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2237,8 +2237,8 @@ check:
 end
 }
 
-  @function["each3_n"]
-@examples[#:show-try-it #t]{
+  ◊function["each3_n"]
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2251,8 +2251,8 @@ check:
   counter is 666
 end
 }
-  @function["each4_n"]
-@examples[#:show-try-it #t]{
+  ◊function["each4_n"]
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2266,9 +2266,9 @@ check:
   counter is 6666
 end
 }
-  @function["fold-while"]
+  ◊function["fold-while"]
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 import either as EI
 
@@ -2285,19 +2285,19 @@ check:
 end
 }
 
-  @function[
+  ◊function[
     "fold"
 
   ]{
 
-@pyret{fold} computes @pyret{f(... f(f(base, first-elt), second-elt) ..., last-elt)}.  For
-@pyret-id{empty}, returns @pyret{base}.
+◊pyret{fold} computes ◊pyret{f(... f(f(base, first-elt), second-elt) ..., last-elt)}.  For
+◊pyret-id{empty}, returns ◊pyret{base}.
 
-In other words, @pyret{fold} uses the function @tt{f}, starting with the @tt{base}
-value, of type @tt{Base}, to calculate the return value of type @tt{Base} from each
-item in the @pyret{List}, of input type @tt{Elt}, starting the sequence from the left.
+In other words, ◊pyret{fold} uses the function ◊tt{f}, starting with the ◊tt{base}
+value, of type ◊tt{Base}, to calculate the return value of type ◊tt{Base} from each
+item in the ◊pyret{List}, of input type ◊tt{Elt}, starting the sequence from the left.
   }
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2311,18 +2311,18 @@ check:
   L.fold(combine, "END", L.empty) is "END"
 end
  }
-  @function["foldl"]
-  Another name for @pyret-id["fold"].
-  @function["foldr"]
-Computes @pyret{f(f(... f(base, last-elt) ..., second-elt), first-elt)}.  For
-@pyret-id{empty}, returns @pyret{base}.  In other words, it uses
-@pyret{f} to combine @pyret{base} with each item in the @pyret{List} starting from the right.
+  ◊function["foldl"]
+  Another name for ◊pyret-id["fold"].
+  ◊function["foldr"]
+Computes ◊pyret{f(f(... f(base, last-elt) ..., second-elt), first-elt)}.  For
+◊pyret-id{empty}, returns ◊pyret{base}.  In other words, it uses
+◊pyret{f} to combine ◊pyret{base} with each item in the ◊pyret{List} starting from the right.
 
-In other words, @pyret{foldr} uses the function @tt{f}, starting with the @tt{base}
-value, of type @tt{Base}, to calculate the return value of type @tt{Base} from each
-item in the @pyret{List}, of input type @tt{Elt}, starting the sequence from the right.
+In other words, ◊pyret{foldr} uses the function ◊tt{f}, starting with the ◊tt{base}
+value, of type ◊tt{Base}, to calculate the return value of type ◊tt{Base} from each
+item in the ◊pyret{List}, of input type ◊tt{Elt}, starting the sequence from the right.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2337,9 +2337,9 @@ check:
 end
 }
 
-  @function["fold2"]
+  ◊function["fold2"]
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2351,8 +2351,8 @@ check:
 end
 }
 
-  @function["fold3"]
-@examples[#:show-try-it #t]{
+  ◊function["fold3"]
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2366,8 +2366,8 @@ end
 }
 
 
-  @function["fold4"]
-@examples[#:show-try-it #t]{
+  ◊function["fold4"]
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2382,10 +2382,10 @@ check:
 end
 }
 
-  @function[
+  ◊function[
     "fold_n"
     #:examples
-    '@{
+    '◊{
 import lists as L
 
 check:
@@ -2406,35 +2406,35 @@ end
     }
   ]{
 
-  Like @pyret-id{fold}, but takes a numeric argument for the position in the
-  @pyret{List} that is currently being visited.
+  Like ◊pyret-id{fold}, but takes a numeric argument for the position in the
+  ◊pyret{List} that is currently being visited.
 
   }
 
-  @function[
+  ◊function[
     "member"
   ]
 
-@function["member-always"]
-@function["member-identical"]
-@function["member-now"]
+◊function["member-always"]
+◊function["member-identical"]
+◊function["member-now"]
 
-@pyret{member}
-returns @pyret{true} if @pyret{List} @tt{lst} contains the element @tt{elt}, as compared
-by @pyret{==}.
+◊pyret{member}
+returns ◊pyret{true} if ◊pyret{List} ◊tt{lst} contains the element ◊tt{elt}, as compared
+by ◊pyret{==}.
 The other three functions are
-analogous to @pyret-id{member}, but use
-@pyret-id["equal-always" "equality"],
-@pyret-id["identical" "equality"], or
-@pyret-id["equal-now" "equality"]
+analogous to ◊pyret-id{member}, but use
+◊pyret-id["equal-always" "equality"],
+◊pyret-id["identical" "equality"], or
+◊pyret-id["equal-now" "equality"]
 to perform the comparison.
-(Thus @pyret{member-always} is the same as @pyret{member}; the name is provided for completeness
+(Thus ◊pyret{member-always} is the same as ◊pyret{member}; the name is provided for completeness
 and in case the user wants to make their intent more explicit.)
 
-Note that if a @pyret{Roughnum} is present, these functions will raise exceptions. To avoid that, use
-@pyret-id["member3" "lists"] and the analogous related functions.
+Note that if a ◊pyret{Roughnum} is present, these functions will raise exceptions. To avoid that, use
+◊pyret-id["member3" "lists"] and the analogous related functions.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2450,18 +2450,18 @@ check:
 end
 }
 
-@function["member3"]
-@function["member-always3"]
-@function["member-identical3"]
-@function["member-now3"]
+◊function["member3"]
+◊function["member-always3"]
+◊function["member-identical3"]
+◊function["member-now3"]
 
-These functions are analogous to @pyret-id{member}, but use
-@pyret-id["equal-always3" "equality"],
-@pyret-id["identical3" "equality"], or
-@pyret-id["equal-now3" "equality"]
-to perform the comparison. Thus, they do not raise an exception if a @pyret{Roughnum} is present.
+These functions are analogous to ◊pyret-id{member}, but use
+◊pyret-id["equal-always3" "equality"],
+◊pyret-id["identical3" "equality"], or
+◊pyret-id["equal-now3" "equality"]
+to perform the comparison. Thus, they do not raise an exception if a ◊pyret{Roughnum} is present.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 import equality as EQ
 
@@ -2471,16 +2471,16 @@ check:
 end
 }
 
-@function[
+◊function[
     "member-with"
   ]
 
-@pyret{member-with} is @pyret{member} with a custom equality function.
-Returns an @pyret{equality.Equal} if
-the @tt{eq} parameter returns @pyret{equality.Equal} for @tt{elt} and any one
-element of @pyret{List} @tt{lst}.
+◊pyret{member-with} is ◊pyret{member} with a custom equality function.
+Returns an ◊pyret{equality.Equal} if
+the ◊tt{eq} parameter returns ◊pyret{equality.Equal} for ◊tt{elt} and any one
+element of ◊pyret{List} ◊tt{lst}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 import equality as EQ
 
@@ -2502,14 +2502,14 @@ check:
 end
 }
 
-  @function[
+  ◊function[
     "reverse"
   ]
 
-Returns a new @pyret{List} with all the elements of the original @pyret{List} in
+Returns a new ◊pyret{List} with all the elements of the original ◊pyret{List} in
 reverse order.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2518,11 +2518,11 @@ check:
 end
 }
 
-@function["remove"]
-Returns a new @pyret{List} with all the elements of the original that are not
-equal to the specified element (using @pyret-id["==" "equality"] as the comparison).
+◊function["remove"]
+Returns a new ◊pyret{List} with all the elements of the original that are not
+equal to the specified element (using ◊pyret-id["==" "equality"] as the comparison).
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 
 check:
@@ -2532,14 +2532,14 @@ end
 }
 
 
-  @function[
+  ◊function[
     "shuffle"
   ]
 
-  Returns a new @pyret{List} with all the elements of the original @pyret{List} in random
+  Returns a new ◊pyret{List} with all the elements of the original ◊pyret{List} in random
   order.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import lists as L
 import sets as S
 

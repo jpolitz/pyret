@@ -1,29 +1,29 @@
 #lang scribble/base
-@(require "../../scribble-api.rkt" "../abbrevs.rkt")
+◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
 
-@(append-gen-docs
+◊(append-gen-docs
   `(module "fetch"
     (path "src/arr/trove/fetch.arr")
     (fun-spec (name "fetch") (arity 1))))
 
-@docmodule["fetch"]{
+◊docmodule["fetch"]{
 
-@function["fetch"
+◊function["fetch"
   #:contract (a-arrow S (E-of S S))
   #:args '(("url" ""))
   #:return (E-of S S)
   ]{
 
-  Fetches the content at the given @pyret{url} with HTTP GET, expecting that
-  the result is @tt{text/plain}.
+  Fetches the content at the given ◊pyret{url} with HTTP GET, expecting that
+  the result is ◊tt{text/plain}.
 
-  If no errors occur, returns @pyret-id["left" "either"] with the returned
+  If no errors occur, returns ◊pyret-id["left" "either"] with the returned
   string body. The user is expected to decompose this string
-  using @pyret-id["string" "String"] or other functions.
+  using ◊pyret-id["string" "String"] or other functions.
 
-  If any errors occur, returns @pyret-id["right" "either"] with that error as a string.
+  If any errors occur, returns ◊pyret-id["right" "either"] with that error as a string.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import fetch as F
 import either as Ei
 

@@ -1,12 +1,12 @@
 #lang scribble/base
-@(require "../../scribble-api.rkt" "../abbrevs.rkt" scribble/html-properties)
+◊(require "../../scribble-api.rkt" "../abbrevs.rkt" scribble/html-properties)
 
-@(define eq '(a-id "EqualityResult" (xref "equality" "EqualityResult")))
-@(define eqfun `(a-arrow ,A ,A ,B))
-@(define eq3fun `(a-arrow ,A ,A ,eq))
-@(define numpred `(a-arrow ,N ,N ,B))
+◊(define eq '(a-id "EqualityResult" (xref "equality" "EqualityResult")))
+◊(define eqfun `(a-arrow ,A ,A ,B))
+◊(define eq3fun `(a-arrow ,A ,A ,eq))
+◊(define numpred `(a-arrow ,N ,N ,B))
 
-@(append-gen-docs
+◊(append-gen-docs
   `(module "numbers"
     (path "src/js/base/runtime-anf.js")
     (form-spec (name "+ (addition operator)"))
@@ -315,87 +315,87 @@
     (doc ""))
     ))
 
-@docmodule["numbers" #:noimport #t #:friendly-title "Numbers"]{
+◊docmodule["numbers" #:noimport #t #:friendly-title "Numbers"]{
 
-Pyret numbers are of two kinds: exact numbers, or @pyret{Exactnum}s, 
-and rough numbers or @pyret{Roughnum}s. Both are 
+Pyret numbers are of two kinds: exact numbers, or ◊pyret{Exactnum}s, 
+and rough numbers or ◊pyret{Roughnum}s. Both are 
 real; finite; and written in base ten.
 
-@margin-note{Note that imaginary numbers were implemented in earlier versions of Pyret,
+◊margin-note{Note that imaginary numbers were implemented in earlier versions of Pyret,
 but are not currently supported.}
 
-@pyret{Exactnum}s are arbitrarily precise rational numbers, including
+◊pyret{Exactnum}s are arbitrarily precise rational numbers, including
 integers and rational fractions.  For integers whose magnitude is less
-than @pyret{(num-expt(2, 53) - 1)}, Pyret internally uses JavaScript
-@tt{fixnum}s, in order to optimize basic arithmetic.
+than ◊pyret{(num-expt(2, 53) - 1)}, Pyret internally uses JavaScript
+◊tt{fixnum}s, in order to optimize basic arithmetic.
 
-@pyret{Roughnum}s are numbers that are necessarily or
+◊pyret{Roughnum}s are numbers that are necessarily or
 deliberately imprecise. These correspond to the same set of
 values covered by JavaScript
-@tt{fixnum}s (a.k.a. doubles), and thus cover a large but limited range
-(magnitude less than @pyret{1.7976931348623157e308}).
+◊tt{fixnum}s (a.k.a. doubles), and thus cover a large but limited range
+(magnitude less than ◊pyret{1.7976931348623157e308}).
 
-Operations on @pyret{Exactnum}s typically return
-@pyret{Exactnum}s. However, if the operation can yield irrationals, and it
+Operations on ◊pyret{Exactnum}s typically return
+◊pyret{Exactnum}s. However, if the operation can yield irrationals, and it
 is not possible to determine that a particular result is
-definitely rational, that result is returned as a @pyret{Roughnum}. Thus,
-trigonometric functions on @pyret{Exactnum}s typically yield @pyret{Roughnum}
+definitely rational, that result is returned as a ◊pyret{Roughnum}. Thus,
+trigonometric functions on ◊pyret{Exactnum}s typically yield ◊pyret{Roughnum}
 answers, except for well-known edge cases such as the sine or
-cosine of zero. Fractional powers of rationals are usually @pyret{Roughnum},
+cosine of zero. Fractional powers of rationals are usually ◊pyret{Roughnum},
 except for small roots where it can be ascertained that an exact
 root is possible.
 
-Operations that are non-casting and with at least one argument that is @pyret{Roughnum}
-automatically coerce the result to be a @pyret{Roughnum}. This is known
-as @pyret{Roughnum} contagion.
+Operations that are non-casting and with at least one argument that is ◊pyret{Roughnum}
+automatically coerce the result to be a ◊pyret{Roughnum}. This is known
+as ◊pyret{Roughnum} contagion.
 
-@pyret{Exactnum}s allow the usual comparison predicates. @pyret{Roughnum}s do
+◊pyret{Exactnum}s allow the usual comparison predicates. ◊pyret{Roughnum}s do
 too, with the significant exception that trying to compare
-@pyret{Roughnum}s for equality throws an error.  To write an
-equality function that handles @pyret{Roughnum}s, use @pyret-id{within}, as
-documented in @seclink["s:bounded-equalities"].
+◊pyret{Roughnum}s for equality throws an error.  To write an
+equality function that handles ◊pyret{Roughnum}s, use ◊pyret-id{within}, as
+documented in ◊seclink["s:bounded-equalities"].
 
 An operation whose numerical result is not determinate or finite
 throws an error, with the message signaling either an
 overflow or some more specific problem.
 
-@section{Number Annotations}
+◊section{Number Annotations}
 
 Several specific type annotations are provided for numbers to allow more precise
 value requirements to be specified.
 
-@examples{
+◊examples{
 fun round-distance(d :: NumNonNegative) -> Exactnum:
   num-round(d)
 end
 }
 
-@type-spec["Number" (list)]{
+◊type-spec["Number" (list)]{
 The type of number values.}
-@type-spec["Exactnum" (list)]{
+◊type-spec["Exactnum" (list)]{
 The type of exact number values.}
-@type-spec["Roughnum" (list)]{
+◊type-spec["Roughnum" (list)]{
 The type of necessarily or deliberately imprecise values.}
-@type-spec["NumInteger" (list)]{
-The type of @pyret{Exactnum} integer values.}
-@type-spec["NumRational" (list)]{
-The type of exact rational number values. Same as @pyret{Exactnum}.}
-@type-spec["NumPositive" (list)]{
+◊type-spec["NumInteger" (list)]{
+The type of ◊pyret{Exactnum} integer values.}
+◊type-spec["NumRational" (list)]{
+The type of exact rational number values. Same as ◊pyret{Exactnum}.}
+◊type-spec["NumPositive" (list)]{
 The type of number values that are greater than zero.}
-@type-spec["NumNegative" (list)]{
+◊type-spec["NumNegative" (list)]{
 The type of number values that are less than zero.}
-@type-spec["NumNonPositive" (list)]{
+◊type-spec["NumNonPositive" (list)]{
 The type of number values that are less than or equal to zero.}
-@type-spec["NumNonNegative" (list)]{
+◊type-spec["NumNonNegative" (list)]{
 The type of number values that are equal to or greater than zero.}
 
-@section{Number Literals}
+◊section{Number Literals}
 
-@pyret{Exactnum}s can be integers,  fractions represented
+◊pyret{Exactnum}s can be integers,  fractions represented
 with a solidus, or decimals, with an optional exponent. In the following,
 the numerals on the same line all denote the same Pyret number.
 
-@examples{
+◊examples{
 42 +42
 -42
 22/7
@@ -408,14 +408,14 @@ the numerals on the same line all denote the same Pyret number.
 -6.022e-23
 }
 
-@pyret{Exactnum}s are of arbitrary precision.
+◊pyret{Exactnum}s are of arbitrary precision.
 
-@pyret{Roughnum}s are represented with a leading tilde.  You can think of
+◊pyret{Roughnum}s are represented with a leading tilde.  You can think of
 the tilde as representing a person waving his or her hands vaguely.
 
 They are integers, fractions or decimals, with an optional exponent.
 
-@examples{
+◊examples{
 ~42 ~+42
 ~-42
 ~2.718281828 ~+2.718281828
@@ -425,26 +425,26 @@ They are integers, fractions or decimals, with an optional exponent.
 ~-6.022e-23
 }
 
-@pyret{Roughnum}s cannot be made arbitrarily precise. The absolute value
+◊pyret{Roughnum}s cannot be made arbitrarily precise. The absolute value
 ranges between 0 and 1.7976931348623157e+308 (JavaScript’s Number.MAX_VALUE) with a
 granularity of 5e-324 (JavaScript’s Number.MIN_VALUE).
 
-@section{Number Constants}
+◊section{Number Constants}
 
-@value["PI" RN]
+◊value["PI" RN]
 
-The mathematical constant π, approximated as a @pyret-id["Roughnum"], or
-@pyret{~3.141592653589793}.
+The mathematical constant π, approximated as a ◊pyret-id["Roughnum"], or
+◊pyret{~3.141592653589793}.
 
-@section{Number Operators}
+◊section{Number Operators}
 
-@form["+ (addition operator)" "left + right"]{
-  @margin-note{If either of the values in an arithmetic operator is a
-  @pyret{Roughnum}, the result is a @pyret{Roughnum}}
-  When @pyret{left} and @pyret{right} evaluate to numbers, adds them and returns
+◊form["+ (addition operator)" "left + right"]{
+  ◊margin-note{If either of the values in an arithmetic operator is a
+  ◊pyret{Roughnum}, the result is a ◊pyret{Roughnum}}
+  When ◊pyret{left} and ◊pyret{right} evaluate to numbers, adds them and returns
   the result.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 check:
   2 + 2 is 4
   4/3 + 1/3 is 5/3
@@ -453,11 +453,11 @@ end
 }
 }
 
-@form["- (subtraction operator)" "left - right"]{
-  When @pyret{left} and @pyret{right} evaluate to numbers, subtracts
-  @pyret{right} from @pyret{left} and returns the result.
+◊form["- (subtraction operator)" "left - right"]{
+  When ◊pyret{left} and ◊pyret{right} evaluate to numbers, subtracts
+  ◊pyret{right} from ◊pyret{left} and returns the result.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 check:
   6 - 2 is 4
   4/3 - 1/3 is 1
@@ -466,11 +466,11 @@ end
 }
 }
 
-@form["* (multiplication operator)" "left * right"]{
-  When @pyret{left} and @pyret{right} evaluate to numbers, multiplies
+◊form["* (multiplication operator)" "left * right"]{
+  When ◊pyret{left} and ◊pyret{right} evaluate to numbers, multiplies
   them and returns the result.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 check:
   2 * 2 is 4
   2 * 1/3 is 2/3
@@ -479,16 +479,16 @@ end
 }
 }
 
-@form["/ (division operator)" "left / right"]{
-  @margin-note{To be used as an operator, @pyret{/} has to have spaces around
-  it. This means you need to write @pyret{a / 3} rather than @pyret{a/3} to
-  divide the value stored in @pyret{a} by @pyret{3}. Things like @pyret{4/3} and
-  @pyret{1/2} are read by Pyret as single
+◊form["/ (division operator)" "left / right"]{
+  ◊margin-note{To be used as an operator, ◊pyret{/} has to have spaces around
+  it. This means you need to write ◊pyret{a / 3} rather than ◊pyret{a/3} to
+  divide the value stored in ◊pyret{a} by ◊pyret{3}. Things like ◊pyret{4/3} and
+  ◊pyret{1/2} are read by Pyret as single
   numbers, and can't have names or other expressions in them.}
-  When @pyret{left} and @pyret{right} evaluate to numbers, divides @pyret{left}
-  by @pyret{right} and returns the result.
+  When ◊pyret{left} and ◊pyret{right} evaluate to numbers, divides ◊pyret{left}
+  by ◊pyret{right} and returns the result.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 check:
   8 / 2 is 4
   8/3 / 2 is 4/3
@@ -497,22 +497,22 @@ end
 }
 }
 
-@form["< (less)" "left < right"]
-@form["> (greater)" "left < right"]
-@form["<= (less or equal)" "left < right"]
-@form[">= (greater or equal)" "left < right"]
-@form["== (equal)" "left < right"]
+◊form["< (less)" "left < right"]
+◊form["> (greater)" "left < right"]
+◊form["<= (less or equal)" "left < right"]
+◊form[">= (greater or equal)" "left < right"]
+◊form["== (equal)" "left < right"]
 
-Comparison operators. See @seclink["inequalities"].
+Comparison operators. See ◊seclink["inequalities"].
 
 
-@section{Number Functions}
+◊section{Number Functions}
 
-@function["num-equal" #:contract (a-arrow N N B) #:return B]{
-If both arguments are @pyret{Exactnum}s, returns a @pyret{Boolean}.
-If either argument is @pyret{Roughnum}, raises an error.
+◊function["num-equal" #:contract (a-arrow N N B) #:return B]{
+If both arguments are ◊pyret{Exactnum}s, returns a ◊pyret{Boolean}.
+If either argument is ◊pyret{Roughnum}, raises an error.
 
-@examples{
+◊examples{
 check:
   num-equal(2, 2) is true
   num-equal(2, 3) is false
@@ -525,10 +525,10 @@ end
 }
 
   }
-  @function["num-max" #:contract (a-arrow N N N) #:return N]{
+  ◊function["num-max" #:contract (a-arrow N N N) #:return N]{
 Returns the greater of the two arguments.
 
-@examples{
+◊examples{
 check:
   num-max(1, 2) is 2
   num-max(2, ~3) is-roughly ~3
@@ -539,10 +539,10 @@ end
 }
 
   }
-  @function["num-min" #:contract (a-arrow N N N) #:return N]{
+  ◊function["num-min" #:contract (a-arrow N N N) #:return N]{
 Returns the lesser of the two arguments.
 
-@examples{
+◊examples{
 check:
   num-min(1, 2) is 1
   num-min(2, ~3) is 2
@@ -553,11 +553,11 @@ end
 }
 
   }
-  @function["num-abs" #:contract (a-arrow N N) #:return N]{
+  ◊function["num-abs" #:contract (a-arrow N N) #:return N]{
 Returns the absolute value of the argument. The result is an
-  @pyret{Exactnum} only if the argument is.
+  ◊pyret{Exactnum} only if the argument is.
 
-@examples{
+◊examples{
 check:
   num-abs(2) is 2
   num-abs(-2.1) is 2.1
@@ -567,35 +567,35 @@ end
 }
 
   }
-  @function["num-sin" #:contract (a-arrow N N) #:return N]{
+  ◊function["num-sin" #:contract (a-arrow N N) #:return N]{
 
-Returns the sine of the argument (an angle in radians), usually as a @pyret{Roughnum}.
-  If the argument is @pyret{Exactnum} 0, the result is @pyret{Exactnum} 0 too.
+Returns the sine of the argument (an angle in radians), usually as a ◊pyret{Roughnum}.
+  If the argument is ◊pyret{Exactnum} 0, the result is ◊pyret{Exactnum} 0 too.
 
-@examples{
+◊examples{
 check:
   num-sin(0) is 0
   num-sin(1) is%(within-abs(0.01)) 0.84
 end
 }
   }
-  @function["num-cos" #:contract (a-arrow N N) #:return N]{
+  ◊function["num-cos" #:contract (a-arrow N N) #:return N]{
 
-Returns the cosine of the argument (an angle in radians), usually as a @pyret{Roughnum}. If
-the argument is @pyret{Exactnum} 0, the result is @pyret{Exactnum} 1.
+Returns the cosine of the argument (an angle in radians), usually as a ◊pyret{Roughnum}. If
+the argument is ◊pyret{Exactnum} 0, the result is ◊pyret{Exactnum} 1.
 
-@examples{
+◊examples{
 check:
   num-cos(0) is 1
   num-cos(1) is%(within-abs(0.01)) 0.54
 end
 }
   }
-  @function["num-tan" #:contract (a-arrow N N) #:return N]{
-Returns the tangent of the argument (an angle in radians), usually as a @pyret{Roughnum}. If
-the argument is @pyret{Exactnum} 0, the result is @pyret{Exactnum} 1.
+  ◊function["num-tan" #:contract (a-arrow N N) #:return N]{
+Returns the tangent of the argument (an angle in radians), usually as a ◊pyret{Roughnum}. If
+the argument is ◊pyret{Exactnum} 0, the result is ◊pyret{Exactnum} 1.
 
-@examples{
+◊examples{
 check:
   num-tan(0) is 0
   num-tan(1) is%(within-abs(0.01)) 1.56
@@ -603,13 +603,13 @@ end
 }
 
   }
-  @function["num-asin" #:contract (a-arrow N N) #:return N]{
+  ◊function["num-asin" #:contract (a-arrow N N) #:return N]{
   
 Returns the arcsine of the argument as an angle in radians in the range [-π/2,
-π/2], usually as a @pyret{Roughnum}. If the argument is @pyret{Exactnum} 0, the
-result is @pyret{Exactnum} 0.
+π/2], usually as a ◊pyret{Roughnum}. If the argument is ◊pyret{Exactnum} 0, the
+result is ◊pyret{Exactnum} 0.
 
-@examples{
+◊examples{
 check:
   num-asin(0) is 0
   num-asin(0.84) is%(within-abs(0.01)) 1
@@ -617,26 +617,26 @@ end
 }
 
   }
-  @function["num-acos" #:contract (a-arrow N N) #:return N]{
+  ◊function["num-acos" #:contract (a-arrow N N) #:return N]{
 
 Returns the arccosine of the argument as an angle in radians in the range [0,
-π], usually as a @pyret{Roughnum}. However, if the argument is
-@pyret{Exactnum} 1, the result is @pyret{Exactnum} 0.
+π], usually as a ◊pyret{Roughnum}. However, if the argument is
+◊pyret{Exactnum} 1, the result is ◊pyret{Exactnum} 0.
 
-@examples{
+◊examples{
 check:
   num-acos(1) is 0
   num-acos(0.54) is%(within-abs(0.01)) 1
 end
 }
   }
-  @function["num-atan" #:contract (a-arrow N N) #:return N]{
+  ◊function["num-atan" #:contract (a-arrow N N) #:return N]{
 
 Returns the arctangent of the argument as an angle in radians in the range
-(-π/2, π/2), usually as a @pyret{Roughnum}. However, if the argument is
-@pyret{Exactnum} 0, the result is @pyret{Exactnum} 0.
+(-π/2, π/2), usually as a ◊pyret{Roughnum}. However, if the argument is
+◊pyret{Exactnum} 0, the result is ◊pyret{Exactnum} 0.
 
-@examples{
+◊examples{
 check:
   num-atan(0) is 0
   num-atan(1) is-roughly (3.141592 * 1/4) # 45 degrees = π/4 radians
@@ -647,28 +647,28 @@ end
 }
   }
 
-  @function["num-atan2" #:contract (a-arrow N N N) #:return N]{
+  ◊function["num-atan2" #:contract (a-arrow N N N) #:return N]{
 
-The @pyret{num-atan} function takes a tangent value and returns @emph{a}
+The ◊pyret{num-atan} function takes a tangent value and returns ◊emph{a}
 corresponding angle, but it is not clear which angle to return: for example,
-both @pyret{num-tan(3.141592 * 1/4)} and @pyret{num-tan(3.141592 * 5/4)} have a
-tangent of @pyret{~1}.  The @pyret{num-atan2} function produces an angle in
-radians in the range [0, 2π], where the tangent value is the @emph{ratio} of
+both ◊pyret{num-tan(3.141592 * 1/4)} and ◊pyret{num-tan(3.141592 * 5/4)} have a
+tangent of ◊pyret{~1}.  The ◊pyret{num-atan2} function produces an angle in
+radians in the range [0, 2π], where the tangent value is the ◊emph{ratio} of
 the two arguments: the two arguments represent the (signed)
-@emph{height} and @emph{width} of a triangle whose angle is unknown (i.e.,
+◊emph{height} and ◊emph{width} of a triangle whose angle is unknown (i.e.,
 their ratio is the "rise over run", defining the tangent of that angle).  The
-return value of @pyret{num-atan2} chooses which angle to return based on the
+return value of ◊pyret{num-atan2} chooses which angle to return based on the
 following table:
 
-@tabular[
+◊tabular[
   #:column-properties (list (list (attributes '((style . "padding: 5px;")))))
 (list
-  (list "If..."         @pyret{dx < 0} @pyret{dx > 0})
-  (list @pyret{dy > 0}  "Quadrant II"   "Quadrant I")
-  (list @pyret{dy < 0}  "Quadrant III"  "Quadrant IV"))
+  (list "If..."         ◊pyret{dx < 0} ◊pyret{dx > 0})
+  (list ◊pyret{dy > 0}  "Quadrant II"   "Quadrant I")
+  (list ◊pyret{dy < 0}  "Quadrant III"  "Quadrant IV"))
   ]
 
-@examples{
+◊examples{
 check:
   num-atan2(0, 1) is 0
   num-atan2(1, 1) is-roughly (3.141592 * 1/4) # 45 degrees
@@ -681,11 +681,11 @@ end
 }
   }
 
-  @function["num-modulo" #:contract (a-arrow N N N) #:return N]{
+  ◊function["num-modulo" #:contract (a-arrow N N N) #:return N]{
 Returns the modulus of the first argument with respect to the
 second, i.e. the remainder when dividing the first number by the second.
 
-@examples{
+◊examples{
 check:
   num-modulo(5, 2) is 1
   num-modulo(-5, 2) is 1
@@ -699,7 +699,7 @@ end
 It is useful for calculating if one number is a multiple of
 another, by checking for a zero remainder.
 
-@examples{
+◊examples{
 fun is-even(n :: Number) -> Boolean:
   num-modulo(n, 2) == 0
 where:
@@ -709,12 +709,12 @@ end
 }
 
   }
-  @function["num-truncate" #:contract (a-arrow N N) #:return N]{
+  ◊function["num-truncate" #:contract (a-arrow N N) #:return N]{
 
 Returns the integer part of its argument by cutting off any
 decimal part. Does not do any rounding.
 
-@examples{
+◊examples{
 check:
   num-truncate(3.14) is 3
   num-truncate(-3.14) is -3
@@ -724,12 +724,12 @@ end
 }
 
   }
-  @function["num-sqrt" #:contract (a-arrow N N) #:return N]{
+  ◊function["num-sqrt" #:contract (a-arrow N N) #:return N]{
 
-Returns the square root of the given argument.  If the argument is an @pyret{Exactnum} and a perfect
-square, the result is an @pyret{Exactnum}, otherwise, it is a @pyret{Roughnum}.
+Returns the square root of the given argument.  If the argument is an ◊pyret{Exactnum} and a perfect
+square, the result is an ◊pyret{Exactnum}, otherwise, it is a ◊pyret{Roughnum}.
 
-@examples{
+◊examples{
 check:
   num-sqrt(4) is 2
   num-sqrt(5) is%(within-abs(0.001)) ~2.236
@@ -740,11 +740,11 @@ check:
 end
 }
   }
-  @function["num-sqr" #:contract (a-arrow N N) #:return N]{
+  ◊function["num-sqr" #:contract (a-arrow N N) #:return N]{
 
 Returns the square of the given argument.
 
-@examples{
+◊examples{
 check:
   num-sqr(4) is 16
   num-sqr(5) is 25
@@ -755,12 +755,12 @@ end
 }
 
   }
-  @function["num-ceiling" #:contract (a-arrow N EN) #:return EN]{
+  ◊function["num-ceiling" #:contract (a-arrow N EN) #:return EN]{
 
-Returns the smallest integer @pyret{Exactnum} greater than or equal to the
+Returns the smallest integer ◊pyret{Exactnum} greater than or equal to the
 argument.
 
-@examples{
+◊examples{
 check:
   num-ceiling(4.2) is 5
   num-ceiling(-4.2) is -4
@@ -768,22 +768,22 @@ end
 }
 
   }
-  @function["num-floor" #:contract (a-arrow N EN) #:return EN]{
+  ◊function["num-floor" #:contract (a-arrow N EN) #:return EN]{
 
-Returns the largest integer @pyret{Exactnum} less than or equal to the argument.
+Returns the largest integer ◊pyret{Exactnum} less than or equal to the argument.
 
-@examples{
+◊examples{
 check:
   num-floor(4.2) is 4
   num-floor(-4.2) is -5
 end
 }
   }
-  @function["num-round" #:contract (a-arrow N EN) #:return EN]{
+  ◊function["num-round" #:contract (a-arrow N EN) #:return EN]{
 
-Returns the closest integer @pyret{Exactnum} to the argument. 
+Returns the closest integer ◊pyret{Exactnum} to the argument. 
 
-@examples{
+◊examples{
 check:
   num-round(4.2) is 4
   num-round(4.8) is 5
@@ -795,7 +795,7 @@ end
 If the argument is midway between integers, returns the integer further
 away from zero.
 
-@examples{
+◊examples{
 check:
   num-round(3.5) is 4
   num-round(2.5) is 3
@@ -803,26 +803,26 @@ end
 }
 
   }
-  @function["num-round-even" #:contract (a-arrow N EN) #:return EN]{
+  ◊function["num-round-even" #:contract (a-arrow N EN) #:return EN]{
 
-Similar to @pyret{num-round}, except that if the argument is
-midway between integers, returns the even integer @pyret{Exactnum}.
+Similar to ◊pyret{num-round}, except that if the argument is
+midway between integers, returns the even integer ◊pyret{Exactnum}.
 
-@examples{
+◊examples{
 check:
   num-round-even(3.5) is 4
   num-round-even(2.5) is 2
 end
 }
 
-  }  @function["num-log" #:contract (a-arrow N N) #:return N]{
+  }  ◊function["num-log" #:contract (a-arrow N N) #:return N]{
 
-Returns the natural logarithm (ln) of the argument, usually as a @pyret{Roughnum}.
-If the argument is @pyret{Exactnum} 1, the
-result is @pyret{Exactnum} 0. If the argument is non-positive, an error is
+Returns the natural logarithm (ln) of the argument, usually as a ◊pyret{Roughnum}.
+If the argument is ◊pyret{Exactnum} 1, the
+result is ◊pyret{Exactnum} 0. If the argument is non-positive, an error is
 thrown.
 
-@examples{
+◊examples{
 check:
   num-log(1) is 0
   num-log(0) raises "non-positive argument"
@@ -833,13 +833,13 @@ end
 }
 
   }
-  @function["num-exp" #:contract (a-arrow N N) #:return N]{
+  ◊function["num-exp" #:contract (a-arrow N N) #:return N]{
 
-Returns e raised to the argument, usually as a @pyret{Roughnum}.  However, if the
-argument is @pyret{Exactnum} 0, the result is
-@pyret{Exactnum} 1.
+Returns e raised to the argument, usually as a ◊pyret{Roughnum}.  However, if the
+argument is ◊pyret{Exactnum} 0, the result is
+◊pyret{Exactnum} 1.
 
-@examples{
+◊examples{
 check:
   num-exp(-1) is%(within-abs(0.0001)) (1 / num-exp(1))
   num-exp(0) is 1
@@ -850,15 +850,15 @@ end
 }
 
   }
-  @function["num-expt" #:contract (a-arrow N N N) #:return N]{
+  ◊function["num-expt" #:contract (a-arrow N N N) #:return N]{
 
 Returns the first argument raised to the second argument.  An error
 is thrown if the first argument is 0 and the second is negative.
-If the first argument is @pyret{Exactnum} 0 or 1,
-or the second argument is @pyret{Exactnum} 0, then the result is an
-@pyret{Exactnum} even if the other argument is a @pyret{Roughnum}.
+If the first argument is ◊pyret{Exactnum} 0 or 1,
+or the second argument is ◊pyret{Exactnum} 0, then the result is an
+◊pyret{Exactnum} even if the other argument is a ◊pyret{Roughnum}.
 
-@examples{
+◊examples{
 check:
   num-expt(3, 0) is 1
   num-expt(1, 3) is 1
@@ -873,21 +873,21 @@ end
   }
 
 
-  @function["num-to-roughnum" #:contract (a-arrow N RN) #:return RN]{
+  ◊function["num-to-roughnum" #:contract (a-arrow N RN) #:return RN]{
 
-Given a number, returns the @pyret{Roughnum} version.
+Given a number, returns the ◊pyret{Roughnum} version.
 
-@examples{
+◊examples{
 check:
   num-is-roughnum(num-to-roughnum(3.14)) is true
   num-is-roughnum(num-to-roughnum(~3.14)) is true
 end
 }
   }
-  @function["num-is-integer" #:contract (a-arrow N B) #:return B]{
-Returns @pyret{true} if argument is an @pyret{Exactnum} integer.
+  ◊function["num-is-integer" #:contract (a-arrow N B) #:return B]{
+Returns ◊pyret{true} if argument is an ◊pyret{Exactnum} integer.
 
-@examples{
+◊examples{
 check:
   num-is-integer(2) is true
   num-is-integer(1/2) is false
@@ -897,11 +897,11 @@ end
 }
 
   }
-  @function["num-is-rational" #:contract (a-arrow N B) #:return B]{
+  ◊function["num-is-rational" #:contract (a-arrow N B) #:return B]{
 
-Returns @pyret{true} if argument is an @pyret{Exactnum} rational.
+Returns ◊pyret{true} if argument is an ◊pyret{Exactnum} rational.
 
-@examples{
+◊examples{
 check:
   num-is-rational(2) is true
   num-is-rational(1/2) is true
@@ -911,9 +911,9 @@ end
 }
 
   }
-  @function["num-is-roughnum" #:contract (a-arrow N B) #:return B]{
-Returns @pyret{true} if argument is a @pyret{Roughnum}.
-@examples{
+  ◊function["num-is-roughnum" #:contract (a-arrow N B) #:return B]{
+Returns ◊pyret{true} if argument is a ◊pyret{Roughnum}.
+◊examples{
 check:
   num-is-roughnum(2) is false
   num-is-roughnum(1/2) is false
@@ -923,11 +923,11 @@ end
 }
 
   }
-  @function["num-is-positive" #:contract (a-arrow N B) #:return B]{
+  ◊function["num-is-positive" #:contract (a-arrow N B) #:return B]{
 
-Returns @pyret{true} if argument is greater than zero.
+Returns ◊pyret{true} if argument is greater than zero.
 
-@examples{
+◊examples{
 check:
   num-is-positive(~-2) is false
   num-is-positive(-2) is false
@@ -938,11 +938,11 @@ check:
 end
 }
   }
-  @function["num-is-negative" #:contract (a-arrow N B) #:return B]{
+  ◊function["num-is-negative" #:contract (a-arrow N B) #:return B]{
 
-Returns @pyret{true} if argument is less than zero.
+Returns ◊pyret{true} if argument is less than zero.
 
-@examples{
+◊examples{
 check:
   num-is-negative(~-2) is true
   num-is-negative(-2) is true
@@ -954,10 +954,10 @@ end
 }
 
   }
-  @function["num-is-non-positive" #:contract (a-arrow N B) #:return B]{
+  ◊function["num-is-non-positive" #:contract (a-arrow N B) #:return B]{
 
-Returns @pyret{true} if argument is less than or equal to zero.
-@examples{
+Returns ◊pyret{true} if argument is less than or equal to zero.
+◊examples{
 check:
   num-is-non-positive(~-2) is true
   num-is-non-positive(-2) is true
@@ -969,11 +969,11 @@ end
 }
 
   }
-  @function["num-is-non-negative" #:contract (a-arrow N B) #:return B]{
+  ◊function["num-is-non-negative" #:contract (a-arrow N B) #:return B]{
 
-Returns @pyret{true} if argument is greater than or equal to zero.
+Returns ◊pyret{true} if argument is greater than or equal to zero.
 
-@examples{
+◊examples{
 check:
   num-is-non-negative(~-2) is false
   num-is-non-negative(-2) is false
@@ -984,10 +984,10 @@ check:
 end
 }
   }
-  @function["num-to-string" #:contract (a-arrow N S) #:return S]{
-Returns a @pyret{String} representing a literal form of the number.
+  ◊function["num-to-string" #:contract (a-arrow N S) #:return S]{
+Returns a ◊pyret{String} representing a literal form of the number.
 
-@examples{
+◊examples{
 check:
   num-to-string(2.5) is "5/2"
   num-to-string(2) is "2"
@@ -997,20 +997,20 @@ check:
 end
 }
   }
-  @function["num-to-string-digits" #:contract (a-arrow N N S) #:return S]{
+  ◊function["num-to-string-digits" #:contract (a-arrow N N S) #:return S]{
 
-Converts the number to a @pyret{String}, providing @pyret{digits} precision in the
-output.  If @pyret{digits} is positive, provides that many digits to the right
+Converts the number to a ◊pyret{String}, providing ◊pyret{digits} precision in the
+output.  If ◊pyret{digits} is positive, provides that many digits to the right
 of the decimal point (including adding zeroes beyond the actual precision of
-the number).  If @pyret{digits} is negative, rounds that many positions to the
-@emph{left} of the decimal, replacing them with zeroes.
+the number).  If ◊pyret{digits} is negative, rounds that many positions to the
+◊emph{left} of the decimal, replacing them with zeroes.
 
-Note that @pyret-id{num-to-string-digits} is only for formatting, and its
+Note that ◊pyret-id{num-to-string-digits} is only for formatting, and its
 output's apparent precision may be unrelated to the actual precision of the
 input number, which may have been an approximation, or unrepresentable in
 decimal.
 
-@examples{
+◊examples{
 check:
   num-to-string-digits(2/3, 3) is "0.667"
   num-to-string-digits(-2/3, 3) is "-0.667"
@@ -1020,12 +1020,12 @@ check:
 end
 }
   }
-  @function["num-within-abs" #:contract (a-arrow N (a-arrow N N B))]{
+  ◊function["num-within-abs" #:contract (a-arrow N (a-arrow N N B))]{
 
 Returns a predicate that checks if the difference of its two
-arguments is less than @pyret{tol}.
+arguments is less than ◊pyret{tol}.
 
-@examples{
+◊examples{
 check:
    1  is%(num-within-abs(0.1))       1
    1  is%(num-within-abs(0.1))      ~1
@@ -1041,14 +1041,14 @@ end
 }
 
   }
-  @function["num-within-rel" #:contract (a-arrow N (a-arrow N N B))]{
+  ◊function["num-within-rel" #:contract (a-arrow N (a-arrow N N B))]{
 
 Returns a predicate that checks that its first number argument
-is no more than the fraction @pyret{tol} off from its second
+is no more than the fraction ◊pyret{tol} off from its second
 argument.
 
 
-@examples{
+◊examples{
 check:
   100000 is%(num-within-rel(0.1)) 95000
   100000 is-not%(num-within-rel(0.1)) 85000
@@ -1056,36 +1056,36 @@ end
 }
   }
 
-  @function["num-within" #:contract (a-arrow N (a-arrow N N B))]{
-An alias for @pyret-id["num-within-rel" "numbers"], much as @pyret-id["within"
-"equality"] and @pyret-id["within-rel" "equality"] are synonyms.
+  ◊function["num-within" #:contract (a-arrow N (a-arrow N N B))]{
+An alias for ◊pyret-id["num-within-rel" "numbers"], much as ◊pyret-id["within"
+"equality"] and ◊pyret-id["within-rel" "equality"] are synonyms.
 }
 
 
-  @function["within" #:contract (a-arrow N eqfun)]
-  @function["within-abs" #:contract (a-arrow N eqfun)]
-  @function["within-rel" #:contract (a-arrow N eqfun)]
-  @function["within-abs-now" #:contract (a-arrow N eqfun)]
-  @function["within-rel-now" #:contract (a-arrow N eqfun)]
+  ◊function["within" #:contract (a-arrow N eqfun)]
+  ◊function["within-abs" #:contract (a-arrow N eqfun)]
+  ◊function["within-rel" #:contract (a-arrow N eqfun)]
+  ◊function["within-abs-now" #:contract (a-arrow N eqfun)]
+  ◊function["within-rel-now" #:contract (a-arrow N eqfun)]
 
   These comparison functions compare both numbers and structures, and are
-  documented in @seclink["s:bounded-equalities"].
+  documented in ◊seclink["s:bounded-equalities"].
 
-  @function["within-abs3" #:contract (a-arrow N eq3fun)]
-  @function["within-rel3" #:contract (a-arrow N eq3fun)]
-  @function["within-abs-now3" #:contract (a-arrow N eq3fun)]
-  @function["within-rel-now3" #:contract (a-arrow N eq3fun)]
+  ◊function["within-abs3" #:contract (a-arrow N eq3fun)]
+  ◊function["within-rel3" #:contract (a-arrow N eq3fun)]
+  ◊function["within-abs-now3" #:contract (a-arrow N eq3fun)]
+  ◊function["within-rel-now3" #:contract (a-arrow N eq3fun)]
 
   These comparison functions are like the ones above, but return
-  @pyret-id["EqualityResult" "equality"]s, and are documented in @seclink["s:total-equality-predicates"].
+  ◊pyret-id["EqualityResult" "equality"]s, and are documented in ◊seclink["s:total-equality-predicates"].
 
-@section{Random Numbers}
+◊section{Random Numbers}
 
-  @function["num-random" #:contract (a-arrow N N) #:return N]{
+  ◊function["num-random" #:contract (a-arrow N N) #:return N]{
 
-  Returns a pseudo-random integer from @pyret{0} to @pyret{max - 1}.
+  Returns a pseudo-random integer from ◊pyret{0} to ◊pyret{max - 1}.
 
-@examples{
+◊examples{
 check:
   fun between(min, max):
     lam(v): (v >= min) and (v <= max) end
@@ -1101,13 +1101,13 @@ end
 }
 
   }
-  @function["num-random-seed" #:contract (a-arrow N No) #:return No]{
+  ◊function["num-random-seed" #:contract (a-arrow N No) #:return No]{
 
   Sets the random seed.  Setting the seed to a particular number makes all
   future uses of random produce the same sequence of numbers.  Useful for
   testing and debugging functions that have random behavior.
 
-  @examples{
+  ◊examples{
 check:
   num-random-seed(0)
   n = num-random(1000)
@@ -1128,7 +1128,7 @@ The random seed is set globally.  If it is set in tests in a game or another
 program that should not run the same way every time, add an identifier you can
 set as a flag indicating if you are running the code in testing or production.
 
-@examples{
+◊examples{
 
 IS-TESTING = true  # change as needed
 
@@ -1137,18 +1137,18 @@ when IS-TESTING:
 end
 }
   
-@section{Other Number Functions}
+◊section{Other Number Functions}
 
   A few other number functions are useful in limited cases that don't come up
   in most programs.
 
-  @function["num-is-fixnum" #:contract (a-arrow N B) #:return B]{
+  ◊function["num-is-fixnum" #:contract (a-arrow N B) #:return B]{
 
-Returns @pyret{true} if the argument is represented directly as a
+Returns ◊pyret{true} if the argument is represented directly as a
 primitive
 JavaScript number (i.e., JavaScript double).
 
-@examples{
+◊examples{
 check:
   num-is-fixnum(10) is true
   num-is-fixnum(~10) is false
@@ -1158,23 +1158,23 @@ check:
 end
 }
 
-@margin-note{Pyret represents @pyret{Exactnums} that are non-integers as tuples, 
-and hence even small rationals such as 1.5 are considered non-@tt{fixnum},
+◊margin-note{Pyret represents ◊pyret{Exactnums} that are non-integers as tuples, 
+and hence even small rationals such as 1.5 are considered non-◊tt{fixnum},
 although they could be represented as JavaScript doubles.}
 
   }
-  @function["num-exact" #:contract (a-arrow N EN) #:return EN]
-  @function["num-to-rational" #:contract (a-arrow N EN) #:return EN]
+  ◊function["num-exact" #:contract (a-arrow N EN) #:return EN]
+  ◊function["num-to-rational" #:contract (a-arrow N EN) #:return EN]
 
 
-Given a @pyret{Roughnum}, returns an @pyret{Exactnum} number most equal to it. Given
-an @pyret{Exactnum} num, returns it directly.
+Given a ◊pyret{Roughnum}, returns an ◊pyret{Exactnum} number most equal to it. Given
+an ◊pyret{Exactnum} num, returns it directly.
 
-@margin-note{It is not good practice to indiscriminately convert
- @pyret{Roughnum}s to @pyret{Exactnum}s to make comparison easier.
- Use @pyret{within()} or @pyret{is-roughly}.}
+◊margin-note{It is not good practice to indiscriminately convert
+ ◊pyret{Roughnum}s to ◊pyret{Exactnum}s to make comparison easier.
+ Use ◊pyret{within()} or ◊pyret{is-roughly}.}
 
-@examples{
+◊examples{
 check:
   num-sqrt(2) is%(within-abs(0.000001)) ~1.4142135623730951
   num-exact(num-sqrt(2)) is 1.4142135623730951

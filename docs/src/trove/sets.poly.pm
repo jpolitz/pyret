@@ -1,15 +1,15 @@
 #lang scribble/base
-@(require "../../scribble-api.rkt" "../abbrevs.rkt")
-@(require (only-in scribble/core delayed-block))
+◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
+◊(require (only-in scribble/core delayed-block))
 
-@(define (set-method name #:alt-docstrings (docs "") #:contract (contract #f) #:return (return #f))
+◊(define (set-method name #:alt-docstrings (docs "") #:contract (contract #f) #:return (return #f))
   (method-doc "Set" #f name #:alt-docstrings docs #:contract contract #:return return))
 
-@(define s-of-a '(a-app (a-id "Set" (xref "sets" "Set")) "a"))
-@(define l-of-a '(a-app (a-id "List" (xref "lists" "List")) "a"))
-@(define boolean '(a-id "Boolean" (xref "<global>" "Boolean")))
+◊(define s-of-a '(a-app (a-id "Set" (xref "sets" "Set")) "a"))
+◊(define l-of-a '(a-app (a-id "List" (xref "lists" "List")) "a"))
+◊(define boolean '(a-id "Boolean" (xref "<global>" "Boolean")))
 
-@(append-gen-docs
+◊(append-gen-docs
   `(module "sets"
     (path "src/js/base/runtime-anf.js")
     (fun-spec
@@ -148,55 +148,55 @@
       )
   ))
 
-@docmodule["sets"]{
+◊docmodule["sets"]{
 
-@section{The Set Type}
+◊section{The Set Type}
 
-@type-spec["Set" (list "a")]{
+◊type-spec["Set" (list "a")]{
 
 There are two underlying representations that sets may have:
-@itemlist[
+◊itemlist[
 
-@item{List-based sets
-work on all values that can be compared with the @pyret-id["equal-always"
+◊item{List-based sets
+work on all values that can be compared with the ◊pyret-id["equal-always"
 "equality"] built-in function (this means that, for example, a set of functions
-won't work).  List-based sets perform up to @emph{n} comparisons on addition, removal,
-and membership testing, where @emph{n} is the number of elements in the set. (In order
+won't work).  List-based sets perform up to ◊emph{n} comparisons on addition, removal,
+and membership testing, where ◊emph{n} is the number of elements in the set. (In order
 to give this guarantee, list-based sets don't store duplicates; they avoid this by
 scanning the whole list on addition.)}
 
-@item{Tree-based sets require that all
-elements implement the @pyret{_lessthan} method in order to perform
-comparisons, and guarantee that only up to log(@emph{n}) less-than comparisons will be
-performed for a set with @emph{n} elements on addition, removal, and membership
+◊item{Tree-based sets require that all
+elements implement the ◊pyret{_lessthan} method in order to perform
+comparisons, and guarantee that only up to log(◊emph{n}) less-than comparisons will be
+performed for a set with ◊emph{n} elements on addition, removal, and membership
 testing.}
 
 ]
 
-There are no variants for @pyret-id{Set}s, and programs cannot use
-@pyret{cases} statements with @pyret-id{Set}s.  Instead, they can be created
+There are no variants for ◊pyret-id{Set}s, and programs cannot use
+◊pyret{cases} statements with ◊pyret-id{Set}s.  Instead, they can be created
 with the constructors below, and manipulated with the methods and functions
 below.
 
 
-Some methods, like @pyret-method["Set" "union"], combine multiple sets.  The
+Some methods, like ◊pyret-method["Set" "union"], combine multiple sets.  The
 kind of set on the left-hand side determines the kind of resulting set.  For example, in
 
-@pyret-block{
+◊pyret-block{
   [list-set: 1, 2].union([tree-set: 3, 4])
 }
 
-the result will be a @pyret{list-set}.
+the result will be a ◊pyret{list-set}.
 }
 
-@section{Using Sets in Programs}
+◊section{Using Sets in Programs}
 
 Some of the names provided for sets inevitably overlap with those
-provided for other data. Therefore, using the @pyret{include}
+provided for other data. Therefore, using the ◊pyret{include}
 form is likely to cause name-clashes. It is wiser to import sets using a prefix name and
 use the names below through that prefix.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import sets as S
 import lists as L
 
@@ -205,14 +205,14 @@ check:
 end
 }
 
-@section{Constructing Sets}
+◊section{Constructing Sets}
 
-@collection-doc["list-set" #:contract `(a-arrow ("elt" "a") ,(S-of "a"))]
+◊collection-doc["list-set" #:contract `(a-arrow ("elt" "a") ,(S-of "a"))]
 
-Constructs a set out of the @pyret{elt}s, representing them as a list. Raises an exception
+Constructs a set out of the ◊pyret{elt}s, representing them as a list. Raises an exception
 if the elements don't support equality.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import sets as S
 import lists as L
 
@@ -224,16 +224,16 @@ check:
 end
 }
 
-@singleton-doc["Set" "empty-list-set" (S-of "a")]
+◊singleton-doc["Set" "empty-list-set" (S-of "a")]
 
 An empty set, represented as a list.
 
-@collection-doc["tree-set" #:contract `(a-arrow ("elt" "a") ,(S-of "a"))]
+◊collection-doc["tree-set" #:contract `(a-arrow ("elt" "a") ,(S-of "a"))]
 
-Constructs a set out of the @pyret{elt}s, representing them as a tree. Raises an exception
-if the elements don't support the @pyret{<} operator via @pyret{_lessthan}.
+Constructs a set out of the ◊pyret{elt}s, representing them as a tree. Raises an exception
+if the elements don't support the ◊pyret{<} operator via ◊pyret{_lessthan}.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import sets as S
 import lists as L
 
@@ -244,15 +244,15 @@ check:
 end
 }
 
-@singleton-doc["Set" "empty-tree-set" (S-of "a")]
+◊singleton-doc["Set" "empty-tree-set" (S-of "a")]
 
 An empty set, represented as a tree.
 
-@collection-doc["set" #:contract `(a-arrow ("elt" "a") ,(S-of "a"))]
+◊collection-doc["set" #:contract `(a-arrow ("elt" "a") ,(S-of "a"))]
 
-Another name for @pyret-id{list-set}.
+Another name for ◊pyret-id{list-set}.
 
-@function["list-to-list-set"
+◊function["list-to-list-set"
   #:contract (a-arrow (L-of "a") (S-of "a"))
   #:args (list (list "lst" #f))
   #:return (S-of "a")
@@ -260,7 +260,7 @@ Another name for @pyret-id{list-set}.
 
 Constructs a list-set out of the elements in the list.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import sets as S
 import lists as L
 
@@ -271,7 +271,7 @@ end
 }
 
 
-@function["list-to-tree-set"
+◊function["list-to-tree-set"
   #:contract (a-arrow (L-of "a") (S-of "a"))
   #:args (list (list "lst" #f))
   #:return (S-of "a")
@@ -279,7 +279,7 @@ end
 
 Constructs a tree-set out of the elements in the list.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import sets as S
 import lists as L
 
@@ -290,21 +290,21 @@ end
 }
 
 
-@function["list-to-set"
+◊function["list-to-set"
   #:contract (a-arrow (L-of "a") (S-of "a"))
   #:args (list (list "lst" #f))
   #:return (S-of "a")
 ]
 
-Another name for @pyret-id["list-to-list-set"].
+Another name for ◊pyret-id["list-to-list-set"].
 
-@section{Set Methods}
+◊section{Set Methods}
 
-@set-method["add"]
+◊set-method["add"]
 
 Constructs a new set containing the added element if it was not already present.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import sets as S
 
 check:
@@ -319,12 +319,12 @@ check:
 end
 }
 
-@set-method["remove"]
+◊set-method["remove"]
 
-Constructs a new set removing the element if it was present. It is @emph{not} an error to
+Constructs a new set removing the element if it was present. It is ◊emph{not} an error to
 remove an element that is not in the set; it simply leaves the set unchanged.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import sets as S
 
 check:
@@ -339,11 +339,11 @@ check:
 end
 }
 
-@set-method["size" #:alt-docstrings "" #:contract (a-arrow (S-of "a") N) #:return N]
+◊set-method["size" #:alt-docstrings "" #:contract (a-arrow (S-of "a") N) #:return N]
 
 Computes the number of elements in the set.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import sets as S
 
 check:
@@ -353,12 +353,12 @@ check:
 end
 }
 
-@set-method["member"]
+◊set-method["member"]
 
-Checks if @pyret{elt} is contained within this set (checking membership with
-@pyret-id["equal-always" "equality"]).
+Checks if ◊pyret{elt} is contained within this set (checking membership with
+◊pyret-id["equal-always" "equality"]).
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import sets as S
 
 check:
@@ -368,17 +368,17 @@ check:
 end
 }
 
-@set-method["pick" #:alt-docstrings "" #:contract (a-arrow (S-of "a") (P-of "a" (S-of "a"))) #:return (P-of "a" (S-of "a"))]
+◊set-method["pick" #:alt-docstrings "" #:contract (a-arrow (S-of "a") (P-of "a" (S-of "a"))) #:return (P-of "a" (S-of "a"))]
 
-@emph{Picks} an arbitrary element out of the set, and returns a
-@pyret-id["Pick" "pick"] data structure.  If the set is empty,
-then @pyret{.pick} returns a
-@pyret-id["pick-none" "pick"].
-Otherwise it returns a @pyret-id["pick-some" "pick"],
-whose @pyret{elt} field stores the picked value and
-whose @pyret{rest} field stores the rest of the set.
+◊emph{Picks} an arbitrary element out of the set, and returns a
+◊pyret-id["Pick" "pick"] data structure.  If the set is empty,
+then ◊pyret{.pick} returns a
+◊pyret-id["pick-none" "pick"].
+Otherwise it returns a ◊pyret-id["pick-some" "pick"],
+whose ◊pyret{elt} field stores the picked value and
+whose ◊pyret{rest} field stores the rest of the set.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import sets as S
 import pick as P
 
@@ -399,11 +399,11 @@ end
 }
 
 It is very important to note that
-the order of elements returned from @pyret-method["Set" "pick"] is
-non-deterministic, so multiple calls to @pyret-method["Set" "pick"] may not
+the order of elements returned from ◊pyret-method["Set" "pick"] is
+non-deterministic, so multiple calls to ◊pyret-method["Set" "pick"] may not
 produce the same result for the same set! Thus, in the following program:
 
-@pyret-block[#:show-try-it #t]{
+◊pyret-block[#:show-try-it #t]{
 import sets as S
 import pick as P
 
@@ -415,9 +415,9 @@ end
 
 Sometimes both tests will pass, sometimes one will pass and the other
 fail, and sometimes both tests will fail! We can, however, write the
-following tests that will @emph{always} pass:
+following tests that will ◊emph{always} pass:
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import sets as S
 import lists as L
 import pick as P
@@ -431,11 +431,11 @@ check:
 end
 }
 
-@set-method["union"]
+◊set-method["union"]
 
 Computes the union of two sets.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import sets as S
 
 check:
@@ -447,11 +447,11 @@ check:
 end
 }
 
-@set-method["intersect"]
+◊set-method["intersect"]
 
 Computes the intersection of two sets.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import sets as S
 
 check:
@@ -463,11 +463,11 @@ check:
 end
 }
 
-@set-method["difference"]
+◊set-method["difference"]
 
 Computes the difference of two sets.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import sets as S
 
 check:
@@ -479,11 +479,11 @@ check:
 end
 }
 
-@set-method["symmetric-difference"]
+◊set-method["symmetric-difference"]
 
 Computes the symmetric difference of two sets.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import sets as S
 
 check:
@@ -495,11 +495,11 @@ check:
 end
 }
 
-@set-method["to-list"]
+◊set-method["to-list"]
 
 Converts the set into a list. There is no guarantee about the order of elements in the list.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import sets as S
 
 check:
@@ -508,13 +508,13 @@ check:
 end
 }
 
-@set-method["fold"]
+◊set-method["fold"]
 
-Applies @pyret{f} to each element of the set along with the accumulator
-(starting with @pyret{base}) to produce a new value.  Traverses elements in an
+Applies ◊pyret{f} to each element of the set along with the accumulator
+(starting with ◊pyret{base}) to produce a new value.  Traverses elements in an
 unspecified order.
 
-@examples[#:show-try-it #t]{
+◊examples[#:show-try-it #t]{
 import sets as S
 import lists as L
 
