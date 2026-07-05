@@ -1,4 +1,4 @@
-#lang scribble/base
+#lang pollen
 ◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
 
 ◊(define (g-id name) (seclink (xref "<global>" name)))

@@ -1,4 +1,4 @@
-#lang scribble/base
+#lang pollen
 
 ◊(define (version . t)
    (apply section "Version: " t))

@@ -1,4 +1,4 @@
-#lang scribble/base
+#lang pollen
 
 ◊title[#:style '(toc)]{Language Concepts}
 

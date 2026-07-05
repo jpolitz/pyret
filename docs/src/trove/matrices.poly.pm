@@ -1,4 +1,4 @@
-#lang scribble/base
+#lang pollen
 ◊(require "../../scribble-api.rkt"
           "../Pyret-Tutorial/math-utilities.rkt"
           (except-in "../abbrevs.rkt" L-of))

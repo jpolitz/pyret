@@ -1,4 +1,4 @@
-#lang scribble/base
+#lang pollen
 
 ◊(define code tt)
 ◊(define codedisp verbatim)

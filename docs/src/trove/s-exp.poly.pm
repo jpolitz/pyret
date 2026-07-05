@@ -1,4 +1,4 @@
-#lang scribble/base
+#lang pollen
 ◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
 ◊(define (sref s)
   (a-id s (xref "s-exp-structs" s)))

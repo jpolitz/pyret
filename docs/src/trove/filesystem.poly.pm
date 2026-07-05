@@ -1,4 +1,4 @@
-#lang scribble/base
+#lang pollen
 ◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
 ◊(require (only-in scribble/manual link))
 

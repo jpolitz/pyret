@@ -1,4 +1,4 @@
-#lang scribble/base
+#lang pollen
 
 ◊(require scribble/core
           scribble/decode

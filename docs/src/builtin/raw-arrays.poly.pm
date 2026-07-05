@@ -1,4 +1,4 @@
-#lang scribble/base
+#lang pollen
 ◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
 
 ◊(define ra-of-a '(a-app (a-id "RawArray" (xref "raw-arrays" "RawArray")) "a"))

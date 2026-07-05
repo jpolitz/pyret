@@ -1,4 +1,4 @@
-#lang scribble/base
+#lang pollen
 ◊(require "../../scribble-api.rkt" "../abbrevs.rkt" (only-in scribble/manual math))
 
 ◊(define PPD (a-id "PPrintDoc" (xref "pprint" "PPrintDoc")))

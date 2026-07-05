@@ -1,4 +1,4 @@
-#lang scribble/manual
+#lang pollen
 ◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
 
 ◊(append-gen-docs

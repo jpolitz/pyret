@@ -1,4 +1,4 @@
-#lang scribble/manual
+#lang pollen
 ◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
 
 ◊(define (a-ref name)

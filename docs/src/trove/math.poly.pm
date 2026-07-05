@@ -1,4 +1,4 @@
-#lang scribble/manual
+#lang pollen
 ◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
 ◊(require (only-in scribble/core delayed-block))
 

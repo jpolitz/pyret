@@ -1,4 +1,4 @@
-#lang scribble/base
+#lang pollen
 ◊(require "../../scribble-api.rkt" "../abbrevs.rkt")
 
 ◊(define left-args (list `("v" ("type" "normal") ("contract" ,(a-id "a")))))

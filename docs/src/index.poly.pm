@@ -1,4 +1,4 @@
-#lang scribble/manual
+#lang pollen
 
 ◊(require (for-syntax syntax/parse)
           (for-syntax racket/base))

@@ -1,4 +1,4 @@
-#lang scribble/base
+#lang pollen
 ◊(require "../../scribble-api.rkt")
 ◊docmodule["ast"]{
   ◊; Ignored type testers

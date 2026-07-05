@@ -1,4 +1,4 @@
-#lang scribble/base
+#lang pollen
 ◊(require "../../scribble-api.rkt")
 ◊docmodule["file"]{
   ◊section[#:tag "file_Functions"]{Functions}
