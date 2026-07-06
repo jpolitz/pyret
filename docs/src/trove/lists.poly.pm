@@ -551,7 +551,7 @@ end
   ◊function[
     "set"
     #:examples
-    '◊{
+    ◊examples{
 import lists as L
 
 check:
@@ -610,7 +610,7 @@ end
           #:args '(("lst" #f) ("sep" #f))
           #:return S
 #:examples
-'◊{
+◊examples{
 import lists as L
 
 check:
@@ -626,7 +626,7 @@ end
   ◊function[
     "range"
     #:examples
-    '◊{
+    ◊examples{
     check:
       range(0, 0) is [list: ]
       range(0, 1) is [list: 0]
@@ -651,7 +651,7 @@ end
   ◊function[
     "repeat"
     #:examples
-    '◊{
+    ◊examples{
 import lists as L
 
 check:
@@ -693,7 +693,7 @@ end
   ◊function[
     "filter"
     #:examples
-    '◊{
+    ◊examples{
 import lists as L
 
 check:
@@ -710,7 +710,7 @@ end
   ◊function[
     "partition"
     #:examples
-    '◊{
+    ◊examples{
 import lists as L
 
 check:
@@ -741,7 +741,7 @@ end
   ◊function[
     "split-at"
     #:examples
-    '◊{
+    ◊examples{
 import lists as L
 
 check:
@@ -830,7 +830,7 @@ end
   ◊function[
     "any"
     #:examples
-    '◊{
+    ◊examples{
 import lists as L
 
 check:
@@ -844,7 +844,7 @@ end
   ◊function[
     "all"
     #:examples
-    '◊{
+    ◊examples{
 import lists as L
 
 check:
@@ -1024,7 +1024,7 @@ end
   ◊function[
     "each"
     #:examples
-    '◊{
+    ◊examples{
 import lists as L
 
 check:
@@ -1262,7 +1262,7 @@ end
   ◊function[
     "fold_n"
     #:examples
-    '◊{
+    ◊examples{
 import lists as L
 
 check:

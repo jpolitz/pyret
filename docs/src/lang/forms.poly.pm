@@ -8,7 +8,7 @@
  (apply tt code))
 ◊(define (justcode . stx)
  (nested #:style 'code-inset
-  (verbatim (string-join stx ""))))
+  (apply verbatim  stx )))
 
 
 ◊title[#:tag "s:forms" #:style '(toc)]{Language Constructs}

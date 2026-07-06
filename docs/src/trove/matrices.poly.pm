@@ -27,8 +27,7 @@
 
 ◊; Creates an Inlined Matrix
 ◊(define (math-imtx . strs)
-  ◊(apply math-in (flatten (list "\\left[\\begin{smallmatrix}" strs "\\end{smallmatrix}\\right]"))))
-
+   "math-imtx")
 
 
 ◊docmodule["matrices"]{
@@ -1189,7 +1188,7 @@ end
 ◊function[
   "vector-to-matrix"
   #:examples
-  '◊{
+  ◊examples{
   check:
     vector-to-matrix([vector: 1, 2, 3]) is [matrix(1,3): 1, 2, 3]
   end
@@ -1199,7 +1198,7 @@ end
 ◊function[
   "list-to-matrix"
   #:examples
-  '◊{
+  ◊examples{
   check:
     list-to-matrix(2, 2, [list: 1, 2, 3, 4])
       is [matrix(2,2): 1, 2, 3, 4]
@@ -1213,7 +1212,7 @@ end
 ◊function[
   "list-to-row-matrix"
   #:examples
-  '◊{
+  ◊examples{
   check:
     list-to-row-matrix([list: 1, 2, 3, 4]) is [matrix(1,4): 1, 2, 3, 4]
   end
@@ -1223,7 +1222,7 @@ end
 ◊function[
   "list-to-col-matrix"
   #:examples
-  '◊{
+  ◊examples{
   check:
     list-to-col-matrix([list: 1, 2, 3, 4]) is [matrix(4,1): 1, 2, 3, 4]
   end
@@ -1233,7 +1232,7 @@ end
 ◊function[
   "lists-to-matrix"
   #:examples
-  '◊{
+  ◊examples{
   check:
     lists-to-matrix([list: [list: 1, 2, 3, 4]]) is [matrix(1,4): 1, 2, 3, 4]
     lists-to-matrix([list: [list: 1, 2, 3],
@@ -1245,7 +1244,7 @@ end
 ◊function[
   "vectors-to-matrix"
   #:examples
-  '◊{
+  ◊examples{
   check:
     vectors-to-matrix([list: [vector: 1, 2, 3]]) is [matrix(3,1): 1, 2, 3]
     vectors-to-matrix([list: [vector: 1, 3, 5], [vector: 2, 4, 6]])

@@ -32,32 +32,32 @@ compare to some other languages' operators:
   #:column-properties (list (list (attributes '((style . "border: 1px solid black; padding: 5px;")))))
   (list
     (list
-      ◊list{◊bold{Name}}
-      ◊list{◊bold{Operator}}
-      ◊list{◊bold{Partial Predicate}}
-      ◊list{◊bold{Total Predicate}}
-      ◊list{◊bold{Similar To}}
+      ◊span{◊bold{Name}}
+      ◊span{◊bold{Operator}}
+      ◊span{◊bold{Partial Predicate}}
+      ◊span{◊bold{Total Predicate}}
+      ◊span{◊bold{Similar To}}
     )
     (list
-      ◊list{◊emph{Equal Always}}
-      ◊list{◊code{==}}
-      ◊list{◊code{equal-always}}
-      ◊list{◊code{equal-always3}}
-      ◊list{◊code{=} (Ocaml)}
+      ◊span{◊emph{Equal Always}}
+      ◊span{◊code{==}}
+      ◊span{◊code{equal-always}}
+      ◊span{◊code{equal-always3}}
+      ◊span{◊code{=} (Ocaml)}
     )
     (list
-      ◊list{◊emph{Equal Now}}
-      ◊list{◊code{=~}}
-      ◊list{◊code{equal-now}}
-      ◊list{◊code{equal-now3}}
-      ◊list{◊code{equal?} (Racket); ◊code{==} (Python, Ruby)}
+      ◊span{◊emph{Equal Now}}
+      ◊span{◊code{=~}}
+      ◊span{◊code{equal-now}}
+      ◊span{◊code{equal-now3}}
+      ◊span{◊code{equal?} (Racket); ◊code{==} (Python, Ruby)}
     )
     (list
-      ◊list{◊emph{Identical}}
-      ◊list{◊code{<=>}}
-      ◊list{◊code{identical}}
-      ◊list{◊code{identical3}}
-      ◊list{
+      ◊span{◊emph{Identical}}
+      ◊span{◊code{<=>}}
+      ◊span{◊code{identical}}
+      ◊span{◊code{identical3}}
+      ◊span{
         ◊code{eq?} (Scheme);
         ◊code{==} (Ocaml);
         ◊code{===} (JavaScript);
@@ -421,31 +421,31 @@ summarizes this relationship, which in fact does hold:
   #:column-properties (list (list (attributes '((style . "border: 1px solid black; padding: 5px;")))))
   (list
     (list
-      ◊list{If ↓, then →}
-      ◊list{◊code{v1 <=> v2} could be...}
-      ◊list{◊code{v1 == v2} could be...}
-      ◊list{◊code{v1 =~ v2} could be...}
+      ◊span{If ↓, then →}
+      ◊span{◊code{v1 <=> v2} could be...}
+      ◊span{◊code{v1 == v2} could be...}
+      ◊span{◊code{v1 =~ v2} could be...}
     )
     (list
-      ◊list{◊code{v1 <=> v2 is true}}
+      ◊span{◊code{v1 <=> v2 is true}}
       "-"
-      ◊;◊list{◊code{true} only}
-      ◊list{◊code{true} only}
-      ◊list{◊code{true} only}
+      ◊;◊span{◊code{true} only}
+      ◊span{◊code{true} only}
+      ◊span{◊code{true} only}
     )
     (list
-      ◊list{◊code{v1 == v2 is true}}
-      ◊list{◊code{true} or ◊code{false}}
+      ◊span{◊code{v1 == v2 is true}}
+      ◊span{◊code{true} or ◊code{false}}
       "-"
-      ◊;◊list{◊code{true} only}
-      ◊list{◊code{true} only}
+      ◊;◊span{◊code{true} only}
+      ◊span{◊code{true} only}
     )
     (list
-      ◊list{◊code{v1 =~ v2 is true}}
-      ◊list{◊code{true} or ◊code{false}}
-      ◊list{◊code{true} or ◊code{false}}
+      ◊span{◊code{v1 =~ v2 is true}}
+      ◊span{◊code{true} or ◊code{false}}
+      ◊span{◊code{true} or ◊code{false}}
       "-"
-      ◊;◊list{◊code{true} only}
+      ◊;◊span{◊code{true} only}
     )
     )
 ]
@@ -938,75 +938,75 @@ We can now modify our table from above to be more complete:
   #:column-properties (list (list (attributes '((style . "border: 1px solid black; padding: 5px;")))))
   (list
     (list
-      ◊list{If ↓, then →}
-      ◊list{◊code{identical(v1, v2)} could be...}
-      ◊list{◊code{equal-always(v1, v2)} could be...}
-      ◊list{◊code{equal-now(v1, v2)} could be...}
+      ◊span{If ↓, then →}
+      ◊span{◊code{identical(v1, v2)} could be...}
+      ◊span{◊code{equal-always(v1, v2)} could be...}
+      ◊span{◊code{equal-now(v1, v2)} could be...}
     )
     (list
-      ◊list{◊code{identical(v1, v2) is Equal}}
+      ◊span{◊code{identical(v1, v2) is Equal}}
       "-"
-      ◊;◊list{◊code{Equal} only}
-      ◊list{◊code{Equal} only}
-      ◊list{◊code{Equal} only}
+      ◊;◊span{◊code{Equal} only}
+      ◊span{◊code{Equal} only}
+      ◊span{◊code{Equal} only}
     )
     (list
-      ◊list{◊code{equal-always(v1, v2) is Equal}}
-      ◊list{◊code{Equal} or ◊code{NotEqual}}
+      ◊span{◊code{equal-always(v1, v2) is Equal}}
+      ◊span{◊code{Equal} or ◊code{NotEqual}}
       "-"
-      ◊;◊list{◊code{Equal} only}
-      ◊list{◊code{Equal} only}
+      ◊;◊span{◊code{Equal} only}
+      ◊span{◊code{Equal} only}
     )
     (list
-      ◊list{◊code{equal-now(v1, v2) is Equal}}
-      ◊list{◊code{Equal} or ◊code{NotEqual}}
-      ◊list{◊code{Equal} or ◊code{NotEqual}}
+      ◊span{◊code{equal-now(v1, v2) is Equal}}
+      ◊span{◊code{Equal} or ◊code{NotEqual}}
+      ◊span{◊code{Equal} or ◊code{NotEqual}}
       "-"
-      ◊;◊list{◊code{Equal} only}
-    )
-    (list "" "" "" "")
-    (list
-      ◊list{◊code{identical(v1, v2) is NotEqual}}
-      "-"
-      ◊;◊list{◊code{NotEqual} only}
-      ◊list{◊code{Equal} or ◊code{NotEqual} or ◊code{Unknown}}
-      ◊list{◊code{Equal} or ◊code{NotEqual} or ◊code{Unknown}}
-    )
-    (list
-      ◊list{◊code{equal-always(v1, v2) is NotEqual}}
-      ◊list{◊code{NotEqual} only}
-      "-"
-      ◊;◊list{◊code{NotEqual} only}
-      ◊list{◊code{Equal} or ◊code{NotEqual} or ◊code{Unknown}}
-    )
-    (list
-      ◊list{◊code{equal-now(v1, v2) is NotEqual}}
-      ◊list{◊code{NotEqual} only}
-      ◊list{◊code{NotEqual} only}
-      "-"
-      ◊;◊list{◊code{NotEqual} only}
+      ◊;◊span{◊code{Equal} only}
     )
     (list "" "" "" "")
     (list
-      ◊list{◊code{identical(v1, v2) is Unknown}}
+      ◊span{◊code{identical(v1, v2) is NotEqual}}
       "-"
-      ◊;◊list{◊code{Unknown} only}
-      ◊list{◊code{Unknown} only}
-      ◊list{◊code{Unknown} only}
+      ◊;◊span{◊code{NotEqual} only}
+      ◊span{◊code{Equal} or ◊code{NotEqual} or ◊code{Unknown}}
+      ◊span{◊code{Equal} or ◊code{NotEqual} or ◊code{Unknown}}
     )
     (list
-      ◊list{◊code{equal-always(v1, v2) is Unknown}}
-      ◊list{◊code{Unknown} or ◊code{NotEqual}}
+      ◊span{◊code{equal-always(v1, v2) is NotEqual}}
+      ◊span{◊code{NotEqual} only}
       "-"
-      ◊;◊list{◊code{Unknown} only}
-      ◊list{◊code{Unknown} only}
+      ◊;◊span{◊code{NotEqual} only}
+      ◊span{◊code{Equal} or ◊code{NotEqual} or ◊code{Unknown}}
     )
     (list
-      ◊list{◊code{equal-now(v1, v2) is Unknown}}
-      ◊list{◊code{Unknown} or ◊code{NotEqual}}
-      ◊list{◊code{Unknown} or ◊code{NotEqual}}
+      ◊span{◊code{equal-now(v1, v2) is NotEqual}}
+      ◊span{◊code{NotEqual} only}
+      ◊span{◊code{NotEqual} only}
       "-"
-      ◊;◊list{◊code{Unknown} only}
+      ◊;◊span{◊code{NotEqual} only}
+    )
+    (list "" "" "" "")
+    (list
+      ◊span{◊code{identical(v1, v2) is Unknown}}
+      "-"
+      ◊;◊span{◊code{Unknown} only}
+      ◊span{◊code{Unknown} only}
+      ◊span{◊code{Unknown} only}
+    )
+    (list
+      ◊span{◊code{equal-always(v1, v2) is Unknown}}
+      ◊span{◊code{Unknown} or ◊code{NotEqual}}
+      "-"
+      ◊;◊span{◊code{Unknown} only}
+      ◊span{◊code{Unknown} only}
+    )
+    (list
+      ◊span{◊code{equal-now(v1, v2) is Unknown}}
+      ◊span{◊code{Unknown} or ◊code{NotEqual}}
+      ◊span{◊code{Unknown} or ◊code{NotEqual}}
+      "-"
+      ◊;◊span{◊code{Unknown} only}
     )
     )
 ]
@@ -1088,15 +1088,14 @@ To help make this use case more pleasant, Pyret picks a method name to call, if
 it is present, on user-defined objects when checking equality.  The method name
 is ◊pyret{_equals}, and it has the following signature:
 
-◊(render-fun-helper '(method-spec)
-  "_equals"
-  (list 'part (tag-name (curr-module-name) "_equals"))
-  (a-arrow "a" "a" (a-arrow A A EQ) EQ)
-  EQ
-  (list (list "self" "") (list "other" "") (list "equal-rec" ""))
-  '()
-  '()
-  '())
+
+◊pyret-block{
+._equals :: (
+  other :: a,
+  equal-rec :: (Any, Any -> EqualityResult)
+)
+-> EqualityResult
+}
 
 Where ◊pyret{a} is the type of the object itself (so for sets, ◊pyret{other}
 would be annotated with ◊pyret{Set<a>}).

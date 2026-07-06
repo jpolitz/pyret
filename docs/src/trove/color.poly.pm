@@ -1,20 +1,46 @@
 #lang pollen
 
+◊(define (make-paint-swatch name css-color)
+  ◊; (printf "*** make-paint-swatch ~a ~a \n" name css-color)
+  `(span ([style "font-size: initial"])
+         (img ([class "paintBrush"] [src "brush.svg"]))
+         (span ([class "paintSpan"])
+               (span ([class "checkersBlob"]
+                      [style ,(format "background-color: ~a;" css-color)]))
+               (span ([style ,(format "background-color: ~a; margin-right: 0.25em"
+               css-color)]
+                      [class "paintBlob"])))))
 
+◊(define (left-zero-pad s n)
+  (let ([m (string-length s)])
+    (if (< m n)
+        (string-append (make-string (- n m) #\0) s)
+        s)))
 
-◊(define (paint-swatch color css-color)
-   (list (html:span 'style: "font-size: initial;"
-                    (html:image 'class: "paintBrush" "path://brush.svg")
-                    (html:span 'class: "paintSpan"
-                               (html:span 'class: "checkersBlob")
-                               (html:span 'class: "paintBlob"
-                                          'style: (format "background-color: ~a; margin-right: 0.25em;" css-color))))
-         (pyret color)))
+◊(define (dec-to-2-digit-hex a)
+  (left-zero-pad (number->string a 16) 2))
+
+◊(define (make-fg-element r g b)
+  `(span ([style ,(format "color: #~a~a~a"
+                   (dec-to-2-digit-hex r) (dec-to-2-digit-hex g) (dec-to-2-digit-hex b))])
+         "abc123"))
+
+◊(define (make-bg-element r g b)
+  `(span ([style ,(format "background-color: #~a~a~a"
+                   (dec-to-2-digit-hex r) (dec-to-2-digit-hex g) (dec-to-2-digit-hex b))])
+         "abc123"))
+
 ◊(define (render-color name r g b a)
-   (ignore (list name))
-   (item (paint-swatch name (format "rgba(~a,~a,~a,~a)" r g b a)) ": "
-         (make-element (make-style "relax" (list (make-color-property (list r g b)))) "abc123") " "
-         (make-element (make-style "relax" (list (make-background-color-property (list r g b)))) "abc123")))
+   (define css-color (format "rgba(~a,~a,~a,~a)" r g b a))
+◊; (printf "*** render-color ~a ~a ~a ~a ~a\n" name r g b a)
+         `(li ()
+           ,(make-paint-swatch name css-color)
+           ,name
+           ": "
+           ,(make-fg-element r g b)
+           ,(make-bg-element r g b)))
+
+
 ◊(define number (a-id "Number" (xref "<global>" "Number")))
 ◊(define color-args (list
       `("red"   ("type" "normal") ("contract" ,number))

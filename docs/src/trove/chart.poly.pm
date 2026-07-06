@@ -7,7 +7,7 @@
 ◊(define Image (a-id "Image" (xref "image" "Image")))
 ◊(define DataSeries (in-link "DataSeries"))
 ◊(define ChartWindow (in-link "ChartWindow"))
-◊(define opaque '(("<opaque>" ("type" "normal") ("contract" #f))))
+◊(define opaque '(("<opaque>" #f ("1" "2"))))
 ◊(define (method-data-series variant name)
   (method-doc "DataSeries" variant name))
 

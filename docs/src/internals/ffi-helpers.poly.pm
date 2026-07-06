@@ -13,31 +13,45 @@ growing.
 
 The ffi exposes several utilities related to ◊secref["equality"].
 
-◊doc-internal["FFI" "equal" #f "PyretObject"]
+◊doc-internal{
+  FFI.equal :: PyretObject
+}
 
 The ◊pyret-id["Equal" "equality"] value.
 
-◊doc-internal["FFI" "unknown" #f "PyretObject"]
+◊doc-internal{
+  FFI.unknown :: PyretObject
+}
 
 The ◊pyret-id["Unknown" "equality"] value.
 
-◊doc-internal["FFI" "notEqual" #f "PyretFunction"]
+◊doc-internal{
+  FFI.notEqual :: PyretFunction
+}
 
 The ◊pyret-id["NotEqual" "equality"] constructor.
 
-◊doc-internal["FFI" "isEqual" (list "Any") "JSBoolean"]
+◊doc-internal{
+  FFI.isEqual(Any) → JSBoolean
+}
 
 Checks if the given value is ◊pyret-id["Equal" "equality"].
 
-◊doc-internal["FFI" "isNotEqual" (list "Any") "JSBoolean"]
+◊doc-internal{
+  FFI.isNotEqual(Any) → JSBoolean
+}
 
 Checks if the given value is an instance of ◊pyret-id["NotEqual" "equality"].
 
-◊doc-internal["FFI" "isUnknown" (list "Any") "JSBoolean"]
+◊doc-internal{
+  FFI.isUnknown(Any) → JSBoolean
+}
 
 Checks if the given value is a ◊pyret-id["Unknown" "equality"].
 
-◊doc-internal["FFI" "isEqualityResult" (list "Any") "JSBoolean"]
+◊doc-internal{
+  FFI.isEqualityResult(Any) → JSBoolean
+}
 
 Checks if the given value is an instance of a ◊pyret-id["EqualityResult" "equality"].
 
@@ -48,12 +62,16 @@ FFI helpers provide the easiest way to programmatically throw Pyret exceptions
 from JavaScript.  Most commonly, user-defined modules will simply throw
 ◊tt{MessageExceptions} that contain a string describing the error.
 
-◊doc-internal["FFI" "throwMessageException" (list "PyretString") "Undefined"]
+◊doc-internal{
+  FFI.throwMessageException(PyretString) → Undefined
+}
 
 Throws an exception that Pyret recognizes and reports with a stack trace, using
 the provided string as the message.
 
-◊doc-internal["FFI" "makeMessageException" (list "PyretString") "Error"]
+◊doc-internal{
+  FFI.makeMessageException(PyretString) → Error
+}
 
 Sometimes its useful to ◊emph{create} an exception without actually throwing
 it, like when using the ◊tt{error} callback of the ◊tt{Restarter} in
@@ -65,38 +83,62 @@ without throwing it.
 Pyret lists are ubiquitous in Pyret's internals and libraries, and this library
 provides a few conveniences for working with them.
 
-◊doc-internal["FFI" "makeList" (list "JSArray") "List"]
+◊doc-internal{
+  FFI.makeList(JSArray) → List
+}
 
 Turns a JavaScript array into a Pyret ◊pyret-id["List" "lists"] with the same
 elements in the same order.
 
-◊doc-internal["FFI" "toArray" (list "List") "JSArray"]
+◊doc-internal{
+  FFI.toArray(List) → JSArray
+}
 
 Turns a Pyret ◊pyret-id["List" "lists"] with the same elements in the same
 order.  For doing computationally heavy work, sometimes it is useful to convert
 a Pyret ◊tt{List} to an array before processing it (and using JavaScript's
 map/filter, etc.), since the Pyret version incurs more overhead.
 
-◊doc-internal["FFI" "isList" (list "Any") "JSBoolean"]
+◊doc-internal{
+  FFI.isList(Any) → JSBoolean
+}
 
 Returns ◊tt{true} if the value is a Pyret ◊pyret-id["List" "lists"] and
 ◊tt{false} otherwise.
 
 ◊section{Other Data Helpers}
 
-◊doc-internal["FFI" "makeSome" (list "Any") "Option"]
-◊doc-internal["FFI" "makeNone" (list) "Option"]
+◊doc-internal{
+  FFI.makeSome(Any) → Option
+}
+
+◊doc-internal{
+  FFI.makeNone(Any) → Option
+}
 
 Create instances of ◊pyret-id["none" "option"] and ◊pyret-id["some" "option"]
 from ◊secref["option"].
 
-◊doc-internal["FFI" "makeLeft" (list "Any") "Either"]
-◊doc-internal["FFI" "makeRight" (list "Any") "Either"]
+◊doc-internal{
+  FFI.makeLeft(Any) → Either
+}
+
+◊doc-internal{
+  FFI.makeRight(Any) → Either
+}
 
 Create instances of ◊pyret-id["left" "either"] and ◊pyret-id["right" "either"]
 from ◊secref["either"].
 
-◊doc-internal["FFI" "cases" (list "(Any -> JSBoolean)" "JSString" "Any" "Handlers") "Any"]
+◊doc-internal{
+  FFI.cases(
+    (Any -> JSBoolean)
+    JSString
+    Any
+    Handlers
+  )
+  → Any
+}
 
 This call emulates the functionality of the ◊tt{cases} expression in a
 JavaScript context.  It takes a predicate to check (usually a function like

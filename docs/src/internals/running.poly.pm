@@ -76,7 +76,9 @@ create programs that simply produce wrong answers.
 Pyret's runtime defines a function called ◊internal-id["Runtime" "safeCall"]
 that allows pure JavaScript to participate in the Pyret stack.
 
-◊doc-internal["Runtime" "safeCall" (list "(→ a)" "(a → b)") "b" #:stack-unsafe #t]
+◊doc-internal{
+  Runtime.safeCall((→ a), (a → b)) !→ b
+}
 
 ◊internal-id["Runtime" "safeCall"] combines the two provided functions in a
 special stack frame:
@@ -99,7 +101,7 @@ from the first callback (pink in the picture):
 Then, when the second callback (blue) is run, it's return value will be passed
 up the stack to the Pyret function that called into the use of ◊tt{safeCall}:
 
-◊image[#:scale 0.5 "src/internals/return-2.png"]
+◊image[#:scale 0.5 "return-2.png"]
 
 The usual pattern for using ◊internal-id["Runtime" "safeCall"] is with a single
 call to a Pyret function, or another function that calls a Pyret function.  As
@@ -167,20 +169,22 @@ that uses JS callback libraries use Pyret callbacks, but it's hardly elegant to
 require that all students learn to use callbacks before they can import an
 image.}
 
-◊image[#:scale 0.5 "src/internals/ajax.png"]
+◊image[#:scale 0.5 "ajax.png"]
 
 In order to weave the control flow of Pyret through the success and failure
 continuations of callbacks, the runtime provides a way to pause and reify the
 Pyret stack for later resumption.
 
-◊doc-internal["Runtime" "pauseStack" (list "(Restarter → Undefined)") "Undefined"]
+◊doc-internal{
+  Runtime.pauseStack((Restarter → Undefined)) → Undefined
+}
 
 When ◊tt{pauseStack} is called, a special ◊emph{pause} exception is thrown,
 that stores the callback passed in as the argument to ◊tt{pauseStack}.  The
 pause exception collects Pyret stack frames in the same way as a stack
 exception, it just keeps track of the callback as well:
 
-◊image[#:scale 0.5 "src/internals/pause.png"]
+◊image[#:scale 0.5 "pause.png"]
 
 The pause exception is handled specially at the toplevel, by creating a
 ◊tt{Restarter} object that is capable of resuming, stopping, or signalling an
@@ -229,7 +233,9 @@ Some things to note:
   }
 ]
 
-◊doc-internal["Runtime" "schedulePause" (list "(Restarter → Undefined)") "Undefined"]
+◊doc-internal{
+  Runtime.schedulePause((Restarter → Undefined)) → Undefined
+}
 
 Similar to ◊internal-id["Runtime" "pauseStack"], but used from outside the
 runtime (e.g. in the REPL), to schedule a pause.  Since the point of
@@ -260,12 +266,15 @@ In order for the special ◊tt{PauseExceptions} and ◊tt{StackExceptions} to be
 caught at the top level and correctly restarted, the handlers need to be
 correctly installed.  This is done by ◊internal-id["Runtime" "run"]:
 
-◊doc-internal["Runtime" "run"
-  (list "(Runtime, Namespace → a)"
-        "Namespace"
-        "RunOptions"
-        "(RunResult<a> → Undef)")
-  "Undef"]
+◊doc-internal{
+  Runtime.run(
+    (Runtime, Namespace → a)
+    Namespace
+    RunOptions
+    (RunResult<a> → Undef)
+  )
+  → Undef
+}
 
 The first argument is the program to run, which takes a ◊tt{Runtime} (which is
 always the same as the runtime ◊tt{run} is called on), and a ◊tt{Namespace} as
@@ -307,29 +316,41 @@ pauser the next time the Pyret thread restarts.
 
 ◊subsection[#:tag "s:result-structures"]{Result Data Structures}
 
-◊doc-internal["Runtime" "makeSuccessResult" (list "a") "SuccessResult<a>"]
+◊doc-internal{
+  Runtime.makeSuccessResult(a) → SuccessResult<a>
+}
 
 Represents a successful completion of a Pyret execution with
 ◊internal-id["Runtime" "run"].
 
-◊doc-internal["Runtime" "isSuccessResult" (list "Any") "Bool"]
+◊doc-internal{
+  Runtime.isSuccessResult(Any) → Bool
+}
 
 Checks if a value is a ◊tt{SuccessResult}.
 
-◊doc-internal["Runtime.SuccessResult" "result" #f "Any"]
+◊doc-internal{
+  Runtime.SuccessResult.result :: Any
+}
 
 The field that stores the answer of a ◊tt{SuccessResult}.
 
-◊doc-internal["Runtime" "makeFailureResult" (list "a") "FailureResult<a>"]
+◊doc-internal{
+  Runtime.makeFailureResult(a) → FailureResult<a>
+}
 
 Represents a Pyret execution with ◊internal-id["Runtime" "run"] that ended in
 some kind of exception (either from Pyret or an internal JavaScript error).
 
-◊doc-internal["Runtime" "isFailureResult" (list "Any") "Bool"]
+◊doc-internal{
+  Runtime.isFailureResult(Any) → Bool
+}
 
 Checks if a value is a ◊tt{FailureResult}.
 
-◊doc-internal["Runtime.FailureResult" "exn" #f "Any"]
+◊doc-internal{
+  Runtime.FailureResult.exn :: Any
+}
 
 The field that stores the exception value of a ◊tt{FailureResult}.
 

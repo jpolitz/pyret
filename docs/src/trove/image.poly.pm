@@ -4,9 +4,6 @@
 ◊(define (transpose . args) (apply map list args))
 
 ◊(define (type-versions v1 v2)
-   (define (add-paras info)
-     (cons (first info)
-           (add-between (rest info) ◊para{})))
    ◊tabular[#:sep ◊hspace[4]
             #:row-properties '((center bottom-border) (top))
             (transpose (add-paras v1) (add-paras v2))])
@@ -15,9 +12,16 @@
 ◊(define (draw-pinhole x y img #:color [c 'black])
    (overlay/offset (overlay (line 10 0 c) (line 0 10 c)) x y img))
 
+◊(define get-image-count (make-counter))
 
-
-
+◊(define (image-2 image-obj)
+         ◊; (printf "*** image-2 ~s\n" image-obj)
+         (if (= (image-width image-obj) 0)
+             `(span () "")
+             (let ()
+               (define file (format ".image-~a.png" (get-image-count)))
+               (save-image image-obj file)
+               `(img ([src ,file])))))
 
 ◊(define Image (a-id "Image" (xref "image" "Image")))
 ◊(define Scene (a-id "Scene" (xref "image" "Scene")))
@@ -31,14 +35,23 @@
 ◊(define FontWeight (a-id "FontWeight" (xref "image" "FontWeight")))
 ◊(define XPlace (a-id "XPlace" (xref "image" "XPlace")))
 ◊(define YPlace (a-id "YPlace" (xref "image" "YPlace")))
-◊(define (paint-swatch color css-color)
-   (list (html:span 'style: "font-size: initial; display: inline-block;"
-                    (html:image 'class: "paintBrush" "path://brush.svg")
-                    (html:span 'class: "paintSpan"
-                               (html:span 'class: "checkersBlob")
-                               (html:span 'class: "paintBlob"
-                                          'style: (format "background-color: ~a; margin-right: 0.25em;" css-color))))
-         (pyret color)))
+
+
+◊(define (paint-swatch name css-color)
+         ◊; (printf "*** make-paint-swatch ~a ~a \n" name css-color)
+         `(span ()
+                (span ([style "font-size: initial; display: inline-block;"])
+                      (img ([class "paintBrush"] [src "brush.svg"]))
+                      (span ([class "paintSpan"])
+                            (span ([class "checkersBlob"]
+                                   [style ,(format "background-color: ~a;" css-color)]))
+                            (span ([style ,(format "background-color: ~a; margin-right: 0.25em;"
+                                             css-color)]
+                                   [class "paintBlob"]
+                                   ))))
+                ,(pyret name)))
+
+
 
 ◊docmodule["image" #:noimport #t #:friendly-title "The image libraries"]{
 
@@ -193,9 +206,9 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   color is unknown, the function returns ◊pyret-id["none" "option"].
 
   ◊repl-examples[
-    `(◊{name-to-color("red")} (,(pyret "some(") ,(paint-swatch "red" "red") ,(pyret ")")))
-    `(◊{name-to-color("blue")} (,(pyret "some(") ,(paint-swatch "blue" "blue") ,(pyret ")")))
-    `(◊{name-to-color("transparent")} (,(pyret "some(") ,(paint-swatch "transparent" "rgba(0,0,0,0)") ,(pyret ")")))
+    `(◊{name-to-color("red")} (span () ,(pyret "some(") ,(paint-swatch "red" "red") ,(pyret ")")))
+    `(◊{name-to-color("blue")} (span () ,(pyret "some(") ,(paint-swatch "blue" "blue") ,(pyret ")")))
+    `(◊{name-to-color("transparent")} (span () ,(pyret "some(") ,(paint-swatch "transparent" "rgba(0,0,0,0)") ,(pyret ")")))
     `(◊{color-named("UNKNOWN")} ,(pyret "none"))
   ]
   
@@ -250,8 +263,8 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
 
   ◊repl-examples[
-    `(◊{circle(30, "outline", "red")} ,(circle 30 "outline" "red"))
-    `(◊{circle(20, "solid", "red")} ,(circle 20 "solid" "red"))
+    `(◊{circle(30, "outline", "red")} ,(image-2 (circle 30 "outline" "red")))
+    `(◊{circle(20, "solid", "red")} ,(image-2 (circle 20 "solid" "red")))
   ]
 
   ◊function[
@@ -266,8 +279,8 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
     color.
   }
   ◊repl-examples[
-    `(◊{ellipse(60, 30, "outline", "black")} ,(ellipse 60 30 "outline" "black"))
-    `(◊{ellipse(30, 60, "solid", "blue")} ,(ellipse 30 60 "solid" "blue"))
+    `(◊{ellipse(60, 30, "outline", "black")} ,(image-2 (ellipse 60 30 "outline" "black")))
+    `(◊{ellipse(30, 60, "solid", "blue")} ,(image-2 (ellipse 30 60 "solid" "blue")))
   ]
   ◊function[
     "line"
@@ -280,10 +293,10 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
     (x,y).
   }
   ◊repl-examples[
-    `(◊{line(60, 30, "black")} ,(line 60 30 "black"))
-    `(◊{line(30, 60, "blue")} ,(line 30 60 "blue"))
-    `(◊{line(-30, 20, "red")} ,(line -30 20 "red"))
-    `(◊{line(30, -20, "red")} ,(line 30 -20 "red"))
+    `(◊{line(60, 30, "black")} ,(image-2 (line 60 30 "black")))
+    `(◊{line(30, 60, "blue")} ,(image-2 (line 30 60 "blue")))
+    `(◊{line(-30, 20, "red")} ,(image-2 (line -30 20 "red")))
+    `(◊{line(30, -20, "red")} ,(image-2 (line 30 -20 "red")))
   ]
   ◊function[
     "add-line"
@@ -303,9 +316,9 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
     `(◊{add-line(circle(20, "outline", "maroon"), 0, 40, 40, 0, "orange")}
-      ,(add-line (circle 20 "outline" "maroon") 0 40 40 0 "orange"))
+      ,(image-2 (add-line (circle 20 "outline" "maroon") 0 40 40 0 "orange")))
     `(◊{add-line(rectangle(40, 40, "outline", "maroon"), -10, 50, 50, -10, "orange")}
-      ,(add-line (rectangle 40 40 "outline" "maroon") -10 50 50 -10 "orange"))
+      ,(image-2 (add-line (rectangle 40 40 "outline" "maroon") -10 50 50 -10 "orange")))
   ]
 
   ◊subsection{Data types for drawing basic images}
@@ -369,9 +382,9 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
     `(◊{text("Hello", 24, "olive")}
-      ,(text/font "Hello" 24 "olive" "DejaVu Serif" 'roman 'normal 'normal #f))
+      ,(image-2 (text/font "Hello" 24 "olive" "DejaVu Serif" 'roman 'normal 'normal #f)))
     `(◊{text("Goodbye", 36, "indigo")}
-      ,(text/font "Goodbye" 36 "indigo" "DejaVu Serif" 'roman 'normal 'normal #f))
+      ,(image-2 (text/font "Goodbye" 36 "indigo" "DejaVu Serif" 'roman 'normal 'normal #f)))
   ]
   ◊margin-note{◊pyret{font-face} is system-dependent because
     different computers and operating systems have different fonts installed.
@@ -397,10 +410,10 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   ◊repl-examples[
     `(◊{text-font("Hello", 24, "green", "Gill Sans",
                   "swiss", "italic", "normal", true)}
-      ,(text/font "Hello" 24 "green" "Gill Sans" 'swiss 'italic 'normal #t))
+      ,(image-2 (text/font "Hello" 24 "green" "Gill Sans" 'swiss 'italic 'normal #t)))
     `(◊{text-font("Goodbye", 36, "turquoise", "Treasure Map Deadhand",
                   "decorative", "normal", "normal", false)}
-      ,(text/font "Goodbye" 36 "turquoise" "Treasure Map Deadhand" 'decorative 'normal 'normal #f))
+      ,(image-2 (text/font "Goodbye" 36 "turquoise" "Treasure Map Deadhand" 'decorative 'normal 'normal #f)))
   ]
 
   ◊subsection{Data types for text images}
@@ -532,7 +545,7 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
     `(◊{triangle(40, "solid", "tan")}
-      ,(triangle 40 'solid 'tan))
+      ,(image-2 (triangle 40 'solid 'tan)))
   ]
   ◊function[
     "right-triangle"
@@ -548,7 +561,7 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
     `(◊{right-triangle(36, 48, "solid", "steel blue")}
-      ,(right-triangle 36 48 'solid "steelblue"))
+      ,(image-2 (right-triangle 36 48 'solid "steelblue")))
   ]
   ◊function[
     "isosceles-triangle"
@@ -565,11 +578,11 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
     `(◊{isosceles-triangle(200, 170, "solid", "sea-green")}
-      ,(isosceles-triangle 200 170 'solid "seagreen"))
+      ,(image-2 (isosceles-triangle 200 170 'solid "seagreen")))
     `(◊{isosceles-triangle(60, 30, "solid", "royal-blue")}
-      ,(isosceles-triangle 60 30 'solid "royalblue"))
+      ,(image-2 (isosceles-triangle 60 30 'solid "royalblue")))
     `(◊{isosceles-triangle(60, 330, "solid", "dark-magenta")}
-      ,(isosceles-triangle 60 330 'solid "darkmagenta"))
+      ,(image-2 (isosceles-triangle 60 330 'solid "darkmagenta")))
   ]
   ◊function[
     "triangle-sss"
@@ -584,11 +597,11 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
     `(◊{triangle-sss(40, 60, 80, "solid", "sea-green")}
-      ,(triangle/sss 40 60 80 'solid "seagreen"))
+      ,(image-2 (triangle/sss 40 60 80 'solid "seagreen")))
     `(◊{triangle-sss(80, 40, 60, "solid", "royal-blue")}
-      ,(triangle/sss 80 40 60 'solid "royalblue"))
+      ,(image-2 (triangle/sss 80 40 60 'solid "royalblue")))
     `(◊{triangle-sss(80, 80, 40, "solid", "dark-magenta")}
-      ,(triangle/sss 80 80 40 'solid "darkmagenta"))
+      ,(image-2 (triangle/sss 80 80 40 'solid "darkmagenta")))
   ]
   ◊function[
     "triangle-ass"
@@ -599,11 +612,11 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
     `(◊{triangle-ass(10, 60, 100, "solid", "sea-green")}
-      ,(triangle/ass 10 60 100 'solid "seagreen"))
+      ,(image-2 (triangle/ass 10 60 100 'solid "seagreen")))
     `(◊{triangle-ass(90, 60, 100, "solid", "royal-blue")}
-      ,(triangle/ass 90 60 100 'solid "royalblue"))
+      ,(image-2 (triangle/ass 90 60 100 'solid "royalblue")))
     `(◊{triangle-ass(130, 60, 100, "solid", "dark-magenta")}
-      ,(triangle/ass 130 60 100 'solid "darkmagenta"))
+      ,(image-2 (triangle/ass 130 60 100 'solid "darkmagenta")))
   ]
   ◊function[
     "triangle-sas"
@@ -618,11 +631,11 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
     `(◊{triangle-sas(60, 10, 100, "solid", "sea-green")}
-      ,(triangle/sas 60 10 100 'solid "seagreen"))
+      ,(image-2 (triangle/sas 60 10 100 'solid "seagreen")))
     `(◊{triangle-sas(60, 90, 100, "solid", "royal-blue")}
-      ,(triangle/sas 60 90 100 'solid "royalblue"))
+      ,(image-2 (triangle/sas 60 90 100 'solid "royalblue")))
     `(◊{triangle-sas(60, 130, 100, "solid", "dark-magenta")}
-      ,(triangle/sas 60 130 100 'solid "darkmagenta"))
+      ,(image-2 (triangle/sas 60 130 100 'solid "darkmagenta")))
   ]
   ◊function[
     "triangle-ssa"
@@ -637,11 +650,11 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
     `(◊{triangle-ssa(60, 100, 10, "solid", "sea-green")}
-      ,(triangle/ssa 60 100 10 'solid "seagreen"))
+      ,(image-2 (triangle/ssa 60 100 10 'solid "seagreen")))
     `(◊{triangle-ssa(60, 100, 90, "solid", "royal-blue")}
-      ,(triangle/ssa 60 100 90 'solid "royalblue"))
+      ,(image-2 (triangle/ssa 60 100 90 'solid "royalblue")))
     `(◊{triangle-ssa(60, 100, 130, "solid", "dark-magenta")}
-      ,(triangle/ssa 60 100 130 'solid "darkmagenta"))
+      ,(image-2 (triangle/ssa 60 100 130 'solid "darkmagenta")))
   ]
   ◊function[
     "triangle-aas"
@@ -657,11 +670,11 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
     `(◊{triangle-aas(10, 40, 200, "solid", "sea-green")}
-      ,(triangle/aas 10 40 200 'solid "seagreen"))
+      ,(image-2 (triangle/aas 10 40 200 'solid "seagreen")))
     `(◊{triangle-aas(90, 40, 200, "solid", "royal-blue")}
-      ,(triangle/aas 90 40 200 'solid "royalblue"))
+      ,(image-2 (triangle/aas 90 40 200 'solid "royalblue")))
     `(◊{triangle-aas(130, 40, 40, "solid", "dark-magenta")}
-      ,(triangle/aas 130 40 40 'solid "darkmagenta"))
+      ,(image-2 (triangle/aas 130 40 40 'solid "darkmagenta")))
   ]
   ◊function[
     "triangle-asa"
@@ -677,11 +690,11 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
     `(◊{triangle-asa(10, 200, 40, "solid", "sea-green")}
-      ,(triangle/asa 10 200 40 'solid "seagreen"))
+      ,(image-2 (triangle/asa 10 200 40 'solid "seagreen")))
     `(◊{triangle-asa(90, 200, 40, "solid", "royal-blue")}
-      ,(triangle/asa 90 200 40 'solid "royalblue"))
+      ,(image-2 (triangle/asa 90 200 40 'solid "royalblue")))
     `(◊{triangle-asa(130, 40, 40, "solid", "dark-magenta")}
-      ,(triangle/asa 130 40 40 'solid "darkmagenta"))
+      ,(image-2 (triangle/asa 130 40 40 'solid "darkmagenta")))
   ]
   ◊function[
     "triangle-saa"
@@ -697,11 +710,11 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
     `(◊{triangle-saa(200, 10, 40, "solid", "sea-green")}
-      ,(triangle/saa 200 10 40 'solid "seagreen"))
+      ,(image-2 (triangle/saa 200 10 40 'solid "seagreen")))
     `(◊{triangle-saa(200, 90, 40, "solid", "royal-blue")}
-      ,(triangle/saa 200 90 40 'solid "royalblue"))
+      ,(image-2 (triangle/saa 200 90 40 'solid "royalblue")))
     `(◊{triangle-saa(40, 130, 40, "solid", "dark-magenta")}
-      ,(triangle/saa 40 130 40 'solid "darkmagenta"))
+      ,(image-2 (triangle/saa 40 130 40 'solid "darkmagenta")))
   ]
   ◊function[
     "square"
@@ -714,9 +727,9 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
     `(◊{square(40, "solid", "slate-blue")}
-      ,(square 40 "solid" "slateblue"))
+      ,(image-2 (square 40 "solid" "slateblue")))
     `(◊{square(50, "outline", "light-steel-blue")}
-      ,(square 50 "outline" "lightsteelblue"))
+      ,(image-2 (square 50 "outline" "lightsteelblue")))
   ]
   ◊function[
     "rectangle"
@@ -730,8 +743,8 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
     mode and color.
   }
   ◊repl-examples[
-    `(◊{rectangle(60, 30, "outline", "black")} ,(rectangle 60 30 "outline" "black"))
-    `(◊{rectangle(30, 60, "solid", "blue")} ,(rectangle 30 60 "solid" "blue"))
+    `(◊{rectangle(60, 30, "outline", "black")} ,(image-2 (rectangle 60 30 "outline" "black")))
+    `(◊{rectangle(30, 60, "solid", "blue")} ,(image-2 (rectangle 30 60 "solid" "blue")))
   ]
   ◊function[
     "rhombus"
@@ -747,8 +760,8 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
     pair is ◊pyret{180 - angle}.
   }
   ◊repl-examples[
-    `(◊{rhombus(40, 45, "solid", "magenta")} ,(rhombus 40 45 "solid" "magenta"))
-    `(◊{rhombus(80, 150, "solid", "medium-purple")} ,(rhombus 80 150 "solid" "mediumpurple"))
+    `(◊{rhombus(40, 45, "solid", "magenta")} ,(image-2 (rhombus 40 45 "solid" "magenta")))
+    `(◊{rhombus(80, 150, "solid", "medium-purple")} ,(image-2 (rhombus 80 150 "solid" "mediumpurple")))
   ]
   ◊function[
     "star"
@@ -761,7 +774,7 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
     and with the given mode and color.
   }
   ◊repl-examples[
-    `(◊{star(40, "solid", "gray")} ,(star 40 "solid" "gray"))
+    `(◊{star(40, "solid", "gray")} ,(image-2 (star 40 "solid" "gray")))
   ]
   ◊function[
     "radial-star"
@@ -773,8 +786,8 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
     inner points will lie a distance of ◊pyret{inner} from the center.
   }
   ◊repl-examples[
-    `(◊{radial-star(8, 28, 64, "solid", "dark-green")} ,(radial-star 8 28 64 "solid" "darkgreen"))
-    `(◊{radial-star(32, 30, 40, "outline", "black")} ,(radial-star 32 30 40 "outline" "black"))
+    `(◊{radial-star(8, 28, 64, "solid", "dark-green")} ,(image-2 (radial-star 8 28 64 "solid" "darkgreen")))
+    `(◊{radial-star(32, 30, 40, "outline", "black")} ,(image-2 (radial-star 32 30 40 "outline" "black")))
   ]
   ◊function[
     "star-sized"
@@ -804,14 +817,14 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
     ◊pyret{step-count - 1} vertices).
   }
   ◊repl-examples[
-    `(◊{star-polygon(40, 5, 2, "solid", "sea-green")} ,(star-polygon 40 5 2 "solid" "seagreen"))
-    `(◊{star-polygon(40, 7, 3, "outline", "dark-red")} ,(star-polygon 40 7 3 "outline" "darkred"))
-    `(◊{star-polygon(40, 8, 3, "outline", "goldenrod")} ,(star-polygon 40 8 3 "outline" "goldenrod"))
+    `(◊{star-polygon(40, 5, 2, "solid", "sea-green")} ,(image-2 (star-polygon 40 5 2 "solid" "seagreen")))
+    `(◊{star-polygon(40, 7, 3, "outline", "dark-red")} ,(image-2 (star-polygon 40 7 3 "outline" "darkred")))
+    `(◊{star-polygon(40, 8, 3, "outline", "goldenrod")} ,(image-2 (star-polygon 40 8 3 "outline" "goldenrod")))
     ; NOTE: This example doesn't work!  Needs the new image library...
     ;`(◊{star-polygon(40, 8, 2, "outline", "burlywood")}
     ;  ,(overlay (star-polygon 40 4 1 "outline" "burlywood")
     ;            (rotate 45 (star-polygon 40 4 1 "outline" "burlywood"))))
-    `(◊{star-polygon(20, 10, 3, "solid", "cornflower-blue")} ,(star-polygon 20 10 3 "solid" "cornflowerblue"))
+    `(◊{star-polygon(20, 10, 3, "solid", "cornflower-blue")} ,(image-2 (star-polygon 20 10 3 "solid" "cornflowerblue")))
   ]
   ◊function[
     "regular-polygon"
@@ -824,10 +837,10 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
     Constructs an image of a regular polygon with ◊pyret{side-count} sides.
   }
   ◊repl-examples[
-    `(◊{regular-polygon(40, 5, "solid", "sea-green")} ,(regular-polygon 40 5 "solid" "seagreen"))
-    `(◊{regular-polygon(40, 7, "outline", "dark-red")} ,(regular-polygon 40 7 "outline" "darkred"))
-    `(◊{regular-polygon(40, 8, "outline", "goldenrod")} ,(regular-polygon 40 8 "outline" "goldenrod"))
-    `(◊{regular-polygon(20, 8, "solid", "cornflower-blue")} ,(regular-polygon 20 8 "solid" "cornflowerblue"))
+    `(◊{regular-polygon(40, 5, "solid", "sea-green")} ,(image-2 (regular-polygon 40 5 "solid" "seagreen")))
+    `(◊{regular-polygon(40, 7, "outline", "dark-red")} ,(image-2 (regular-polygon 40 7 "outline" "darkred")))
+    `(◊{regular-polygon(40, 8, "outline", "goldenrod")} ,(image-2 (regular-polygon 40 8 "outline" "goldenrod")))
+    `(◊{regular-polygon(20, 8, "solid", "cornflower-blue")} ,(image-2 (regular-polygon 20 8 "solid" "cornflowerblue")))
   ]
 
   ◊function["point-polygon"
@@ -842,8 +855,8 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
     `(◊{point-polygon(
           [list: point(0, 0), point(-10, 20), point(60, 0), point(-10, -20)],
           "solid", "burlywood")}
-      ,(polygon (list (make-posn 0 0) (make-posn -10 20) (make-posn 60 0) (make-posn -10 -20))
-                "solid" "burlywood"))
+      ,(image-2 (polygon (list (make-posn 0 0) (make-posn -10 20) (make-posn 60 0) (make-posn -10 -20))
+                "solid" "burlywood")))
     `(◊{fun deg-to-rad(t):
           t * (~3.14159265358979323 / 180)
         end
@@ -851,8 +864,8 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
           point-polar(30, deg-to-rad(60 * n))
         end
         draw-pinhole(point-polygon(points, "outline", "steel-blue"))}
-      ,(let ((i (regular-polygon 30 6 "outline" "SteelBlue")))
-        (draw-pinhole 0 0  i)))
+      ,(image-2 (let ((i (regular-polygon 30 6 "outline" "SteelBlue")))
+      (draw-pinhole 0 0  i))))
   ]
 
   ◊section{Other images}
@@ -877,9 +890,9 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
                 (circle R 'solid 'seagreen)))
               (pin-x (pinhole-x img))
               (pin-y (pinhole-y img))]
-         (clear-pinhole
+         (image-2 (clear-pinhole
           (crop pin-x (- pin-y (* R (sqrt 3) 0.5)) R (* R (sqrt 3) 0.5)
-                img))))
+                img)))))
   ]
 
   
@@ -899,7 +912,7 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   ◊repl-examples[
     `(◊{overlay(rectangle(30, 60, "solid", "orange"),
           ellipse(60, 30, "solid", "purple"))}
-      ,(overlay (rectangle 30 60 "solid" "orange") (ellipse 60 30 "solid" "purple")))
+      ,(image-2 (overlay (rectangle 30 60 "solid" "orange") (ellipse 60 30 "solid" "purple"))))
   ]
   ◊function[
     "overlay-align"
@@ -920,13 +933,13 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   ◊repl-examples[
    `(◊{overlay-align("left", "bottom",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(overlay/align 'left 'bottom (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (overlay/align 'left 'bottom (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
    `(◊{overlay-align("center", "top",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(overlay/align 'center 'top (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (overlay/align 'center 'top (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
    `(◊{overlay-align("right", "middle",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(overlay/align 'right 'middle (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (overlay/align 'right 'middle (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
   ]
 
 
@@ -950,15 +963,15 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
     `(◊{overlay-xy(square(30, "solid", "bisque"),
           0, 0,
           square(50, "solid", "dark-green"))}
-      ,(overlay/xy (square 30 "solid" "bisque") 0 0 (square 50 "solid" "darkgreen")))
+      ,(image-2 (overlay/xy (square 30 "solid" "bisque") 0 0 (square 50 "solid" "darkgreen"))))
     `(◊{overlay-xy(square(30, "solid", "bisque"),
           30, 20, # Move green square right 30 and down 20
           square(50, "solid", "dark-green"))}
-      ,(overlay/xy (square 30 "solid" "bisque") 30 20 (square 50 "solid" "darkgreen")))
+      ,(image-2 (overlay/xy (square 30 "solid" "bisque") 30 20 (square 50 "solid" "darkgreen"))))
     `(◊{overlay-xy(square(30, "solid", "bisque"),
           -10, -20, # Move green square left 10 and up 20
           square(50, "solid", "dark-green"))}
-      ,(overlay/xy (square 30 "solid" "bisque") -10 -20 (square 50 "solid" "darkgreen")))
+      ,(image-2 (overlay/xy (square 30 "solid" "bisque") -10 -20 (square 50 "solid" "darkgreen"))))
   ]
 
 
@@ -997,7 +1010,7 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   ◊repl-examples[
     `(◊{underlay(rectangle(30, 60, "solid", "orange"),
           ellipse(60, 30, "solid", "purple"))}
-      ,(underlay (rectangle 30 60 "solid" "orange") (ellipse 60 30 "solid" "purple")))
+      ,(image-2 (underlay (rectangle 30 60 "solid" "orange") (ellipse 60 30 "solid" "purple"))))
   ]
   ◊function[
     "underlay-align"
@@ -1015,36 +1028,36 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   ◊repl-examples[
    `(◊{underlay-align("left", "top",
          square(50, "solid", "bisque"), square(30, "solid", "dark-green"))}
-     ,(underlay/align 'left 'top (square 50 "solid" "bisque") (square 30 "solid" "darkgreen")))
+     ,(image-2 (underlay/align 'left 'top (square 50 "solid" "bisque") (square 30 "solid" "darkgreen"))))
    `(◊{underlay-align("center", "top",
          square(50, "solid", "bisque"), square(30, "solid", "dark-green"))}
-     ,(underlay/align 'center 'top (square 50 "solid" "bisque") (square 30 "solid" "darkgreen")))
+     ,(image-2 (underlay/align 'center 'top (square 50 "solid" "bisque") (square 30 "solid" "darkgreen"))))
    `(◊{underlay-align("middle", "top",
          square(50, "solid", "bisque"), square(30, "solid", "dark-green"))}
-     ,(underlay/align 'middle 'top (square 50 "solid" "bisque") (square 30 "solid" "darkgreen")))
+     ,(image-2 (underlay/align 'middle 'top (square 50 "solid" "bisque") (square 30 "solid" "darkgreen"))))
    `(◊{underlay-align("right", "top",
          square(50, "solid", "bisque"), square(30, "solid", "dark-green"))}
-     ,(underlay/align 'right 'top (square 50 "solid" "bisque") (square 30 "solid" "darkgreen")))
+     ,(image-2 (underlay/align 'right 'top (square 50 "solid" "bisque") (square 30 "solid" "darkgreen"))))
    `(◊{underlay-align("left", "top",
          square(50, "solid", "bisque"), square(30, "solid", "dark-green"))}
-     ,(underlay/align 'left 'top (square 50 "solid" "bisque") (square 30 "solid" "darkgreen")))
+     ,(image-2 (underlay/align 'left 'top (square 50 "solid" "bisque") (square 30 "solid" "darkgreen"))))
    `(◊{underlay-align("left", "middle",
          square(50, "solid", "bisque"), square(30, "solid", "dark-green"))}
-     ,(underlay/align 'left 'middle (square 50 "solid" "bisque") (square 30 "solid" "darkgreen")))
+     ,(image-2 (underlay/align 'left 'middle (square 50 "solid" "bisque") (square 30 "solid" "darkgreen"))))
    `(◊{underlay-align("left", "center",
          square(50, "solid", "bisque"), square(30, "solid", "dark-green"))}
-     ,(underlay/align 'left 'center (square 50 "solid" "bisque") (square 30 "solid" "darkgreen")))
+     ,(image-2 (underlay/align 'left 'center (square 50 "solid" "bisque") (square 30 "solid" "darkgreen"))))
    `(◊{underlay-align("left", "bottom",
          square(50, "solid", "bisque"), square(30, "solid", "dark-green"))}
-     ,(underlay/align 'left 'bottom (square 50 "solid" "bisque") (square 30 "solid" "darkgreen")))
+     ,(image-2 (underlay/align 'left 'bottom (square 50 "solid" "bisque") (square 30 "solid" "darkgreen"))))
    `(◊{underlay-align("left", "baseline",
          rectangle(140, 3, "solid", "bisque"), text("Pyret", 50, "dark-green"))}
-     ,(underlay/align 'left 'baseline (rectangle 140 3 "solid" "bisque")
-                     (text/font "Pyret" 50 "darkgreen" "DejaVu Serif" 'roman 'normal 'normal #f)))
+     ,(image-2 (underlay/align 'left 'baseline (rectangle 140 3 "solid" "bisque")
+                     (text/font "Pyret" 50 "darkgreen" "DejaVu Serif" 'roman 'normal 'normal #f))))
    `(◊{underlay-align("left", "bottom",
          rectangle(140, 3, "solid", "bisque"), text("Pyret", 50, "dark-green"))}
-     ,(underlay/align 'left 'bottom (rectangle 140 3 "solid" "bisque")
-                     (text/font "Pyret" 50 "darkgreen" "DejaVu Serif" 'roman 'normal 'normal #f)))
+     ,(image-2 (underlay/align 'left 'bottom (rectangle 140 3 "solid" "bisque")
+                     (text/font "Pyret" 50 "darkgreen" "DejaVu Serif" 'roman 'normal 'normal #f))))
   ]
   ◊function[
     "underlay-xy"
@@ -1064,15 +1077,15 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
     `(◊{underlay-xy(square(50, "solid", "bisque"),
           0, 0,
           square(30, "solid", "dark-green"))}
-      ,(underlay/xy (square 50 "solid" "bisque") 0 0 (square 30 "solid" "darkgreen")))
+      ,(image-2 (underlay/xy (square 50 "solid" "bisque") 0 0 (square 30 "solid" "darkgreen"))))
     `(◊{underlay-xy(square(50, "solid", "bisque"), 
           50, 20, # Move green square right 50 and down 20
           square(30, "solid", "dark-green"))}
-      ,(underlay/xy (square 50 "solid" "bisque") 50 20 (square 30 "solid" "darkgreen")))
+      ,(image-2 (underlay/xy (square 50 "solid" "bisque") 50 20 (square 30 "solid" "darkgreen"))))
     `(◊{underlay-xy(square(50, "solid", "bisque"),
           -10, -20, # Move green square left 10 and up 20
           square(30, "solid", "dark-green"))}
-      ,(underlay/xy (square 50 "solid" "bisque") -10 -20 (square 30 "solid" "darkgreen")))
+      ,(image-2 (underlay/xy (square 50 "solid" "bisque") -10 -20 (square 30 "solid" "darkgreen"))))
   ]
   ◊function[
     "beside"
@@ -1086,7 +1099,7 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   ◊repl-examples[
     `(◊{beside(rectangle(30, 60, "solid", "orange"),
           ellipse(60, 30, "solid", "purple"))}
-      ,(beside (rectangle 30 60 "solid" "orange") (ellipse 60 30 "solid" "purple")))
+      ,(image-2 (beside (rectangle 30 60 "solid" "orange") (ellipse 60 30 "solid" "purple"))))
   ]
   ◊function[
     "beside-align"
@@ -1102,21 +1115,21 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   ◊repl-examples[
    `(◊{beside-align("top",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(beside/align 'top (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (beside/align 'top (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
    `(◊{beside-align("middle",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(beside/align 'middle (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (beside/align 'middle (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
    `(◊{beside-align("center",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(beside/align 'center (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (beside/align 'center (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
    `(◊{beside-align("bottom",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(beside/align 'bottom (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (beside/align 'bottom (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
    `(◊{beside-align("baseline",
          text("Hello", 30, "dark-green"), text(" Pyret", 18, "lawn-green"))}
-     ,(beside/align 'baseline
+     ,(image-2 (beside/align 'baseline
                      (text/font "Hello" 30 "darkgreen" "DejaVu Serif" 'roman 'normal 'normal #f)
-                     (text/font " Pyret" 18 "lawngreen" "DejaVu Serif" 'roman 'normal 'normal #f)))
+                     (text/font " Pyret" 18 "lawngreen" "DejaVu Serif" 'roman 'normal 'normal #f))))
   ]
   ◊function[
     "above"
@@ -1128,7 +1141,7 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   ◊repl-examples[
     `(◊{above(rectangle(30, 60, "solid", "orange"),
           ellipse(60, 30, "solid", "purple"))}
-      ,(above (rectangle 30 60 "solid" "orange") (ellipse 60 30 "solid" "purple")))
+      ,(image-2 (above (rectangle 30 60 "solid" "orange") (ellipse 60 30 "solid" "purple"))))
   ]
   ◊function[
     "above-align"
@@ -1143,16 +1156,16 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   ◊repl-examples[
    `(◊{above-align("left",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(above/align 'left (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (above/align 'left (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
    `(◊{above-align("center",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(above/align 'center (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (above/align 'center (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
    `(◊{above-align("middle",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(above/align 'middle (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (above/align 'middle (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
    `(◊{above-align("right",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(above/align 'right (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (above/align 'right (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
   ]
 
   ◊subsection{Data types for aligning images}
@@ -1208,16 +1221,16 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   ◊repl-examples[
    `(◊{overlay-align("left", "top",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(overlay/align 'left 'top (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (overlay/align 'left 'top (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
    `(◊{overlay-align("center", "top",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(overlay/align 'center 'top (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (overlay/align 'center 'top (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
    `(◊{overlay-align("middle", "top",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(overlay/align 'middle 'top (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (overlay/align 'middle 'top (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
    `(◊{overlay-align("right", "top",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(overlay/align 'right 'top (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (overlay/align 'right 'top (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
   ]
   
   ◊type-spec["YPlace" (list) #:private #t]{
@@ -1281,24 +1294,24 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   ◊repl-examples[
    `(◊{overlay-align("left", "top",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(overlay/align 'left 'top (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (overlay/align 'left 'top (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
    `(◊{overlay-align("left", "middle",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(overlay/align 'left 'middle (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (overlay/align 'left 'middle (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
    `(◊{overlay-align("left", "center",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(overlay/align 'left 'center (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (overlay/align 'left 'center (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
    `(◊{overlay-align("left", "bottom",
          square(30, "solid", "bisque"), square(50, "solid", "dark-green"))}
-     ,(overlay/align 'left 'bottom (square 30 "solid" "bisque") (square 50 "solid" "darkgreen")))
+     ,(image-2 (overlay/align 'left 'bottom (square 30 "solid" "bisque") (square 50 "solid" "darkgreen"))))
    `(◊{overlay-align("left", "baseline",
          rectangle(140, 3, "solid", "bisque"), text("Pyret", 50, "dark-green"))}
-     ,(overlay/align 'left 'baseline (rectangle 140 3 "solid" "bisque")
-                     (text/font "Pyret" 50 "darkgreen" "DejaVu Serif" 'roman 'normal 'normal #f)))
+     ,(image-2 (overlay/align 'left 'baseline (rectangle 140 3 "solid" "bisque")
+                     (text/font "Pyret" 50 "darkgreen" "DejaVu Serif" 'roman 'normal 'normal #f))))
    `(◊{overlay-align("left", "bottom",
          rectangle(140, 3, "solid", "bisque"), text("Pyret", 50, "dark-green"))}
-     ,(overlay/align 'left 'bottom (rectangle 140 3 "solid" "bisque")
-                     (text/font "Pyret" 50 "darkgreen" "DejaVu Serif" 'roman 'normal 'normal #f)))
+     ,(image-2 (overlay/align 'left 'bottom (rectangle 140 3 "solid" "bisque")
+                     (text/font "Pyret" 50 "darkgreen" "DejaVu Serif" 'roman 'normal 'normal #f))))
   ]
 
   
@@ -1313,7 +1326,7 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
     and a black frame is drawn around the outside of the scene.
   }
   ◊repl-examples[
-   `(◊{empty-scene(30, 40)} ,(empty-scene 30 40))
+   `(◊{empty-scene(30, 40)} ,(image-2 (empty-scene 30 40)))
   ]
   ◊function[
     "empty-color-scene"
@@ -1326,13 +1339,13 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
     and a black frame is drawn around the outside of the scene.
   }
   ◊repl-examples[
-   `(◊{empty-color-scene(30, 40, "red")} ,(empty-scene 30 40 'red))
+   `(◊{empty-color-scene(30, 40, "red")} ,(image-2 (empty-scene 30 40 'red)))
   ]
   ◊value["empty-image" Image]{
     An empty image of zero size.  Equivalent to ◊pyret{empty-scene(0, 0)}.
   }
   ◊repl-examples[
-   `(◊{empty-image # Not much to see here!} ,empty-image)
+   `(◊{empty-image # Not much to see here!} ,(image-2 empty-image))
   ]  
   ◊function[
     "put-image"
@@ -1353,12 +1366,12 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
          circle(10, "solid", "red"),
          10, 20,
          empty-scene(80, 50))}
-     ,(place-image (circle 10 "solid" "red") 10 (- 50 20) (empty-scene 80 50)))
+     ,(image-2 (place-image (circle 10 "solid" "red") 10 (- 50 20) (empty-scene 80 50))))
    `(◊{put-image(
          circle(10, "solid", "red"),
          80, 50,
          empty-scene(80, 50))}
-     ,(place-image (circle 10 "solid" "red") 80 (- 50 50) (empty-scene 80 50)))
+     ,(image-2 (place-image (circle 10 "solid" "red") 80 (- 50 50) (empty-scene 80 50))))
   ]
   ◊function[
     "place-image"
@@ -1379,12 +1392,12 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
          circle(10, "solid", "red"),
          10, 20,
          empty-scene(80, 50))}
-     ,(place-image (circle 10 "solid" "red") 10 20 (empty-scene 80 50)))
+     ,(image-2 (place-image (circle 10 "solid" "red") 10 20 (empty-scene 80 50))))
    `(◊{place-image(
          circle(10, "solid", "red"),
          80, 50,
          empty-scene(80, 50))}
-     ,(place-image (circle 10 "solid" "red") 80 50 (empty-scene 80 50)))
+     ,(image-2 (place-image (circle 10 "solid" "red") 80 50 (empty-scene 80 50))))
   ]
   ◊function[
     "place-image-align"
@@ -1405,12 +1418,12 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
          star(15, "solid", "red"),
          80, 50, "center", "center"
          empty-scene(80, 50))}
-     ,(place-image/align (star 15 "solid" "red") 80 50 'center 'center (empty-scene 80 50)))
+     ,(image-2 (place-image/align (star 15 "solid" "red") 80 50 'center 'center (empty-scene 80 50))))
    `(◊{place-image-align(
          star(15, "solid", "red"),
          80, 50, "right", "bottom",
          empty-scene(80, 50))}
-     ,(place-image/align (star 15 "solid" "red") 80 50 'right 'bottom (empty-scene 80 50)))
+     ,(image-2 (place-image/align (star 15 "solid" "red") 80 50 'right 'bottom (empty-scene 80 50))))
   ]
   ◊function[
     "scene-line"
@@ -1429,9 +1442,9 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
     `(◊{scene-line(circle(20, "outline", "maroon"), 0, 40, 40, 0, "orange")}
-      ,(scene+line (circle 20 "outline" "maroon") 0 40 40 0 "orange"))
+      ,(image-2 (scene+line (circle 20 "outline" "maroon") 0 40 40 0 "orange")))
     `(◊{scene-line(rectangle(40, 40, "outline", "maroon"), -10, 50, 50, -10, "orange")}
-      ,(scene+line (rectangle 40 40 "outline" "maroon") -10 50 50 -10 "orange"))
+      ,(image-2 (scene+line (rectangle 40 40 "outline" "maroon") -10 50 50 -10 "orange")))
   ]
   ◊section{Rotating, Scaling, Flipping, Cropping and Framing Images}
   ◊function[
@@ -1444,18 +1457,18 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
    `(◊{rotate(40, ellipse(60, 20, "solid", "olive-drab"))}
-     ,(rotate 45 (ellipse 60 20 "solid" "olivedrab")))
+     ,(image-2 (rotate 45 (ellipse 60 20 "solid" "olivedrab"))))
    `(◊{rotate(5, square(50, "outline", "black"))}
-     ,(rotate 5 (square 50 "outline" "black")))
+     ,(image-2 (rotate 5 (square 50 "outline" "black"))))
    `(◊{rotate(45,
          beside-align("center",
            rectangle(40, 20, "solid", "dark-sea-green"),
            rectangle(20, 100, "solid", "light-sea-green")))}
-     ,(rotate 45
+     ,(image-2 (rotate 45
           (beside/align
            "center"
            (rectangle 40 20 "solid" "darkseagreen")
-           (rectangle 20 100 "solid" "lightseagreen"))))
+           (rectangle 20 100 "solid" "lightseagreen")))))
   ]
   ◊function[
     "scale"
@@ -1467,9 +1480,9 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
    `(◊{scale(2, ellipse(20, 30, "solid", "blue"))}
-     ,(scale 2 (ellipse 20 30 "solid" "blue")))
+     ,(image-2 (scale 2 (ellipse 20 30 "solid" "blue"))))
    `(◊{ellipse(40, 60, "solid", "blue")}
-     ,(ellipse 40 60 "solid" "blue"))
+     ,(image-2 (ellipse 40 60 "solid" "blue")))
   ]
   ◊function[
     "scale-xy"
@@ -1483,9 +1496,9 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
    `(◊{scale-xy(2, 3, circle(10, "solid", "blue"))}
-     ,(scale/xy 2 3 (circle 10 "solid" "blue")))
+     ,(image-2 (scale/xy 2 3 (circle 10 "solid" "blue"))))
    `(◊{ellipse(40, 60, "solid", "blue")}
-     ,(ellipse 40 60 "solid" "blue"))
+     ,(image-2 (ellipse 40 60 "solid" "blue")))
   ]
   ◊function[
     "flip-horizontal"
@@ -1496,14 +1509,14 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
    `(◊{flip-horizontal(text("Hello", 40, "darkgreen"))}
-     ,(flip-horizontal (freeze (text/font "Hello" 30 "darkgreen" "DejaVu Serif" 'roman 'normal 'normal #f))))
+     ,(image-2 (flip-horizontal (freeze (text/font "Hello" 30 "darkgreen" "DejaVu Serif" 'roman 'normal 'normal #f)))))
    `(◊{beside(
          rotate(30, square(50, "solid", "red")),
          flip-horizontal(rotate(30, square(50, "solid", "blue"))))}
-     ,(beside
+     ,(image-2 (beside
        (rotate 30 (square 50 "solid" "red"))
        (flip-horizontal
-        (rotate 30 (square 50 "solid" "blue")))))
+        (rotate 30 (square 50 "solid" "blue"))))))
   ]
   ◊function[
     "flip-vertical"
@@ -1514,13 +1527,13 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
    `(◊{flip-vertical(text("Hello", 40, "darkgreen"))}
-     ,(flip-vertical (freeze (text/font "Hello" 30 "darkgreen" "DejaVu Serif" 'roman 'normal 'normal #f))))
+     ,(image-2 (flip-vertical (freeze (text/font "Hello" 30 "darkgreen" "DejaVu Serif" 'roman 'normal 'normal #f)))))
    `(◊{above(
          star(40, "solid", "fire-brick"),
          scale-xy(1, 1/2, (flip-vertical(star(40, "solid", "gray")))))}
-     ,(above
+     ,(image-2 (above
        (star 40 "solid" "firebrick")
-       (scale/xy 1 1/2 (flip-vertical (star 40 "solid" "gray")))))
+       (scale/xy 1 1/2 (flip-vertical (star 40 "solid" "gray"))))))
   ]
   ◊function[
     "crop"
@@ -1536,9 +1549,9 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
    `(◊{crop(0, 0, 40, 40, circle(40, "solid", "chocolate"))}
-     ,(crop 0 0 40 40 (circle 40 "solid" "chocolate")))
+     ,(image-2 (crop 0 0 40 40 (circle 40 "solid" "chocolate"))))
    `(◊{crop(40, 60, 40, 60, ellipse(80, 120, "solid", "dodger-blue"))}
-     ,(crop 40 60 40 60 (ellipse 80 120 "solid" "dodgerblue")))
+     ,(image-2 (crop 40 60 40 60 (ellipse 80 120 "solid" "dodgerblue"))))
    `(◊{above(
          beside(
            crop(40, 40, 40, 40, circle(40, "solid", "pale-violet-red")),
@@ -1546,11 +1559,11 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
          beside(
            crop(40, 0, 40, 40, circle(40, "solid", "light-coral")),
            crop(0, 0, 40, 40, circle(40, "solid", "pale-violet-red"))))}
-     ,(above
+     ,(image-2 (above
        (beside (crop 40 40 40 40 (circle 40 "solid" "palevioletred"))
                (crop 0 40 40 40 (circle 40 "solid" "lightcoral")))
        (beside (crop 40 0 40 40 (circle 40 "solid" "lightcoral"))
-               (crop 0 0 40 40 (circle 40 "solid" "palevioletred")))))
+               (crop 0 0 40 40 (circle 40 "solid" "palevioletred"))))))
   ]
   ◊function[
     "frame"
@@ -1562,9 +1575,9 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
    `(◊{frame(ellipse(40, 60, "solid", "gray"))}
-     ,(frame (ellipse 40 60 "solid" "gray")))
+     ,(image-2 (frame (ellipse 40 60 "solid" "gray"))))
    `(◊{frame(beside(circle(20, "solid", "red"), circle(10, "solid", "blue")))}
-     ,(frame (beside (circle 20 "solid" "red") (circle 10 "solid" "blue"))))
+     ,(image-2 (frame (beside (circle 20 "solid" "red") (circle 10 "solid" "blue")))))
   ]
   ◊section{Bitmaps}
   ◊function[
@@ -1626,7 +1639,7 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
     `(◊{image-to-color-list(rectangle(2, 2, "solid", "black"))}
-      ,(list (pyret "[list:")
+      ,(list 'span '() (pyret "[list:")
              (paint-swatch "black" "black") (pyret ", ")
              (paint-swatch "black" "black") (pyret ", ")
              (paint-swatch "black" "black") (pyret ", ")
@@ -1634,7 +1647,7 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
     `(◊{image-to-color-list(above(
            beside(square(1, "solid", "red"), square(1, "solid", "blue")),
            beside(square(1, "solid", "green"), square(1, "solid", "yellow"))))}
-      ,(list (pyret "[list:")
+      ,(list 'span '() (pyret "[list:")
              (paint-swatch "red" "red") (pyret ", ")
              (paint-swatch "blue" "blue") (pyret ", ")
              (paint-swatch "green" "green") (pyret ", ")
@@ -1655,9 +1668,9 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   }
   ◊repl-examples[
    `(◊{scale(20, color-list-to-image([list: "red", "blue", "green", "yellow"], 2, 2, 1, 1))}
-     ,(scale 20 (color-list->bitmap '(red blue green yellow) 2 2)))
+     ,(image-2 (scale 20 (color-list->bitmap '(red blue green yellow) 2 2))))
    `(◊{scale(20, color-list-to-image([list: "red", "blue", "green", "yellow"], 4, 1, 1, 1))}
-     ,(scale 20 (color-list->bitmap '(red blue green yellow) 4 1)))
+     ,(image-2 (scale 20 (color-list->bitmap '(red blue green yellow) 4 1))))
   ]
   ◊function[
     "color-list-to-bitmap"
@@ -1685,8 +1698,8 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   ◊repl-examples[
    `(◊{overlay-align("middle", "center", triangle(50, "solid", "red"),
                      rotate(180, triangle(50, "solid", "blue")))}
-     ,(overlay/align "middle" "middle" (triangle 50 "solid" "red")
-                     (rotate 180 (triangle 50 "solid" "blue"))))
+     ,(image-2 (overlay/align "middle" "middle" (triangle 50 "solid" "red")
+                     (rotate 180 (triangle 50 "solid" "blue")))))
    ]
 
   Unfortunately, the ◊emph{center} of our triangles isn't the
@@ -1703,10 +1716,10 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
   ◊repl-examples[
    `(◊{overlay-align("pinhole", "pinhole", triangle(50, "solid", "red"),
                      rotate(180, triangle(50, "solid", "blue")))}
-     ,(clear-pinhole
+     ,(image-2 (clear-pinhole
        (overlay/align "pinhole" "pinhole"
                       (put-pinhole 25 (* 25 (sqrt 3) 2/3) (triangle 50 "solid" "red"))
-                      (rotate 180 (put-pinhole 25 (* 25 (sqrt 3) 2/3) (triangle 50 "solid" "blue"))))))
+                      (rotate 180 (put-pinhole 25 (* 25 (sqrt 3) 2/3) (triangle 50 "solid" "blue")))))))
    ]
 
   When two images are overlaid, the pinhole of the resulting image is
@@ -1749,9 +1762,9 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
 
   ◊repl-examples[
    `(◊{draw-pinhole(triangle(50, "solid", "red"))}
-     ,(draw-pinhole 0 (/ (- (* 25 (sqrt 3) 2/3) 43) 2) (triangle 50 "solid" "red")))
+     ,(image-2 (draw-pinhole 0 (/ (- (* 25 (sqrt 3) 2/3) 43) 2) (triangle 50 "solid" "red"))))
    `(◊{draw-pinhole(center-pinhole(triangle(50, "solid", "tan")))}
-     ,(draw-pinhole 0 0 (triangle 50 "solid" "tan")))
+     ,(image-2 (draw-pinhole 0 0 (triangle 50 "solid" "tan"))))
    ]
 
   This last one looks strange, but it is an optical illusion.
@@ -1761,8 +1774,8 @@ spaces, or can be dropped altogether.  Unknown color names produce an error.
    `(◊{beside(
          draw-pinhole(center-pinhole(triangle(50, "solid", "tan"))),
          draw-pinhole(rotate(180, center-pinhole(triangle(50, "solid" , "tan")))))}
-     ,(beside (draw-pinhole 0 0 (triangle 50 "solid" "tan"))
-              (draw-pinhole 0 0 (rotate 180 (triangle 50 "solid" "tan")))))
+     ,(image-2 (beside (draw-pinhole 0 0 (triangle 50 "solid" "tan"))
+              (draw-pinhole 0 0 (rotate 180 (triangle 50 "solid" "tan"))))))
    ]
             
   

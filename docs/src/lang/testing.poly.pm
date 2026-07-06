@@ -1,36 +1,27 @@
 #lang pollen
 
-
-◊(define (test-index-tag opname)
-  (define tag (make-generated-tag))
-  (define index-tags (list (pyret opname) "testing"))
-  (make-index-element #f
-                       (list (make-target-element #f '() `(idx ,tag)))
-                       `(idx ,tag)
-                       (cons opname (list "testing"))
-                       index-tags
-                       #f))
+◊(define (test-index-tag . elems) (void))
 
 ◊(define (test-doc opname left right)
-  ◊para[#:style "boxed pyret-header"]{
-    ◊(test-index-tag opname)
-    ◊(tt ◊left " " ◊(make-header-elt-for (seclink (xref (curr-module-name) opname) (tt opname)) opname) " " ◊right)
-  })
+         `(div ()
+               ,(make-gloss opname)
+               (pre ([class "pyret-display"]) ,left " " ,(ref-gloss opname) " " ,right)))
 
 ◊(define (test-doc1 opname left)
-  ◊para[#:style "boxed pyret-header"]{
-    ◊(test-index-tag opname)
-    ◊(tt ◊left " " ◊(make-header-elt-for (seclink (xref (curr-module-name) opname) (tt opname)) opname))
-  })
+         `(div ()
+               ,(make-gloss opname)
+               (pre ([class "pyret-display"]) ,left " " ,(ref-gloss opname))))
 
 ◊(define (test-doc-pred opname pred left right)
-  ◊para[#:style "boxed pyret-header"]{
-    ◊(test-index-tag opname)
-    ◊(tt ◊left " " ◊(make-header-elt-for (seclink (xref (curr-module-name) opname) (tt opname)) opname) "(" pred ")" " " ◊right)
-  })
+         `(div ()
+               ,(make-gloss opname)
+               (pre ([class "pyret-display"]) ,left " " ,(ref-gloss opname) "(" ,pred ")" " " ,right)))
 
 ◊(define (test-pred-use left opname pred right)
-  (list ◊pyret[left] " " ◊pyret-id[opname]◊pyret{(}◊|pred|◊pyret{)} " " ◊pyret[left]))
+         `(tt ([class "pyret-display"])
+              ,left " " ,(ref-gloss opname) "("
+              ,(if (string? pred) (ref-gloss pred) pred)
+              ")" " " ,right))
 
 
 ◊docmodule["testing" #:friendly-title "Testing" #:noimport #t]{

@@ -66,7 +66,6 @@ end
 }
 
 ◊function["stat"
-  #:contract (a-arrow S (a-record `((mtime ,N) (ctime ,N) (size ,N))))
   #:args '(("path" ""))
   ]
 
