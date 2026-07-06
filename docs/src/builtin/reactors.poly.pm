@@ -110,7 +110,7 @@ end
 ◊section{Configuring and Running a Reactor}
 
 ◊function["interact"
-  #:contract (a-arrow (R-of "a") (R-of "a"))
+  #:contract (a-ftype (a-var-type "r" (R-of "a")) (R-of "a"))
   #:args '(("r" #f))
   #:return (R-of "a")
 ]{
@@ -178,7 +178,7 @@ argument should be of the same type as the value given to ◊pyret{init}, and th
 function should return a ◊pyret-id["Image" "image"].  So for a ◊(R-of "a"), the
 type of the to-draw handler is:
 
-◊(image "src/builtin/to-draw.gif")
+◊(image "to-draw.gif")
 
 ◊tt{
 to-draw :: ◊(a-arrow "a" Image)
@@ -304,7 +304,7 @@ of a reactor.  This can be used to simulate an interaction for testing or
 exploration.
 
 ◊function["get-value"
-  #:contract (a-arrow (R-of "a") "a")
+  #:contract (a-ftype (a-var-type "r" (R-of "a")) "a")
   #:args '(("r" #f))
   #:return "a"]{
 
@@ -325,7 +325,7 @@ end
 }
 
 ◊function["react"
-  #:contract (a-arrow (R-of "a") Event (R-of "a"))
+  #:contract (a-ftype (a-var-type "r" (R-of "a")) (a-var-type "event" Event) (R-of "a"))
   #:args '(("r" #f) ("event" #f))
   #:return (R-of "a")]{
 
@@ -355,7 +355,7 @@ end
   }
 
 ◊function["draw"
-  #:contract (a-arrow (R-of "a") Image)
+  #:contract (a-ftype (a-var-type "r" (R-of "a")) Image)
   #:args '(("r" #f))
   #:return Image]{
 
@@ -365,7 +365,7 @@ end
   }
 
 ◊function["is-stopped"
-  #:contract (a-arrow (R-of "a") B)
+  #:contract (a-ftype (a-var-type "r" (R-of "a")) B)
   #:args '(("r" #f))
   #:return B]{
 
@@ -398,7 +398,7 @@ Several functions control ◊emph{tracing} the evaluation of a reactor to provid
 the history of states as data.
 
 ◊function["interact-trace"
-  #:contract (a-arrow (R-of "a") TA)
+  #:contract (a-ftype (a-var-type "r" (R-of "a")) TA)
   #:args '(("r" #f))
   #:return TA]{
 
@@ -413,7 +413,7 @@ the history of states as data.
 
 
 ◊function["simulate-trace"
-  #:contract (a-arrow (R-of "a") N TA)
+  #:contract (a-ftype (a-var-type "r" (R-of "a")) (a-var-type "limit" N) TA)
   #:args '(("r" #f) ("limit" #f))
   #:return TA]{
 
@@ -426,7 +426,7 @@ the history of states as data.
   }
 
 ◊function["start-trace"
-  #:contract (a-arrow (R-of "a") (R-of "a"))
+  #:contract (a-ftype (a-var-type "r" (R-of "a")) (R-of "a"))
   #:args '(("r" #f))
   #:return (R-of "a")]{
 
@@ -438,7 +438,7 @@ current state will be saved to a list in the reactor, for later extraction with
   }
 
 ◊function["stop-trace"
-  #:contract (a-arrow (R-of "a") (R-of "a"))
+  #:contract (a-ftype (a-var-type "r" (R-of "a")) (R-of "a"))
   #:args '(("r" #f))
   #:return (R-of "a")]{
 
@@ -450,7 +450,7 @@ memory for if states are large or an interaction is long-running.
 
 
 ◊function["get-trace"
-  #:contract (a-arrow (R-of "a") (L-of "a"))
+  #:contract (a-ftype (a-var-type "r" (R-of "a")) (L-of "a"))
   #:args '(("r" #f))
   #:return (L-of "a")]{
 
@@ -459,7 +459,7 @@ Returns a ◊L of the traced states of the reactor.
   }
 
 ◊function["get-trace-as-table"
-  #:contract (a-arrow (R-of "a") TA)
+  #:contract (a-ftype (a-var-type "r" (R-of "a")) TA)
   #:args '(("r" #f))
   #:return TA]{
 

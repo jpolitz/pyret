@@ -6,13 +6,13 @@
 
 ◊section[#:tag "global-builtins"]{Built-in Utility Functions}
 
-◊function["print" #:contract (a-arrow "a" "a") #:return "a" #:alt-docstrings ""]
+◊function["print" #:contract (a-arrow (p-a-var-type "val" "a") "a") #:return "a" #:alt-docstrings ""]
 
 Displays the provided value after first calling ◊pyret-id["to-repr"] on it,
 then returns the value.
 
-◊function["torepr" #:contract (a-arrow A S) #:alt-docstrings ""]
-◊function["to-repr" #:contract (a-arrow A S) #:alt-docstrings ""]
+◊function["torepr" #:contract (a-arrow (p-a-var-type "val" A) S) #:alt-docstrings ""]
+◊function["to-repr" #:contract (a-arrow (p-a-var-type "val" A) S) #:alt-docstrings ""]
 
 Creates a string representation of the value that resembles an expression that
 could be used to construct it.
@@ -33,8 +33,8 @@ check:
 end
 }
 
-◊function["tostring" #:contract (a-arrow A S) #:alt-docstrings ""]
-◊function["to-string" #:contract (a-arrow A S) #:alt-docstrings ""]
+◊function["tostring" #:contract (a-arrow (p-a-var-type "val" A) S) #:alt-docstrings ""]
+◊function["to-string" #:contract (a-arrow (p-a-var-type "val" A) S) #:alt-docstrings ""]
 
 Creates a string representation of the value for display that is
 value-dependent in some cases, such as error messages.  For built-in types
@@ -48,14 +48,14 @@ check:
 end
 }
 
-◊function["raise" #:contract (a-arrow A No) #:alt-docstrings ""]
+◊function["raise" #:contract (a-arrow (p-a-var-type "val" A) No) #:alt-docstrings ""]
 
 Raises the value as an error.  This usually stops the program and reports the
 raised value, but errors can be caught and checked in tests by
 ◊pyret-id["raises" "testing"] and by ◊seclink["testing-blocks"]{◊pyret{check:}
 blocks}.
 
-◊(image "src/trove/raise.png")
+◊(image "raise.png")
 
 
 ◊section{Built-in Types}
@@ -124,7 +124,7 @@ The type of ◊seclink["tables"].}
 A number of functions are available to tell which kind of builtin value a
 particular value is.
 
-◊function["is-boolean" #:contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean")))]
+◊function["is-boolean" #:contract (a-arrow (p-a-var-type "val" A) (a-id "Boolean" (xref "<global>" "Boolean")))]
 
 Returns ◊pyret{true} if the provided argument is a ◊pyret{Boolean},
  ◊pyret{false} if not.
@@ -137,7 +137,7 @@ check:
 end
 }
 
-◊function["is-number" #:contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean")))]
+◊function["is-number" #:contract (a-arrow (p-a-var-type "val" A) (a-id "Boolean" (xref "<global>" "Boolean")))]
 
 Returns ◊pyret{true} if the provided argument is a ◊pyret{Number},
  ◊pyret{false} if not.
@@ -157,8 +157,8 @@ check:
   is-number("4") is false
 end
 }
-  
-◊function["is-string" #:contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean")))]
+
+◊function["is-string" #:contract (a-arrow (p-a-var-type "val" A) (a-id "Boolean" (xref "<global>" "Boolean")))]
 
 Returns ◊pyret{true} if the provided argument is a ◊pyret{String},
  ◊pyret{false} if not.
@@ -182,8 +182,8 @@ check:
             string```) is true
 end
 }
-  
-◊function["is-raw-array" #:contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean")))]
+
+◊function["is-raw-array" #:contract (a-arrow (p-a-var-type "val" A) (a-id "Boolean" (xref "<global>" "Boolean")))]
 
 Returns ◊pyret{true} if the provided argument is a ◊pyret{RawArray},
  ◊pyret{false} if not.
@@ -194,7 +194,7 @@ check:
 end
 }
 
-◊function["is-nothing" #:contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean")))]
+◊function["is-nothing" #:contract (a-arrow (p-a-var-type "val" A) (a-id "Boolean" (xref "<global>" "Boolean")))]
 
 Returns ◊pyret{true} if the provided argument is a ◊pyret{Nothing},
  ◊pyret{false} if not.
@@ -208,7 +208,7 @@ check:
 end
 }
 
-◊function["is-function" #:contract (a-arrow "Any" (a-id "Function" (xref "<global>" "Boolean")))]
+◊function["is-function" #:contract (a-arrow (p-a-var-type "val" A) (a-id "Function" (xref "<global>" "Boolean")))]
 
 Returns ◊pyret{true} if the provided argument is a ◊pyret{Function},
  ◊pyret{false} if not.
@@ -223,7 +223,7 @@ check:
 end
 }
 
-◊function["is-object" #:contract (a-arrow "Any" (a-id "Boolean" (xref "<global>" "Boolean")))]
+◊function["is-object" #:contract (a-arrow (p-a-var-type "val" A) (a-id "Boolean" (xref "<global>" "Boolean")))]
 
 Returns ◊pyret{true} if the provided argument is a ◊pyret{Object},
  ◊pyret{false} if not.

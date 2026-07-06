@@ -8,9 +8,8 @@
 
 
 
-
-◊(define (list-method name)
-  (method-doc "List" #f name #:alt-docstrings ""))
+◊(define (list-method name #:contract [contract #f])
+  (method-doc "List" #f name #:contract contract #:alt-docstrings ""))
 
 ◊docmodule["lists"]{
   ◊ignore[(list)]
@@ -26,9 +25,9 @@
   ◊constructor-doc["List" "link" (list `("first" ("type" "normal") ("contract" ,(a-id "a"))) `("rest" ("type" "normal") ("contract" ,(L-of "a")))) (L-of "a")]{
   }
 
-  ◊function["is-empty" #:alt-docstrings ""]
+  ◊function["is-empty" #:contract (a-ftype (a-var-type "val" A) B)]
 
-  ◊function["is-link" #:alt-docstrings ""]
+  ◊function["is-link" #:contract (a-ftype (a-var-type "val" A) B)]
 
 A ◊pyret{List} is an immutable, fixed-length collection indexed by
 non-negative integers.
@@ -77,7 +76,7 @@ end
 
 ◊section{List Creation Functions}
 
-◊collection-doc["list" #:contract `(a-arrow ("elt" "a") ,(L-of "a"))]
+◊collection-doc["list" #:fields (list (a-var-type "elt" "a")) #:return (L-of "a")]
 
 ◊margin-note{This illustrates the underlying structure created when
 you define a ◊pyret{List} with ◊pyret{[list: ...]}}
@@ -111,9 +110,9 @@ end
 }
 
 ◊function["build-list"
-  #:contract (a-arrow (a-arrow N "a") N (L-of "a"))
-  #:args (list (list "f" #f) (list "size" #f))
-  #:return (L-of "a")
+  #:contract (a-ftype (a-var-type "f" (a-ftype N "a"))
+                      (a-var-type "size" N)
+                      (L-of "a") )
 ]
 
 Constructs a list of length ◊pyret{size}, and fills it with the result of
@@ -150,7 +149,7 @@ end
 
 These methods are available on all ◊pyret{List}s whether empty or a link.
 
-◊list-method["length"]
+◊list-method["length" #:contract (a-ftype N)]
 
 Returns the number of elements in the ◊pyret{List}.
 
@@ -164,7 +163,9 @@ check:
 end
 }
 
-◊list-method["map"]
+◊list-method["map"
+  #:contract (a-ftype (a-var-type "f" (p-a-ftype "a" "b")) (L-of "b")) ]
+
 
 Applies function ◊pyret{f} to each element of the list from left to right, and
 constructs a new ◊pyret{List} out of the return values in the corresponding order.
@@ -183,7 +184,9 @@ check:
 end
 }
 
-◊list-method["each"]
+◊list-method["each"
+ #:contract (a-ftype (a-var-type "f" (p-a-ftype "a" No)) No)
+]
 
 Applies ◊pyret{f} to each element of the ◊pyret{List} from left to right, and
 returns ◊pyret{nothing}.  Because it returns ◊pyret{nothing},
@@ -200,7 +203,9 @@ check:
 end
 }
 
-◊list-method["filter"]
+◊list-method["filter"
+  #:contract (a-ftype (a-var-type "f" (p-a-ftype "a" B)) (L-of "a"))
+]
 
 Applies function ◊pyret{f} to each element of ◊pyret{List} from left to right,
 constructing a new ◊pyret{List} out of the elements for which ◊pyret{f}
@@ -222,7 +227,8 @@ check:
 end
 }
 
-◊list-method["push"]
+◊list-method["push"
+  #:contract (a-ftype (a-var-type "elt" "a") (L-of "a"))]
 
 Returns ◊tt{link(elt, self)}.
 
@@ -247,7 +253,13 @@ end
 }
   
 
-◊list-method["split-at"]
+
+◊list-method["split-at"
+  #:contract (a-ftype (a-var-type "n" N)
+              (a-tuple
+                (a-var-type "prefix" (L-of "a"))
+                (a-var-type "suffix" (L-of "a"))))
+]
 Produces a record containing two ◊pyret{List}s, consisting of the items before
 and the items at-or-after the
 splitting index of the current ◊pyret{List}.  The index is 0-based, so
@@ -271,7 +283,8 @@ check:
 end
 }
 
-◊list-method["take"]
+◊list-method["take"
+ #:contract (a-ftype (a-var-type "n" N) (L-of "a"))]
 Given a length ◊tt{n}, returns a new ◊pyret{List} containing the first
 ◊tt{n} items of the ◊pyret{List}.
 
@@ -286,7 +299,9 @@ check:
 end
 }
 
-◊list-method["drop"]
+◊list-method["drop"
+ #:contract (a-ftype (a-var-type "n" N) (L-of "a"))]
+]
 Given a length ◊tt{n}, returns a ◊pyret{List} containing all but the first ◊tt{n} items of the ◊pyret{List}.
 
 ◊examples[#:show-try-it #t]{
@@ -297,7 +312,9 @@ check:
 end
 }
 
-◊list-method["get"]
+◊list-method["get"
+  #:contract (a-ftype (a-var-type "n" N) "a")
+]
 Returns the ◊tt{n}th element of the given ◊pyret{List}.
 
 Using an index too large, negative, or not a whole number raises an error.
@@ -314,7 +331,9 @@ check:
 end
 }
 
-◊list-method["set"]
+◊list-method["set"
+  #:contract (a-ftype (a-var-type "n" N) (a-var-type "e" "a") (L-of "a"))
+]
 Returns a new ◊pyret{List} with the same values as the given ◊pyret{List} but with the ◊tt{n}th element set to the
 given value, or raises an error if ◊tt{n} is out of range.
 
@@ -327,7 +346,11 @@ check:
 end
 }
 
-◊list-method["foldl"]
+◊list-method["foldl"
+  #:contract (a-ftype (a-var-type "f" (p-a-ftype "a" "Base" "Base"))
+                      (a-var-type "base" "Base")
+                      "Base")
+]
 
 Computes ◊pyret{f(last-elt, ... f(second-elt, f(first-elt, base))...)}.  For
 ◊pyret-id{empty}, returns ◊pyret{base}.
@@ -350,7 +373,11 @@ check:
 end
 }
 
-◊list-method["foldr"]
+◊list-method["foldr"
+  #:contract (a-ftype (a-var-type "f" (p-a-ftype "a" "Base" "Base"))
+                      (a-var-type "base" "Base")
+                      "Base")
+]
 
 Computes ◊pyret{f(first-elt, f(second-elt, ... f(last-elt, base)))}.  For
 ◊pyret-id{empty}, returns ◊pyret{base}. 
@@ -373,7 +400,8 @@ check:
 end
 }
 
-◊list-method["member"]
+◊list-method["member"
+  #:contract (a-ftype (a-var-type "elt" "a") B)]
 ◊margin-note{Passing a ◊pyret{Roughnum} as an argument will raise
 an error.}
 Returns true if the current ◊pyret{List} contains the given value, as compared
@@ -397,7 +425,9 @@ check:
 end
 }
 
-◊list-method["append"]
+◊list-method["append"
+  #:contract (a-ftype (a-var-type "other" (L-of "a")) (L-of "a"))
+]
 Produces a new ◊pyret{List} with all the elements of the current ◊pyret{List},
 followed by all the elements of the ◊tt{other} ◊pyret{List}.
 
@@ -411,7 +441,9 @@ check:
 end
 }
 
-◊list-method["last"]
+◊list-method["last"
+  #:contract (a-ftype "a")
+]
 Returns the last item of the ◊pyret{List}.
 ◊examples[#:show-try-it #t]{
 import lists as L
@@ -422,7 +454,9 @@ check:
 end
 }
 
-◊list-method["reverse"]
+◊list-method["reverse"
+  #:contract (a-ftype (L-of "a"))
+]
 Produces a new ◊pyret{List} with the items of the original ◊pyret{List} in reversed order.
 ◊examples[#:show-try-it #t]{
 import lists as L
@@ -433,7 +467,9 @@ check:
 end
 }
 
-◊list-method["sort"]
+◊list-method["sort"
+  #:contract (a-ftype (L-of "a"))
+]
 Produces a new ◊pyret{List} whose contents are the same as those of the
 current ◊pyret{List}, sorted by ◊pyret-id["<" "equality"] and
 ◊pyret-id["==" "equality"].  This requires that
@@ -451,7 +487,11 @@ check:
 end
 }
 
-◊list-method["sort-by"]
+◊list-method["sort-by"
+  #:contract (a-ftype (a-var-type "cmp" (a-ftype "a" "a" B))
+                      (a-var-type "eq" (a-ftype "a" "a" B))
+                      (L-of "a"))
+]
 Like ◊pyret-id{sort}, but the comparison and equality operators can be
 specified.  This allows for sorting ◊pyret{List}s whose contents are not
 comparable by ◊pyret{<}, or sorting by custom comparisons, for example,
@@ -472,7 +512,9 @@ check:
 end
 }
 
-◊list-method["join-str"]
+◊list-method["join-str"
+#:contract (a-ftype (a-var-type "sep" S) S)
+]
 Combines the values of the current ◊pyret{List} by converting them to strings
 with ◊pyret{tostring} and joining them with the given separator ◊pyret{sep}.
 ◊examples[#:show-try-it #t]{
@@ -486,7 +528,12 @@ end
 }
 
 
-◊list-method["join-str-last"]
+◊list-method["join-str-last"
+  #:contract (a-ftype (a-var-type "sep" S)
+                       (a-var-type "last-sep" S)
+                       S)
+
+]
 Combines the values of the current ◊pyret{List} by converting them to strings
 with ◊pyret{tostring} and joining them with the given separator ◊pyret{sep}.
 If the list has more than one element, the function will use ◊pyret{last-sep}
@@ -510,9 +557,7 @@ end
   ◊pyret{import}ed, as indicated in the examples.
 
   ◊function["length"
-    #:contract (a-arrow (L-of "a") N)
-    #:args '(("lst" #f))
-    #:return N
+    #:contract (a-ftype (a-var-type "lst" (L-of "a")) N)
   ]{
 
   Returns the number of elements in the ◊pyret{List}.
@@ -532,6 +577,8 @@ end
   
   ◊function[
     "get"
+    #:contract (a-ftype (a-var-type "lst" (L-of "a"))
+                        (a-var-type "n" N) "a")
   ]
 
 Equivalent to ◊pyret{list}◊a-ref["get"]◊pyret{(n)}.
@@ -550,6 +597,9 @@ end
 
   ◊function[
     "set"
+    #:contract (a-ftype (a-var-type "lst" (L-of "a"))
+    (a-var-type "n" N) (a-var-type "v" "a")
+    (L-of "a"))
     #:examples
     ◊examples{
 import lists as L
@@ -563,7 +613,7 @@ end
   
 
 ◊function["sort"
-  #:contract (a-arrow (L-of "A") (L-of "A"))
+  #:contract (a-ftype (L-of "A") (L-of "A"))
   #:args '(("lst" #f))
   #:return (L-of "A")]{
 Produces a new ◊pyret{List} whose contents are the same as those of the
@@ -582,7 +632,7 @@ end
 }
 
 ◊function["sort-by"
-  #:contract (a-arrow (L-of "A") (a-arrow "A" "A" (a-id "Boolean" (xref "<global>" "Boolean"))) (a-arrow "A" "A" (a-id "Boolean" (xref "<global>" "Boolean"))) (L-of "A"))
+  #:contract (a-ftype (L-of "A") (a-ftype "A" "A" (a-id "Boolean" (xref "<global>" "Boolean"))) (a-ftype "A" "A" (a-id "Boolean" (xref "<global>" "Boolean"))) (L-of "A"))
   #:args '(("lst" #f) ("cmp" #f) ("eq" #f))
   #:return (L-of "A")]{
 Like ◊pyret-id{sort}, but the comparison and equality operators can be
@@ -606,9 +656,7 @@ end
 }
 
 ◊function["join-str"
-          #:contract (a-arrow (L-of "A") S S)
-          #:args '(("lst" #f) ("sep" #f))
-          #:return S
+          #:contract (a-ftype (a-var-type "sep" S) S)
 #:examples
 ◊examples{
 import lists as L
@@ -625,6 +673,7 @@ end
 
   ◊function[
     "range"
+    #:contract (a-ftype (a-var-type "start" N) (a-var-type "stop" N) (L-of N))
     #:examples
     ◊examples{
     check:
@@ -650,6 +699,7 @@ end
   }
   ◊function[
     "repeat"
+    #:contract (a-ftype (a-var-type "n" N) (a-var-type "e" "a") (L-of "a"))
     #:examples
     ◊examples{
 import lists as L
@@ -663,9 +713,7 @@ end
     }
   ]
   ◊function["distinct"
-    #:contract (a-arrow (L-of "a") (L-of "a"))
-    #:args '(("lst" #f))
-    #:return (L-of "a")
+    #:contract (a-ftype (a-var-type "lst" (L-of "a")) (L-of "a"))
   ]{
 
   Given a ◊pyret{List}, returns a new ◊pyret{List} containing only one copy of each element
@@ -692,6 +740,9 @@ end
 
   ◊function[
     "filter"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "a" B))
+    (a-var-type "lst" (L-of "a")) (L-of "a"))
     #:examples
     ◊examples{
 import lists as L
@@ -709,6 +760,11 @@ end
   ]
   ◊function[
     "partition"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "a" B))
+    (a-var-type "lst" (L-of "a"))
+    (a-tuple (a-var-type "is-true" (L-of "a"))
+      (a-var-type "is-false" (L-of "a"))))
     #:examples
     ◊examples{
 import lists as L
@@ -724,7 +780,10 @@ end
     }
   ]
 ◊function[
-    "find"]
+    "find"
+    #:contract (a-ftype (a-var-type "f" (p-a-ftype "a" B))
+    (a-var-type "lst" (L-of "a"))
+    (O-of "a"))]
 ◊examples[#:show-try-it #t]{
 import lists as L
 import option as O
@@ -740,6 +799,11 @@ end
 
   ◊function[
     "split-at"
+    #:contract (a-ftype
+    (a-var-type "n" N)
+    (a-var-type "lst" (L-of "a"))
+    (a-tuple (a-var-type "prefix" (L-of "a"))
+      (a-var-type "suffix" (L-of "a"))))
     #:examples
     ◊examples{
 import lists as L
@@ -759,7 +823,7 @@ end
     }
   ]
   ◊function["last"
-    #:contract (a-arrow (L-of "A") "A")
+    #:contract (a-ftype (a-var-type "lst" (L-of "A")) "A")
     #:return "A"
     #:args '(("lst" #f))]{
 
@@ -779,7 +843,7 @@ end
   }
 
 ◊function["push"
-#:contract (a-arrow (L-of "A") "A" (L-of "A"))
+#:contract (a-ftype (a-var-type "l" (L-of "A")) (a-var-type "elt" "A") (L-of "A"))
 #:args '(("l" #f) ("elt" #f))
 #:return (L-of "A")]{
 Constructs a list with the given element prepended to the front of the given
@@ -795,7 +859,7 @@ end
 }
 
   ◊function["append"
-    #:contract (a-arrow (L-of "A") (L-of "A") (L-of "A"))
+    #:contract (a-ftype (a-var-type "front" (L-of "A")) (a-var-type "back" (L-of "A")) (L-of "A"))
     #:return (L-of "A")
     #:args '(("front" #f) ("back" #f))]{
 
@@ -829,6 +893,10 @@ end
 
   ◊function[
     "any"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "a" B))
+    (a-var-type "lst" (L-of "a"))
+    B)
     #:examples
     ◊examples{
 import lists as L
@@ -843,6 +911,10 @@ end
   ]
   ◊function[
     "all"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "a" B))
+    (a-var-type "lst" (L-of "a"))
+    B)
     #:examples
     ◊examples{
 import lists as L
@@ -856,7 +928,12 @@ end
     }
   ]
   ◊function[
-    "all2"]
+    "all2"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "a" "b" B))
+    (a-var-type "lst1" (L-of "b"))
+    (a-var-type "lst2" (L-of "b"))
+    B)]
 
 When the ◊pyret{List}s are of different length, the function is only
 called when both ◊pyret{List}s have a value at a given index.  In other words,
@@ -878,7 +955,11 @@ end
     }
   
   ◊function[
-    "map"]
+    "map"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "a" "b"))
+    (a-var-type "lst" (L-of "a"))
+    (L-of "b"))]
 
 
 ◊examples[#:show-try-it #t]{
@@ -890,7 +971,12 @@ check:
 end
 }
   ◊function[
-    "map2"]
+    "map2"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "a" "b" "c"))
+    (a-var-type "l1" (L-of "a"))
+    (a-var-type "l2" (L-of "b"))
+    (L-of "c"))]
 
 When the ◊pyret{List}s are of different length, the function is only
 called when both ◊pyret{List}s have a value at a given index.  In other words,
@@ -911,7 +997,13 @@ check:
 end
     }
  
-  ◊function["map3"]
+  ◊function["map3"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "a" "b" "c" "d"))
+    (a-var-type "l1" (L-of "a"))
+    (a-var-type "l2" (L-of "b"))
+    (a-var-type "l3" (L-of "c"))
+    (L-of "d"))]
 
 When the ◊pyret{List}s are of different length, the function is only
 called when all ◊pyret{List}s have a value at a given index.  In other words,
@@ -930,7 +1022,14 @@ check:
   [L.list: "Martin Luther King", "Mohandas Karamchand Gandhi"]
 end
 }
-  ◊function["map4"]
+  ◊function["map4"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "a" "b" "c" "d" "e"))
+    (a-var-type "l1" (L-of "a"))
+    (a-var-type "l2" (L-of "b"))
+    (a-var-type "l3" (L-of "c"))
+    (a-var-type "l4" (L-of "d"))
+    (L-of "e"))]
 
 When the ◊pyret{List}s are of different length, the function is only
 called when all ◊pyret{List}s have a value at a given index.  In other words,
@@ -949,7 +1048,13 @@ check:
   [L.list: "Reverend Martin Luther King", "Mahātmā Mohandas Karamchand Gandhi"]
 end
 }
-  ◊function["map_n"]
+  ◊function["map_n"
+    #:contract
+    (a-ftype
+      (a-var-type "f" (a-ftype N "a" "b"))
+      (a-var-type "n" N)
+      (a-var-type "lst" (L-of "a"))
+      (L-of "b"))]
 
   Like map, but also includes a numeric argument for the position in the ◊pyret{List}
   that is currently being mapped over.
@@ -966,7 +1071,14 @@ check:
 end
   }
 
-  ◊function["map2_n"]
+  ◊function["map2_n"
+    #:contract
+    (a-ftype
+      (a-var-type "f" (a-ftype N "a" "b" "c"))
+      (a-var-type "n" N)
+      (a-var-type "lst" (L-of "a"))
+      (a-var-type "lst" (L-of "b"))
+      (L-of "c"))]
 
 Like ◊pyret-id{map_n}, but for two-argument functions.
 
@@ -985,7 +1097,15 @@ end
  }
 
 
-  ◊function["map3_n"]
+  ◊function["map3_n"
+    #:contract
+    (a-ftype
+      (a-var-type "f" (a-ftype N "a" "b" "c" "d"))
+      (a-var-type "n" N)
+      (a-var-type "lst" (L-of "a"))
+      (a-var-type "lst" (L-of "b"))
+      (a-var-type "lst" (L-of "c"))
+      (L-of "d"))]
 
 When the ◊pyret{List}s are of different length, the function is only
 called when all ◊pyret{List}s have a value at a given index.  In other words,
@@ -1004,7 +1124,16 @@ check:
     [L.list: 'c', 'c']) is [L.list: 'abc', 'aabbcc']
 end
 }
-  ◊function["map4_n"]
+  ◊function["map4_n"
+    #:contract
+    (a-ftype
+      (a-var-type "f" (a-ftype N "a" "b" "c" "d" "e"))
+      (a-var-type "n" N)
+      (a-var-type "lst" (L-of "a"))
+      (a-var-type "lst" (L-of "b"))
+      (a-var-type "lst" (L-of "c"))
+      (a-var-type "lst" (L-of "d"))
+      (L-of "e"))]
 
 ◊examples[#:show-try-it #t]{
 import lists as L
@@ -1023,6 +1152,10 @@ end
 
   ◊function[
     "each"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "a" No))
+    (a-var-type "lst" (L-of "a"))
+    No)
     #:examples
     ◊examples{
 import lists as L
@@ -1045,7 +1178,12 @@ end
     }
   ]
 
-  ◊function["each2"]
+  ◊function["each2"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "a" "b" No))
+    (a-var-type "lst" (L-of "a"))
+    (a-var-type "lst" (L-of "b"))
+    No)]
 ◊examples[#:show-try-it #t]{
 import lists as L
 
@@ -1057,7 +1195,13 @@ check:
 end
 }
   
-  ◊function["each3"]
+  ◊function["each3"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "a" "b" "c" No))
+    (a-var-type "lst" (L-of "a"))
+    (a-var-type "lst" (L-of "b"))
+    (a-var-type "lst" (L-of "c"))
+    No)]
 ◊examples[#:show-try-it #t]{
 import lists as L
 
@@ -1068,7 +1212,14 @@ check:
   counter is 222
 end
 }
-  ◊function["each4"]
+  ◊function["each4"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "a" "b" "c" "d" No))
+    (a-var-type "lst" (L-of "a"))
+    (a-var-type "lst" (L-of "b"))
+    (a-var-type "lst" (L-of "c"))
+    (a-var-type "lst" (L-of "d"))
+    No)]
 ◊examples[#:show-try-it #t]{
 import lists as L
 
@@ -1083,7 +1234,13 @@ check:
 end
 }
 
-  ◊function["each_n"]
+  ◊function["each_n"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype N "a" No))
+    (a-var-type "num" N)
+    (a-var-type "lst" (L-of "a"))
+    No
+  )]
 
 Like ◊pyret-id{each}, but also includes a numeric argument for
 the current index in the ◊pyret{List}.
@@ -1100,7 +1257,14 @@ check:
 end
 }
 
-  ◊function["each2_n"]
+  ◊function["each2_n"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype N "a" "b" No))
+    (a-var-type "num" N)
+    (a-var-type "lst1" (L-of "a"))
+    (a-var-type "lst2" (L-of "b"))
+    No
+  )]
 ◊examples[#:show-try-it #t]{
 import lists as L
 
@@ -1114,7 +1278,15 @@ check:
 end
 }
 
-  ◊function["each3_n"]
+  ◊function["each3_n"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype N "a" "b" "c" No))
+    (a-var-type "num" N)
+    (a-var-type "lst1" (L-of "a"))
+    (a-var-type "lst2" (L-of "b"))
+    (a-var-type "lst3" (L-of "c"))
+    No
+  )]
 ◊examples[#:show-try-it #t]{
 import lists as L
 
@@ -1128,7 +1300,16 @@ check:
   counter is 666
 end
 }
-  ◊function["each4_n"]
+  ◊function["each4_n"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype N "a" "b" "c" "d" No))
+    (a-var-type "num" N)
+    (a-var-type "lst1" (L-of "a"))
+    (a-var-type "lst2" (L-of "b"))
+    (a-var-type "lst3" (L-of "c"))
+    (a-var-type "lst4" (L-of "d"))
+    No
+  )]
 ◊examples[#:show-try-it #t]{
 import lists as L
 
@@ -1143,7 +1324,13 @@ check:
   counter is 6666
 end
 }
-  ◊function["fold-while"]
+  ◊function["fold-while"
+    #:contract (a-ftype
+    (a-var-type "f" (a-ftype "Base" "Elt" (E-of "Base" "Base")))
+    (a-var-type "base" "Base")
+    (a-var-type "lst" (L-of "Elt"))
+    "Base"
+  )]
 
 ◊examples[#:show-try-it #t]{
 import lists as L
@@ -1164,7 +1351,11 @@ end
 
   ◊function[
     "fold"
-
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "Base" "Elt" "Base"))
+    (a-var-type "base" "Base")
+    (a-var-type "lst" (L-of "Elt"))
+    "Base")
   ]{
 
 ◊pyret{fold} computes ◊pyret{f(... f(f(base, first-elt), second-elt) ..., last-elt)}.  For
@@ -1188,9 +1379,21 @@ check:
   L.fold(combine, "END", L.empty) is "END"
 end
  }
-  ◊function["foldl"]
+  ◊function["foldl"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "Base" "Elt" "Base"))
+    (a-var-type "base" "Base")
+    (a-var-type "lst" (L-of "Elt"))
+    "Base")
+  ]
   Another name for ◊pyret-id["fold"].
-  ◊function["foldr"]
+  ◊function["foldr"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "Base" "Elt" "Base"))
+    (a-var-type "base" "Base")
+    (a-var-type "lst" (L-of "Elt"))
+    "Base")
+  ]
 Computes ◊pyret{f(f(... f(base, last-elt) ..., second-elt), first-elt)}.  For
 ◊pyret-id{empty}, returns ◊pyret{base}.  In other words, it uses
 ◊pyret{f} to combine ◊pyret{base} with each item in the ◊pyret{List} starting from the right.
@@ -1214,7 +1417,14 @@ check:
 end
 }
 
-  ◊function["fold2"]
+  ◊function["fold2"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "Base" "Elt1" "Elt2" "Base"))
+    (a-var-type "base" "Base")
+    (a-var-type "l1" (L-of "Elt1"))
+    (a-var-type "l2" (L-of "Elt2"))
+    "Base")
+]
 
 ◊examples[#:show-try-it #t]{
 import lists as L
@@ -1228,7 +1438,15 @@ check:
 end
 }
 
-  ◊function["fold3"]
+  ◊function["fold3"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "Base" "Elt1" "Elt2" "Elt3" "Base"))
+    (a-var-type "base" "Base")
+    (a-var-type "l1" (L-of "Elt1"))
+    (a-var-type "l2" (L-of "Elt2"))
+    (a-var-type "l3" (L-of "Elt3"))
+    "Base")
+]
 ◊examples[#:show-try-it #t]{
 import lists as L
 
@@ -1243,7 +1461,16 @@ end
 }
 
 
-  ◊function["fold4"]
+  ◊function["fold4"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype "Base" "Elt1" "Elt2" "Elt3" "Elt4" "Base"))
+    (a-var-type "base" "Base")
+    (a-var-type "l1" (L-of "Elt1"))
+    (a-var-type "l2" (L-of "Elt2"))
+    (a-var-type "l3" (L-of "Elt3"))
+    (a-var-type "l4" (L-of "Elt4"))
+    "Base")
+]
 ◊examples[#:show-try-it #t]{
 import lists as L
 
@@ -1261,6 +1488,12 @@ end
 
   ◊function[
     "fold_n"
+    #:contract (a-ftype
+    (a-var-type "f" (p-a-ftype N "Base" "Elt" "Base"))
+        (a-var-type "num" N)
+        (a-var-type "base" "Base")
+        (a-var-type "lst" (L-of "Elt"))
+    "Base")
     #:examples
     ◊examples{
 import lists as L
@@ -1290,11 +1523,30 @@ end
 
   ◊function[
     "member"
+    #:contract (a-ftype
+    (a-var-type "lst" (L-of "a"))
+    (a-var-type "elt" "a")
+    B)
   ]
 
-◊function["member-always"]
-◊function["member-identical"]
-◊function["member-now"]
+◊function["member-always"
+    #:contract (a-ftype
+    (a-var-type "lst" (L-of "a"))
+    (a-var-type "elt" "a")
+    B)
+]
+◊function["member-identical"
+    #:contract (a-ftype
+    (a-var-type "lst" (L-of "a"))
+    (a-var-type "elt" "a")
+    B)
+]
+◊function["member-now"
+    #:contract (a-ftype
+    (a-var-type "lst" (L-of "a"))
+    (a-var-type "elt" "a")
+    B)
+]
 
 ◊pyret{member}
 returns ◊pyret{true} if ◊pyret{List} ◊tt{lst} contains the element ◊tt{elt}, as compared
@@ -1327,10 +1579,34 @@ check:
 end
 }
 
-◊function["member3"]
-◊function["member-always3"]
-◊function["member-identical3"]
-◊function["member-now3"]
+◊function["member3"
+#:contract (a-ftype
+(a-var-type "lst" (L-of "a"))
+(a-var-type "elt" "a")
+"EqualityResult"
+)
+]
+◊function["member-always3"
+#:contract (a-ftype
+(a-var-type "lst" (L-of "a"))
+(a-var-type "elt" "a")
+"EqualityResult"
+)
+]
+◊function["member-identical3"
+#:contract (a-ftype
+(a-var-type "lst" (L-of "a"))
+(a-var-type "elt" "a")
+"EqualityResult"
+)
+]
+◊function["member-now3"
+#:contract (a-ftype
+(a-var-type "lst" (L-of "a"))
+(a-var-type "elt" "a")
+"EqualityResult"
+)
+]
 
 These functions are analogous to ◊pyret-id{member}, but use
 ◊pyret-id["equal-always3" "equality"],
@@ -1350,6 +1626,12 @@ end
 
 ◊function[
     "member-with"
+    #:contract (a-ftype
+    (a-var-type "lst" (L-of "a"))
+    (a-var-type "elt" "a")
+    (a-var-type "eq" (p-a-ftype "a" "a" "EqualityResult"))
+    "EqualityResult"
+    )
   ]
 
 ◊pyret{member-with} is ◊pyret{member} with a custom equality function.
@@ -1381,6 +1663,10 @@ end
 
   ◊function[
     "reverse"
+    #:contract (a-ftype
+    (a-var-type "lst" (L-of "a"))
+    (L-of "a")
+    )
   ]
 
 Returns a new ◊pyret{List} with all the elements of the original ◊pyret{List} in
@@ -1395,7 +1681,13 @@ check:
 end
 }
 
-◊function["remove"]
+◊function["remove"
+#:contract (a-ftype
+(a-var-type "lst" (L-of "a"))
+(a-var-type "elt" "a")
+(L-of "a")
+)
+]
 Returns a new ◊pyret{List} with all the elements of the original that are not
 equal to the specified element (using ◊pyret-id["==" "equality"] as the comparison).
 
@@ -1411,6 +1703,9 @@ end
 
   ◊function[
     "shuffle"
+    #:contract (a-ftype
+    (a-var-type "lst" (L-of "a"))
+    (L-of "a"))
   ]
 
   Returns a new ◊pyret{List} with all the elements of the original ◊pyret{List} in random

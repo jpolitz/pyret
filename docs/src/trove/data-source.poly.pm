@@ -43,11 +43,11 @@ these two types to load tables from .csv files or other data sources.
 }
 ◊constructor-doc["CellContent" "c-custom" (list `("datum" ("type" "normal") ("contract" ,(a-id "A")))) (CC-of "A")]{
 }
-  ◊function["is-c-empty" #:alt-docstrings ""]
-  ◊function["is-c-str" #:alt-docstrings ""]
-  ◊function["is-c-num" #:alt-docstrings ""]
-  ◊function["is-c-bool" #:alt-docstrings ""]
-  ◊function["is-c-custom" #:alt-docstrings ""]
+  ◊function["is-c-empty" #:contract (a-ftype (a-var-type "val" A) B) #:alt-docstrings ""]
+  ◊function["is-c-str" #:contract (a-ftype (a-var-type "val" A) B) #:alt-docstrings ""]
+  ◊function["is-c-num" #:contract (a-ftype (a-var-type "val" A) B) #:alt-docstrings ""]
+  ◊function["is-c-bool" #:contract (a-ftype (a-var-type "val" A) B) #:alt-docstrings ""]
+  ◊function["is-c-custom" #:contract (a-ftype (a-var-type "val" A) B) #:alt-docstrings ""]
 
 This datatype describes Pyret's 
 }
@@ -66,7 +66,7 @@ contents cannot be parsed, the sanitizer may raise an error explaining the probl
 
 ◊subsection{Pre-defined sanitizers}
 ◊function["string-sanitizer"
-  #:contract (a-arrow (CC-of "A") S N S)
+  #:contract (a-ftype (a-var-type "x" (CC-of "A")) (a-var-type "col" S) (a-var-type "row"  N) S)
   #:args `(("x" "") ("col" "") ("row" ""))
   #:return S
 ]
@@ -75,7 +75,7 @@ This sanitizer tries to convert ◊pyret-id{CellContent}s containing anything to
 a ◊g-id{String}, by calling ◊g-id{tostring} on it.
 
 ◊function["num-sanitizer"
-  #:contract (a-arrow (CC-of "A") S N N)
+  #:contract (a-ftype (a-var-type "x" (CC-of "A")) (a-var-type "col" S) (a-var-type "row"  N) S)
   #:args `(("x" "") ("col" "") ("row" ""))
   #:return N
 ]
@@ -86,7 +86,7 @@ True and false convert to 1 and 0 respectively.  Any other values are rejected,
 including blank cells.
 
 ◊function["bool-sanitizer"
-  #:contract (a-arrow (CC-of "A") S N B)
+  #:contract (a-ftype (a-var-type "x" (CC-of "A")) (a-var-type "col" S) (a-var-type "row"  N) S)
   #:args `(("x" "") ("col" "") ("row" ""))
   #:return B
 ]
@@ -98,7 +98,7 @@ and ◊pyret{"false"} convert appropriately.  Any other values are rejected,
 including blank cells.
 
 ◊function["strict-num-sanitizer"
-  #:contract (a-arrow (CC-of "A") S N N)
+  #:contract (a-ftype (a-var-type "x" (CC-of "A")) (a-var-type "col" S) (a-var-type "row"  N) S)
   #:args `(("x" "") ("col" "") ("row" ""))
   #:return N
 ]
@@ -108,7 +108,7 @@ numbers to a ◊g-id{Number}.  Strings are attempted to be parsed.  Any other
 values are rejected, including blank cells.
 
 ◊function["strings-only"
-  #:contract (a-arrow (CC-of "A") S N S)
+  #:contract (a-ftype (a-var-type "x" (CC-of "A")) (a-var-type "col" S) (a-var-type "row"  N) S)
   #:args `(("x" "") ("col" "") ("row" ""))
   #:return S
 ]
@@ -117,7 +117,7 @@ This sanitizer accepts ◊pyret-id{CellContent}s containing strings only, and
 rejects all other values, including blank cells.
 
 ◊function["booleans-only"
-  #:contract (a-arrow (CC-of "A") S N B)
+  #:contract (a-ftype (a-var-type "x" (CC-of "A")) (a-var-type "col" S) (a-var-type "row"  N) S)
   #:args `(("x" "") ("col" "") ("row" ""))
   #:return B
 ]
@@ -126,7 +126,7 @@ This sanitizer accepts ◊pyret-id{CellContent}s containing booleans only, and
 rejects all other values, including blank cells.
 
 ◊function["numbers-only"
-  #:contract (a-arrow (CC-of "A") S N N)
+  #:contract (a-ftype (a-var-type "x" (CC-of "A")) (a-var-type "col" S) (a-var-type "row"  N) S)
   #:args `(("x" "") ("col" "") ("row" ""))
   #:return N
 ]
@@ -135,7 +135,7 @@ This sanitizer accepts ◊pyret-id{CellContent}s containing numbers only, and
 rejects all other values, including blank cells.
 
 ◊function["empty-only"
-  #:contract (a-arrow (CC-of "A") S N N)
+  #:contract (a-ftype (a-var-type "x" (CC-of "A")) (a-var-type "col" S) (a-var-type "row"  N) S)
   #:args `(("x" "") ("col" "") ("row" ""))
   #:return (O-of "A")
 ]
@@ -144,7 +144,7 @@ This sanitizer accepts ◊pyret-id{CellContent}s containing blank cells only, an
 rejects all other values.
 
 ◊function["option-sanitizer"
-  #:contract (a-arrow (San-of "A") (San-of (O-of "A")))
+  #:contract (a-ftype (San-of "A") (San-of (O-of "A")))
   #:args `(("value-sanitizer" ""))
   #:return (San-of (O-of "A"))
 ]

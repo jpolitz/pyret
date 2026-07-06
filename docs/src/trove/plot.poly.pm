@@ -114,8 +114,8 @@
   causing from, for example, discontinuity of the function, or a function which oscillates infinitely.
 
   ◊function["display-multi-plot"
-    #:contract (a-arrow (L-of (in-link "Plot"))
-                        (in-link "PlotWindowOptions")
+    #:contract (a-ftype (a-var-type "lst" (L-of (in-link "Plot")))
+                        (a-var-type "options" (in-link "PlotWindowOptions"))
                         Image)
     #:args '(("lst" #f) ("options" #f))
     #:return Image
@@ -150,7 +150,7 @@
   }
 
   ◊function["display-function"
-    #:contract (a-arrow S (a-arrow N N) Image)
+    #:contract (a-ftype (a-var-type "title" S) (a-var-type "f" (a-arrow N N)) Image)
     #:args '(("title" #f) ("f" #f))
     #:return Image
   ]{
@@ -164,7 +164,7 @@
   }
 
   ◊function["display-line"
-    #:contract (a-arrow S TA Image)
+    #:contract (a-ftype (a-var-type "title" S) (a-var-type "tab" TA) Image)
     #:args '(("title" #f) ("tab" #f))
     #:return Image
   ]{
@@ -183,7 +183,7 @@
   }
 
   ◊function["display-scatter"
-    #:contract (a-arrow S TA Image)
+    #:contract (a-ftype (a-var-type "title" S) (a-var-type "tab" TA) Image)
     #:args '(("title" #f) ("tab" #f))
     #:return Image
   ]{
@@ -206,7 +206,7 @@
   ◊section{Visualization Functions}
 
   ◊function["histogram"
-    #:contract (a-arrow TA N (in-link "PlotWindowOptions") Image)
+    #:contract (a-ftype #:ml #t (a-var-type "tab" TA) (a-var-type "n" N) (a-var-type "options" (in-link "PlotWindowOptions")) Image)
     #:args '(("tab" #f) ("n" #f) ("options" #f))
     #:return Image
   ]{
@@ -229,7 +229,9 @@
   }
 
   ◊function["pie-chart"
-    #:contract (a-arrow TA (in-link "PlotWindowOptions") Image)
+    #:contract (a-ftype (a-var-type "tab" TA)
+                        (a-var-type "options" (in-link "PlotWindowOptions"))
+                        Image)
     #:args '(("tab" #f) ("options" #f))
     #:return Image
   ]{
@@ -247,7 +249,9 @@
   }
 
   ◊function["bar-chart"
-    #:contract (a-arrow TA (in-link "PlotWindowOptions") Image)
+    #:contract (a-ftype (a-var-type "tab" TA)
+                        (a-var-type "options" (in-link "PlotWindowOptions"))
+                        Image)
     #:args '(("tab" #f) ("options" #f))
     #:return Image
   ]{
@@ -268,7 +272,10 @@
   }
 
   ◊function["grouped-bar-chart"
-    #:contract (a-arrow TA (L-of S) (in-link "PlotWindowOptions") Image)
+    #:contract (a-ftype (a-var-type "tab" TA)
+                        (a-var-type "legends" (L-of S))
+                        (a-var-type "options" (in-link "PlotWindowOptions"))
+                        Image)
     #:args '(("tab" #f) ("legends" #f) ("options" #f))
     #:return Image
   ]{

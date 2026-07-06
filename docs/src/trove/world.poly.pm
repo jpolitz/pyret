@@ -29,9 +29,9 @@ move to ◊pyret{reactors} if you need their advanced features.
 ◊section{Starting a big-bang}
 
  ◊function["big-bang"
-            #:contract (a-arrow "a"
-                                (a-app L
-                                       (a-app WC "a"))
+            #:contract (a-ftype (a-var-type "init" "a")
+                                (a-var-type "handlers" (a-app L
+                                       (a-app WC "a")))
                                 "a")
             #:return "a"
             #:args (list '("init" "")
@@ -97,9 +97,8 @@ big-bang(10, on-tick(increment))
   ◊section[#:tag "functions-world"]{Functions}
 
   ◊function["on-tick"
-            #:contract (a-arrow (a-arrow "a"
-                                         "a")
-                                WC)
+            #:contract (a-ftype (a-var-type "handler" (p-a-arrow "a" "a"))
+                                (a-app WC "a"))
             #:return (a-app WC "a")
             #:args (list '("handler" ""))]{
     Consumes a function and returns a handler that, when passed to
@@ -107,10 +106,9 @@ big-bang(10, on-tick(increment))
     with the current world state.
   }
   ◊function["on-tick-n"
-            #:contract (a-arrow (a-arrow "a"
-                                         "a")
-                                N
-                                WC)
+            #:contract (a-ftype (a-var-type "handler" (p-a-arrow "a" "a"))
+                                (a-var-type "n"  N)
+                                (a-app WC "a"))
             #:return (a-app WC "a")
             #:args (list '("handler" "")
                          '("n" ""))]{
@@ -120,9 +118,9 @@ big-bang(10, on-tick(increment))
   }
   
   ◊function["to-draw"
-            #:contract (a-arrow (a-arrow "a"
-                                         (a-id "Scene" (xref "image" "Scene")))
-                                WC)
+            #:contract (a-ftype (a-var-type "drawer" (p-a-arrow "a"
+                                         (a-id "Scene" (xref "image" "Scene"))))
+                                (a-app WC "a"))
             #:return (a-app WC "a")
             #:args (list '("drawer" ""))]{
     Consumes a function and returns a handler that, when passed to
@@ -131,10 +129,9 @@ big-bang(10, on-tick(increment))
   }
 
   ◊function["on-key"
-            #:contract (a-arrow (a-arrow "a"
-                                         S
-                                         "a")
-                                WC)
+            #:contract (a-ftype (a-var-type "onKey"
+                                            (p-a-arrow "a" S "a"))
+                                (a-app WC "a"))
             #:return (a-app WC "a")
             #:args (list '("onKey" ""))]{
     Consumes a function and returns a handler that, when passed to
@@ -173,10 +170,8 @@ big-bang(10, on-tick(increment))
 
   }
   ◊function["on-mouse"
-            #:contract (a-arrow (a-arrow "a"
-                                         N N S
-                                         "a")
-                                WC)
+            #:contract (a-ftype (a-var-type "mouse-handler" (a-arrow "a" N N S "a"))
+                                (a-app WC "a"))
             #:return (a-app WC "a")
             #:args (list '("mouse-handler" ""))]{
     Consumes a function and returns a handler that, when passed to
@@ -200,8 +195,8 @@ big-bang(10, on-tick(increment))
                     " signals that the computer user has moved the mouse out of the canvas area.")]
   }
   ◊function["stop-when"
-            #:contract (a-arrow (a-arrow "a" B)
-                                WC)
+            #:contract (a-ftype (a-var-type "stopper" (p-a-arrow "a" B))
+                                (a-app WC "a"))
             #:return (a-app WC "a")
             #:args (list '("stopper" ""))]{
     Consumes a function and returns a handler that, when passed to
@@ -211,14 +206,14 @@ big-bang(10, on-tick(increment))
     function will return this last world state.
   }
   ◊function["is-world-config"
-            #:contract (a-arrow "Any" B)
+            #:contract (a-ftype (a-var-type "v" A) B)
             #:return (a-app WC "a")
             #:args (list '("v" ""))]{
     Tests if the input is of type ◊secref[(tag-name "world" "WorldConfig")].
   }
   ◊function["is-key-equal"
-            #:contract (a-arrow S
-                                S
+            #:contract (a-ftype (a-var-type "key1" S)
+                                (a-var-type "key2" S)
                                 B)
             #:return (a-app WC "a")
             #:args (list '("key1" "")

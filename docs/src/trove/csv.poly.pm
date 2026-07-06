@@ -8,8 +8,7 @@
 ◊docmodule["csv"]{
 
 ◊function["csv-table-str"
-  #:contract (a-arrow S Opts TL)
-  #:args '(("csv-str" "") ("options" ""))
+  #:contract (a-ftype (a-var-type "csv-string" S) (a-var-type "options" Opts) TL)
   #:return TL
   ]{
 
@@ -40,8 +39,7 @@ end
   }
 
 ◊function["csv-table-file"
-  #:contract (a-arrow S Opts TL)
-  #:args '(("csv-file" "") ("options" ""))
+  #:contract (a-ftype (a-var-type "csv-file" S) (a-var-type "options" Opts) TL)
   #:return TL
   ]{
 
@@ -51,8 +49,7 @@ end
   }
 
 ◊function["csv-table-url"
-  #:contract (a-arrow S Opts TL)
-  #:args '(("csv-url" "") ("options" ""))
+  #:contract (a-ftype (a-var-type "csv-file" S) (a-var-type "options" Opts) TL)
   #:return TL
   ]{
 

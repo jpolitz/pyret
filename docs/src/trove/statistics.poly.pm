@@ -26,7 +26,7 @@
   ◊section{Basic Statistical Values}
   
   ◊function["mean"
-    #:contract (a-arrow (L-of N) N)
+    #:contract (a-ftype (a-var-type "l" (L-of N)) N)
     #:args '(("l" #f))
     #:return N
   ]{
@@ -44,7 +44,7 @@
   }
   
   ◊function["median"
-    #:contract (a-arrow (L-of N) N)
+    #:contract (a-ftype (a-var-type "l" (L-of N)) N)
     #:args '(("l" #f))
     #:return N
   ]{
@@ -62,7 +62,7 @@
   }
 
   ◊function["modes"
-    #:contract (a-arrow (L-of N) (L-of N))
+    #:contract (a-ftype (a-var-type "l" (L-of N)) (L-of N))
     #:args '(("l" #f))
     #:return (L-of N)
     ]{
@@ -91,7 +91,7 @@ definition they will find in their textbooks.
   }
 
   ◊function["has-mode"
-    #:contract (a-arrow (L-of N) B)
+    #:contract (a-ftype (a-var-type "l" (L-of N)) B)
     #:args '(("l" #f))
     #:return B
     ]{
@@ -108,7 +108,7 @@ definition they will find in their textbooks.
   }
 
   ◊function["mode-smallest"
-    #:contract (a-arrow (L-of N) N)
+    #:contract (a-ftype (a-var-type "l" (L-of N)) N)
     #:args '(("l" #f))
     #:return N
     ]{
@@ -126,7 +126,7 @@ definition they will find in their textbooks.
   }
 
   ◊function["mode-largest"
-    #:contract (a-arrow (L-of N) N)
+    #:contract (a-ftype (a-var-type "l" (L-of N)) N)
     #:args '(("l" #f))
     #:return N
     ]{
@@ -144,7 +144,7 @@ definition they will find in their textbooks.
   }
 
   ◊function["mode-any"
-    #:contract (a-arrow (L-of N) N)
+    #:contract (a-ftype (a-var-type "l" (L-of N)) N)
     #:args '(("l" #f))
     #:return N
     ]{
@@ -162,7 +162,7 @@ definition they will find in their textbooks.
   }
 
   ◊function["stdev"
-    #:contract (a-arrow (L-of N) N)
+    #:contract (a-ftype (a-var-type "l" (L-of N)) N)
     #:args '(("l" #f))
     #:return N
   ]{
@@ -179,7 +179,7 @@ definition they will find in their textbooks.
   }
 
   ◊function["stdev-sample"
-    #:contract (a-arrow (L-of N) N)
+    #:contract (a-ftype (a-var-type "l" (L-of N)) N)
     #:args '(("l" #f))
     #:return N
   ]{
@@ -200,7 +200,7 @@ definition they will find in their textbooks.
   linear-regression models.  Further support will be added over time.
 
 ◊function["linear-regression"
-  #:contract (a-arrow (L-of N) (L-of N) (a-arrow N N))
+  #:contract (a-ftype (a-var-type "X" (L-of N)) (a-var-type "Y" (L-of N)) (p-a-arrow N N))
   #:args '(("X" #f) ("Y" #f))
   #:return (a-arrow N N)
 ]{
@@ -219,7 +219,7 @@ definition they will find in their textbooks.
 }
 
 ◊function["r-squared"
-  #:contract (a-arrow (L-of N) (L-of N) (a-arrow N N) N)
+  #:contract (a-ftype (a-var-type "X" (L-of N)) (a-var-type "Y" (L-of N)) (a-var-type "f" (a-arrow N N)) N)
   #:args '(("X" #f) ("Y" #f) ("f" #f))
   #:return N
 ]{
@@ -300,8 +300,8 @@ definition they will find in their textbooks.
 ◊;   a certain variant of StatModel.
 
 ◊;   ◊function["lin-reg-2V"
-◊;     #:contract (a-arrow (L-of N) (L-of N) (link "StatModel"))
-◊;     #:args '(("X" #f)("Y" #f))
+◊;     #:contract (a-ftype (a-var-type "X" (L-of N)) (a-var-type "Y" (L-of N)) (link "StatModel"))
+◊;     #:args '(("X" #f) ("Y" #f))
 ◊;     #:return (link "StatModel")
 ◊;   ]{
 ◊;   Calculates a linear regression to model simple independent -> dependent

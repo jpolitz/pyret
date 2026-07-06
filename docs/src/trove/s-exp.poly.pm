@@ -12,7 +12,7 @@
   }
 
   ◊function["read-s-exp" #:args '(("sexp-str" ""))
-    #:contract (a-arrow (a-id "String" (xref "<global>" "String"))
+    #:contract (a-ftype (a-var-type "sexp-str" S)
                         (a-id "S-Exp" (xref "s-exp-structs" "S-Exp")))]{
     Reads an ◊emph{s-expression} as a string, and returns it as a Pyret value.
 

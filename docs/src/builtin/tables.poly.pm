@@ -456,7 +456,7 @@ end
 }
 
 ◊function["difference-from"
-  #:contract (a-arrow N (Red-of N N N))
+  #:contract (a-ftype (a-var-type "start-value" N) (Red-of N N N))
   #:args '(("start-value" #f))
   #:return (Red-of N N N)]{
 
@@ -549,12 +549,12 @@ end
 
 
 ◊function["running-fold"
-  #:contract (a-arrow "Result" (a-arrow "Result" "Col" "Result") (Red-of "Result" "Col" "Result"))
+  #:contract (a-ftype (a-var-type "start-value" "Result") (a-var-type "combiner" (p-a-arrow "Result" "Col" "Result")) (Red-of "Result" "Col" "Result"))
   #:args '(("start-value" #f) ("combiner" #f))
   #:return (Red-of "Result" "Col" "Result")]{}
 
 ◊function["running-reduce"
-  #:contract (a-arrow (a-arrow "Col" "Col" "Col") (Red-of "Col" "Col" "Col"))
+  #:contract (a-ftype (a-var-type "combiner" (p-a-arrow "Col" "Col" "Col")) (Red-of "Col" "Col" "Col"))
   #:args '(("combiner" #f))
   #:return (Red-of "Col" "Col" "Col")]
                                             
@@ -615,11 +615,11 @@ own. To do so, one must construct an object of the following type:
 
 ◊type-spec["Reducer" (list "Acc" "InVal" "OutVal")]{
 ◊red-method["one"
-  #:contract (a-arrow (apply Red-of Red-params) "InVal" (a-tuple "Acc" "OutVal"))
+  #:contract (a-ftype  (a-var-type "value-from-column" "InVal") (a-tuple "Acc" "OutVal"))
   #:args '(("self" #f) ("value-from-column" #f))
   #:return (a-tuple "Acc" "OutVal")]
 ◊red-method["reduce"
-  #:contract (a-arrow (apply Red-of Red-params) "Acc" "InVal" (a-tuple "Acc" "OutVal"))
+  #:contract (a-ftype (a-var-type "accumulator" "Acc") (a-var-type "value-from-column" "InVal") (a-tuple "Acc" "OutVal"))
   #:args '(("self" #f) ("accumulator" #f) ("value-from-column" #f))
   #:return (a-tuple "Acc" "OutVal")]
 
@@ -702,7 +702,8 @@ tables programmatically.
 
 The type of all row values.
 }
-◊collection-doc["raw-row" #:contract `(a-arrow ("elt" ,(a-tuple S "Col")) ,Row)]
+
+◊collection-doc["raw-row" #:fields (list (a-var-type "elt" (a-tuple S "Col"))) #:return Row]
 
 Takes a sequence of tuples and constructs a ◊pyret-id["Row"] value. Note that
 the type for each column may be different. The constructed row can be added to
@@ -715,7 +716,7 @@ column for each created row, and provides built-in checking for the count of
 columns.
 
 ◊row-method["get-column-names"
-  #:contract (a-arrow Row (L-of S))
+  #:contract (a-ftype (L-of S))
   #:args '((self #f))
   #:return (L-of S)]
 
@@ -729,7 +730,7 @@ end
 }
 
 ◊row-method["get-value"
-  #:contract (a-arrow Row S "Col")
+  #:contract (a-ftype (a-var-type "col-name" S) "Col")
   #:args '((self #f) ("col-name" #f))
   #:return "Col"]
 
@@ -747,7 +748,7 @@ end
 }
 
 ◊row-method["get"
-  #:contract (a-arrow Row S (O-of "Col"))
+  #:contract (a-ftype (a-var-type "col-name" S) (O-of "Col"))
   #:args '((self #f) ("col-name" #f))
   #:return (O-of "Col")]
 
@@ -760,7 +761,8 @@ containing the corresponding value if it's present, or ◊pyret-id["none"
 
 The type of all tables.
 }
-◊collection-doc["table-from-rows" #:contract `(a-arrow ("elt" ,Row) ,Table)]
+
+◊collection-doc["table-from-rows" #:fields (list (a-var-type "elt" Row)) #:return Table]
 
 A collection constructor that creates tables from ◊pyret-id["Row"] values.
 
@@ -777,7 +779,9 @@ check:
 end
 }
 
-◊collection-doc["table-from-columns" #:contract `(a-arrow ("elt" ,(a-tuple "String" (L-of "A"))) ,Table)]
+◊collection-doc["table-from-columns"
+                     #:args (list (a-var-type "elt" (a-tuple "String" (L-of "A"))))
+                     #:return Table]
 
 A collection constructor that creates tables from columns, where each column is
 specified as a tuple of its name (as a ◊pyret-id["String" "<global>"]) and a
@@ -797,7 +801,7 @@ end
 }
 
 ◊function["table-from-column"
-    #:contract (a-arrow S (L-of "A") Table)
+    #:contract (a-ftype (a-var-type "column-name" S) (a-var-type "values" (L-of "A")) Table)
     #:args '(("column-name" #f) ("values" #f))
     #:return Table]{
 
@@ -819,7 +823,7 @@ end
 
 
 ◊table-method["length"
-  #:contract (a-arrow Table N)
+  #:contract (a-ftype N)
   #:args '(("self" #f))
   #:return N]
 
@@ -847,7 +851,7 @@ end
 
 
 ◊table-method["build-column"
-  #:contract (a-arrow Table S (a-arrow Row "Col") Table)
+  #:contract (a-ftype (a-var-type "colname" S) (a-var-type "compute-new-val" (p-a-arrow Row "Col")) Table)
   #:args '(("self" #f) ("colname" #f) ("compute-new-val" #f))
   #:return Table]
 
@@ -900,7 +904,7 @@ end
 }
 
 ◊table-method["add-column"
-  #:contract (a-arrow Table S (L-of "Col") Table)
+  #:contract (a-ftype (a-var-type "colname" S) (a-var-type "new-vals" (L-of "Col")) Table)
   #:args '(("self" #f) ("colname" #f) ("new-vals" #f))
   #:return Table]
 
@@ -911,7 +915,7 @@ It is an error if the length of ◊tt{new-vals} is different than the length of
 the table.
 
 ◊table-method["add-row"
-  #:contract (a-arrow Table Row Table)
+  #:contract (a-ftype  (a-var-type "r" Row) Table)
   #:args '(("self" #f) ("r" #f))
   #:return Table]
 
@@ -919,7 +923,7 @@ Consumes a table and a row to add, and produces a new table with the given row
 at the end.
 
 ◊table-method["row-n"
-  #:contract (a-arrow Table N Row)
+  #:contract (a-ftype (a-var-type  "index" N) Row)
   #:args '(("self" #f) ("index" #f))
   #:return Row]
 
@@ -927,7 +931,7 @@ Consumes an index, and returns the row at that index. The first row has index
 0.
 
 ◊table-method["get-column"
-  #:contract (a-arrow Table S (L-of "Col"))
+  #:contract (a-ftype (a-var-type "colname" S) (L-of "Col"))
   #:args '(("self" #f) ("colname" #f))
   #:return (L-of "Col")]
 
@@ -935,7 +939,7 @@ Consumes the name of a column, and returns the values in that column as a
 list.
 
 ◊table-method["column"
-  #:contract (a-arrow Table S (L-of "Col"))
+  #:contract (a-ftype (a-var-type "colname" S) (L-of "Col"))
   #:args '(("self" #f) ("colname" #f))
   #:return (L-of "Col")]
 
@@ -943,7 +947,7 @@ This method is no longer used (use ◊pyret-method["Table" "table" "get-column"]
 instead).
 
 ◊table-method["column-n"
-  #:contract (a-arrow Table N (L-of "Col"))
+  #:contract (a-ftype (a-var-type "index" N) (L-of "Col"))
   #:args '(("self" #f) ("index" #f))
   #:return (L-of "Col")]
 
@@ -951,7 +955,7 @@ Consumes an index, and returns the values in the column at that index as a
 list. The first column has index 0.
 
 ◊table-method["column-names"
-  #:contract (a-arrow Table (L-of S))
+  #:contract (a-ftype  (L-of S))
   #:args '(("self" #f))
   #:return (L-of S)]
 
@@ -959,7 +963,7 @@ Consumes no arguments, and produces the names of the columns of the table as a
 list.
 
 ◊table-method["all-rows"
-  #:contract (a-arrow Table (L-of Row))
+  #:contract (a-ftype (L-of Row))
   #:args '(("self" #f))
   #:return (L-of Row)]
 
@@ -967,7 +971,7 @@ Consumes no arguments, and produces a list containing all the rows in the
 table, in the same order they appear in the table.
 
 ◊table-method["all-columns"
-  #:contract (a-arrow Table (L-of (L-of "Col")))
+  #:contract (a-ftype (L-of (L-of "Col")))
   #:args '(("self" #f))
   #:return (L-of (L-of "Col"))]
 
@@ -975,7 +979,7 @@ Consumes no arguments, and produces a list of lists of the column values. The
 columns and values appear in the same order they appeared in the table.
 
 ◊table-method["filter"
-  #:contract (a-arrow Table (a-arrow Row B) Table)
+  #:contract (a-ftype (a-var-type "predicate" (p-a-arrow Row B)) Table)
   #:args '(("self" #f) ("predicate" #f))
   #:return Table]
 
@@ -983,7 +987,7 @@ Consumes a predicate over rows, and produces a new table containing only the
 rows for which the predicate returned ◊pyret{true}.
 
 ◊table-method["filter-by"
-  #:contract (a-arrow Table S (a-arrow "Col" B) Table)
+  #:contract (a-ftype (a-var-type "colname" S) (a-var-type "predicate" (p-a-arrow "Col" B)) Table)
   #:args '(("self" #f) ("colname" #f) ("predicate" #f))
   #:return Table]
 
@@ -994,7 +998,7 @@ type of values in the specified column.
 
 
 ◊table-method["order-by"
-  #:contract (a-arrow Table S B Table)
+  #:contract (a-ftype (a-var-type "colname" S) (a-var-type "asc" B) Table)
   #:args '(("self" #f) ("colname" #f) ("asc" #f))
   #:return Table]
 
@@ -1006,7 +1010,7 @@ highest by the given column (e.g. using ◊pyret{<}), and if ◊pyret{false} is
 given, they are ordered highest to lowest.
 
 ◊table-method["order-by-columns"
-  #:contract (a-arrow Table (L-of (a-tuple S B)) Table)
+  #:contract (a-ftype (a-var-type "cols" (L-of (a-tuple S B))) Table)
   #:args '(("self" #f) ("cols" #f))
   #:return Table]
 
@@ -1019,7 +1023,7 @@ and a boolean indicating whether to order ascending or not. As with
 ◊pyret{false} indicates descending.
 
 ◊table-method["increasing-by"
-  #:contract (a-arrow Table S Table)
+  #:contract (a-ftype (a-var-type "colname" S) Table)
   #:args '(("self" #f) ("colname" #f))
   #:return Table]
 
@@ -1027,7 +1031,7 @@ Like ◊pyret-method["Table" "table" "order-by"], but ◊tt{ascending} is always
 ◊pyret{true}.
 
 ◊table-method["decreasing-by"
-  #:contract (a-arrow Table S Table)
+  #:contract (a-ftype (a-var-type "colname" S) Table)
   #:args '(("self" #f) ("colname" #f))
   #:return Table]
 
@@ -1035,7 +1039,7 @@ Like ◊pyret-method["Table" "table" "order-by"], but ◊tt{ascending} is always
 ◊pyret{false}.
 
 ◊table-method["select-columns"
-  #:contract (a-arrow Table (L-of S) Table)
+  #:contract (a-ftype (a-var-type "colnames" (L-of S)) Table)
   #:args '(("self" #f) ("colnames" #f))
   #:return Table]
 
@@ -1045,7 +1049,7 @@ table, and the order of the columns themselves is the order they are given in
 the list.
 
 ◊table-method["transform-column"
-  #:contract (a-arrow Table S (a-arrow "ColIn" "ColOut") Table)
+  #:contract (a-ftype (a-var-type "colname" S) (a-var-type "f" (p-a-arrow "ColIn" "ColOut")) Table)
   #:args '(("self" #f) ("colname" "") ("f" ""))
   #:return Table]
 
@@ -1054,7 +1058,7 @@ where the given function has been applied to all values in the specified
 column of the original table.
 
 ◊table-method["rename-column"
-  #:contract (a-arrow Table S S Table)
+  #:contract (a-ftype (a-var-type "old-colname" S) (a-var-type "new-colname" S) Table)
   #:args '(("self" #f) ("old-colname" "") ("new-colname" ""))
   #:return Table]
 
@@ -1074,7 +1078,7 @@ the result, whereas using ◊pyret-method["Table" "table" "rename-column"], the 
 column will stay in its original place.
 
 ◊table-method["stack"
-  #:contract (a-arrow Table Table Table)
+  #:contract (a-ftype (a-var-type "bot-table" Table) Table)
   #:args '(("self" #f) ("bot-table" ""))
   #:return Table]
 
@@ -1105,7 +1109,7 @@ end
 }
     
 ◊table-method["empty"
-  #:contract (a-arrow Table Table)
+  #:contract (a-ftype Table)
   #:args '(("self" #f))
   #:return Table]
 
@@ -1123,7 +1127,7 @@ end
 }
 
 ◊table-method["drop"
-  #:contract (a-arrow Table S Table)
+  #:contract (a-ftype (a-var-type "colname" S) Table)
   #:args '(("self" #f) ("colname" ""))
   #:return Table]
 

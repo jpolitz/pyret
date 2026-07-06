@@ -8,7 +8,7 @@
 
   ◊section{Boolean Functions}
 
-  ◊function["not" #:contract (a-arrow B B) #:return B #:alt-docstrings ""]
+  ◊function["not" #:contract (a-ftype (a-var-type "b" B) B) #:return B #:alt-docstrings ""]
 
   Returns ◊pyret{true} when given ◊pyret{false} and vice versa.
 

@@ -50,7 +50,7 @@ end
 
 ◊section{Constructing Arrays}
 
-◊collection-doc["array" #:contract `(a-arrow ("value" "a") ,(A-of "a"))]
+◊collection-doc["array" #:fields (list (a-var-type "value" "a")) #:return (A-of "a")]
 
 Constructs an ◊pyret-id{Array} with the given elements.
 
@@ -84,7 +84,7 @@ end
 }
 
 ◊function["array-of"
-  #:contract (a-arrow "a" N (A-of "a"))
+  #:contract (a-arrow (a-var-type "value" "a") (a-var-type "count" N) (A-of "a"))
   #:args (list (list "value" #f) (list "count" #f))
   #:return (A-of "a")
 ]
@@ -126,8 +126,7 @@ end
 }
 
 ◊function["build-array"
-  #:contract (a-arrow (a-arrow N "a") N (A-of "a"))
-  #:args (list (list "f" #f) (list "size" #f))
+  #:contract (a-ftype (a-var-type "f" (a-arrow N "a")) (a-var-type "size" N) (A-of "a"))
   #:return (A-of "a")
 ]
 
@@ -166,7 +165,7 @@ end
 }
 
 ◊function["array-from-list"
-  #:contract (a-arrow (L-of "a") (A-of "a"))
+  #:contract (a-arrow (a-var-type "l" (L-of "a")) (A-of "a"))
   #:args (list (list "l" #f))
   #:return (A-of "a")]
 
@@ -186,7 +185,7 @@ end
 ◊section{Array Methods}
 
 ◊a-method["get-now"
-  #:contract (a-arrow (A-of "a") N "a")
+  #:contract (a-arrow (p-a-var-type "index" N)  "a")
   #:args (list (list "self" #f) (list "index" #f))
   #:return "a"
 ]
@@ -216,7 +215,7 @@ end
 }
 
 ◊a-method["set-now"
-  #:contract (a-arrow (A-of "a") N "a" No)
+  #:contract (a-ftype (a-var-type "index" N) (a-var-type "value" "a") No)
   #:args (list (list "self" #f) (list "index" #f) (list "value" #f))
   #:return No
 ]
@@ -256,7 +255,7 @@ end
 }
 
 ◊a-method["length"
-  #:contract (a-arrow (A-of "a") N)
+  #:contract (a-ftype N)
   #:args (list (list "self" #f))
   #:return N
 ]
@@ -278,7 +277,7 @@ end
 }
 
 ◊a-method["filter"
-    #:contract (a-arrow (A-of "a") (a-arrow "a" B) (A-of "a"))
+    #:contract (a-ftype (a-var-type "f" (p-a-arrow "a" B)) (A-of "a"))
     #:args (list (list "self" #f) (list "f" #f))
     #:return (A-of "a")]
     
@@ -299,7 +298,7 @@ end
   }
   
 ◊a-method["map"
-    #:contract (a-arrow (A-of "a") (a-arrow "a" "b") (A-of "b"))
+    #:contract (a-ftype  (a-var-type "f" (p-a-arrow "a" "b")) (A-of "b"))
     #:args (list (list "self" #f) (list "f" #f))
     #:return (A-of "b")]
     
@@ -324,7 +323,7 @@ end
   }
 
 ◊a-method["fold"
-    #:contract (a-arrow (A-of "a") (a-arrow "b" "a" N "b") "b" N "b")
+    #:contract (a-ftype  (a-var-type "f" (p-a-ftype "b" "a" N "b")) (a-var-type "init" "b") (a-var-type "start-index" N) "b")
     #:args (list (list "self" #f) (list "f" #f) (list "init" #f) (list "start-index" #f))
     #:return "b"]
     
@@ -365,7 +364,7 @@ end
   }
 
 ◊a-method["concat"
-    #:contract (a-arrow (A-of "a") (A-of "a") (A-of "a"))
+    #:contract (a-ftype (a-var-type "other" (A-of "a")) (A-of "a"))
     #:args (list (list "self" #f) (list "other" #f))
     #:return (A-of "a")]
 
@@ -418,7 +417,7 @@ end
 }
 
 ◊a-method["sort-nums"
-    #:contract (a-arrow (A-of "a") B)
+    #:contract (a-ftype (a-var-type "asc" B) (A-of "a"))
     #:args (list (list "self" #f) (list "asc" #f))
     #:return (A-of "a")]
 
@@ -444,7 +443,7 @@ end
 }
 
 ◊a-method["sort-by"
-    #:contract (a-arrow (A-of "a") (a-arrow "a" N) B)
+    #:contract (a-ftype (a-var-type "key" (a-arrow "a" N)) (a-var-type "asc" B) (A-of "a"))
     #:args (list (list "self" #f) (list "key" #f) (list "asc" #f))
     #:return (A-of "a")]
 
@@ -475,7 +474,7 @@ end
 
 
 ◊a-method["to-list-now"
-  #:contract (a-arrow (A-of "a") (L-of "a"))
+  #:contract (a-arrow  (L-of "a"))
   #:args (list (list "self" #f))
   #:return (L-of "a")
 ]
@@ -512,9 +511,7 @@ end
 ◊section{Array Functions}
 
 ◊function["array-get-now"
-  #:contract (a-arrow (A-of "a") N "a")
-  #:args (list (list "array" #f) (list "index" #f))
-  #:return "a"
+  #:contract (a-ftype (a-var-type "array" (A-of "a")) (a-var-type "index" N) "a")
 ]
 
 Equivalent to ◊pyret{array}◊a-ref["get-now"]◊pyret{(index)}.
@@ -529,8 +526,7 @@ end
 }
           
 ◊function["array-set-now"
-  #:contract (a-arrow (A-of "a") N "a" (A-of "a"))
-  #:args (list (list "array" #f) (list "index" #f) (list "value" #f))
+  #:contract (a-ftype (a-var-type "array" (A-of "a")) (a-var-type "index" N) (a-var-type "value" "a") No)
   #:return No
 ]
 
@@ -549,8 +545,7 @@ end
 }
 
 ◊function["array-length"
-  #:contract (a-arrow (A-of "a") N)
-  #:args (list (list "array" #f))
+  #:contract (a-ftype (a-var-type "array" (A-of "a")) N)
   #:return N
 ]
 
@@ -567,8 +562,7 @@ end
 }
 
 ◊function["array-filter"
-  #:contract (a-arrow (a-arrow "a" B) (A-of "a"))
-  #:args (list (list "f" #f) (list "array" #f))
+  #:contract (a-ftype (a-var-type "f" (p-a-ftype "a" B)) (a-var-type "array" (A-of "a")) (A-of "a"))
   #:return (A-of "a")
 ]
 
@@ -577,8 +571,7 @@ designed for ◊pyret{for}.
 
 
 ◊function["array-map"
-  #:contract (a-arrow (a-arrow "a" "b") (A-of "a"))
-  #:args (list (list "f" #f) (list "array" #f))
+  #:contract (a-ftype (a-var-type "f" (p-a-ftype "a" "b")) (a-var-type "array" (A-of "a")) (A-of "a"))
   #:return (A-of "b")
 ]
 
@@ -586,8 +579,7 @@ Equivalent to ◊pyret{array}◊a-ref["map"]◊pyret{(f)}, with an argument orde
 designed for ◊pyret{for}.
 
 ◊function["array-fold"
-  #:contract (a-arrow (a-arrow "b" "a" N) "b" (A-of "a") N)
-  #:args (list (list "f" #f) (list "init" #f) (list "array" #f) (list "start-index" #f))
+  #:contract (a-ftype (a-var-type "f" (p-a-ftype "b" "a" N)) (a-var-type "init" "b") (a-var-type "array" (A-of "a")) N)
   #:return "b"
 ]
 
@@ -595,24 +587,21 @@ Equivalent to ◊pyret{array}◊a-ref["fold"]◊pyret{(f, init, start-index)}, w
 designed for ◊pyret{for}.
 
 ◊function["array-concat"
-  #:contract (a-arrow (A-of "a") (A-of "a"))
-  #:args (list (list "array1" #f) (list "array2" #f))
+  #:contract (a-ftype (a-var-type "array1" (A-of "a")) (a-var-type "array2" (A-of "a")) (A-of "a"))
   #:return (A-of "a")
 ]
 
 Equivalent to ◊pyret{array1}◊a-ref["concat"]◊pyret{(array2)}.
 
 ◊function["array-duplicate"
-  #:contract (a-arrow (A-of "a"))
-  #:args (list (list "array" #f))
+  #:contract (a-ftype (a-var-type "array" (A-of "a")) (A-of "a"))
   #:return (A-of "a")
 ]
 
 Equivalent to ◊pyret{array}◊a-ref["duplicate"]◊pyret{()}.
 
 ◊function["array-sort-nums"
-  #:contract (a-arrow (A-of "a") B)
-  #:args (list (list "array" #f) (list "asc" #f))
+  #:contract (a-ftype (a-var-type "array" (A-of "a")) (a-var-type "asc" B) (A-of "a"))
   #:return (A-of "a")
 ]
 
@@ -634,8 +623,7 @@ end
 }
 
 ◊function["array-sort-by"
-  #:contract (a-arrow (A-of "a") (a-arrow "a" N) B)
-  #:args (list (list "array" #f) (list "key" #f) (list "asc" #f))
+  #:contract (a-ftype (a-var-type "array" (A-of "a")) (a-var-type "key" (p-a-ftype "a" N)) (a-var-type "asc" B) (A-of "a"))
   #:return (A-of "a")
 ]
 

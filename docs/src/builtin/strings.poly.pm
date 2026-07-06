@@ -31,7 +31,7 @@ that characters that are identified by a Unicode code point greater than
 
 ◊section{String Functions}
 
-  ◊function["string-equal" #:contract (a-arrow S S B) #:return B]
+  ◊function["string-equal" #:contract (a-ftype (a-var-type "s1" S) (a-var-type "s2" S) B) #:return B]
 
 Returns ◊pyret{true} if the two strings are equal.
   
@@ -45,7 +45,7 @@ check:
 end
 }
 
-  ◊function["string-contains" #:contract (a-arrow S S B) #:return B]
+  ◊function["string-contains" #:contract (a-ftype (a-var-type "string-to-search" S) (a-var-type "string-to-find" S) B) #:return B]
 
 Returns ◊pyret{true} if ◊pyret{string-to-find} is contained in
 ◊pyret{string-to-search}.  Returns ◊pyret{true} if an empty string is passed as
@@ -62,7 +62,7 @@ check:
 end
 }
 
-  ◊function["string-find" #:contract (a-arrow S S) #:return N]
+  ◊function["string-find" #:contract (a-ftype (a-var-type "original-string" S) (a-var-type "string-to-find" S) B) #:return N]
 
 Return the left-most index (starting from ◊pyret{0}) where the second argument is found in the first string.
 
@@ -77,7 +77,7 @@ check:
 end
 }
 
-  ◊function["string-find-opt" #:contract (a-arrow S S) #:return N]
+  ◊function["string-find-opt" #:contract (a-ftype (a-var-type "original-string" S) (a-var-type "string-to-find" S) B) #:return N]
 
 Return the left-most index (starting from ◊pyret{0}) where the second argument is found in the first string.
 
@@ -92,7 +92,7 @@ check:
 end
 }
 
-  ◊function["string-append" #:contract (a-arrow S S S) #:return S]
+  ◊function["string-append" #:contract (a-ftype (a-var-type "front" S) (a-var-type "back" S) B) #:return S]
 
 Returns a ◊pyret{String} where ◊pyret{back} is added to the right of
 ◊pyret{front}.
@@ -112,7 +112,7 @@ end
 When ◊pyret{front} and ◊pyret{back} are strings, has the same meaning as
 ◊pyret-id{string-append}.
 
-  ◊function["string-length" #:contract (a-arrow S N) #:return N]
+  ◊function["string-length" #:contract (a-ftype (a-var-type "s" S) N) #:return N]
 
 Returns the number of characters in the string.
 
@@ -128,7 +128,7 @@ check:
 end
 }
 
-  ◊function["string-to-number" #:contract (a-arrow S N) #:return (O-of N)]
+  ◊function["string-to-number" #:contract (a-ftype (a-var-type "s" S) (O-of N)) #:return (O-of N)]
 
 Converts the argument string to a number, returning ◊pyret-id["none" "option"]
 if it is not a valid numeric string, and ◊pyret-id["some" "option"] number if it is.
@@ -148,7 +148,7 @@ check:
 end
 }
 
-  ◊function["string-repeat" #:contract (a-arrow S N S) #:return S]
+  ◊function["string-repeat" #:contract (a-ftype (a-var-type "s" S) (a-var-type "n" N) S) #:return S]
 
 ◊examples{
 check:
@@ -159,7 +159,7 @@ check:
 end
 }
 
-  ◊function["string-substring" #:contract (a-arrow S N N S) #:return S]
+  ◊function["string-substring" #:contract (a-ftype (a-var-type "s" S) (a-var-type "start-index" N) (a-var-type "end-index" N) S) #:return S]
 
 Returns a new string created from the characters of the input string, starting
 from ◊pyret{start-index} (inclusive) and ending at ◊pyret{end-index} (exclusive).
@@ -186,7 +186,7 @@ check:
 end
 }
 
-  ◊function["string-index-of" #:contract (a-arrow S S N) #:return N]
+  ◊function["string-index-of" #:contract (a-ftype (a-var-type "original-string" S) (a-var-type "string-to-find" S) N) #:return N]
 
   Returns the index from the beginning of the string where
   ◊pyret{string-to-find} ◊emph{first} appears, or ◊pyret{-1} if the string
@@ -200,7 +200,7 @@ check:
 end
 }
   
-  ◊function["string-replace" #:contract (a-arrow S S S S) #:return S]
+  ◊function["string-replace" #:contract (a-ftype (a-var-type "original-string" S) (a-var-type "string-to-find" S) (a-var-type "replacement-string" S) S) #:return S]
 
 Returns a string where each instance of ◊pyret{string-to-find} in the
 ◊pyret{original-string} is replaced by ◊pyret{replacement-string}.
@@ -221,7 +221,7 @@ check:
 end
 }
 
-  ◊function["string-split" #:contract (a-arrow S S (L-of S)) #:return (L-of S)]
+  ◊function["string-split" #:contract (a-ftype (a-var-type "original-string" S) (a-var-type "string-to-split-on" S) (L-of S)) #:return (L-of S)]
 
   Searches for ◊pyret{string-to-split-on} in ◊pyret{original-string}.  If it is not found,
   returns a ◊pyret-id["List" "lists"] containing ◊pyret{original-string} as its
@@ -245,7 +245,7 @@ check:
 end
 }
 
-  ◊function["string-split-all" #:contract (a-arrow S S) #:return (L-of S)]
+  ◊function["string-split-all" #:contract (a-ftype (a-var-type "original-string" S) (a-var-type "string-to-split-on" S) (L-of S)) #:return (L-of S)]
 
   Searches for ◊pyret{string-to-split-on} in ◊pyret{original-string}.  If it is not found,
   returns a ◊pyret-id["List" "lists"] containing ◊pyret{original-string} as its
@@ -267,11 +267,11 @@ check:
   string-split-all("bananarama", "a") is [list: "b", "n", "n", "r", "m", ""]
 end
 }
-  ◊function["string-explode" #:contract (a-arrow S (L-of S)) #:return (L-of S)]
+  ◊function["string-explode" #:contract (a-ftype (a-var-type "s" S)  (L-of S)) #:return (L-of S)]
 
   A shorthand for ◊pyret{string-split-all(s, "")}.
 
-  ◊function["string-char-at" #:contract (a-arrow S N S) #:return S]
+  ◊function["string-char-at" #:contract (a-ftype (a-var-type "s" S) (a-var-type "n" N) S) #:return S]
 
 Returns a ◊pyret{String} containing the character at the string index ◊pyret{n}
 from ◊pyret{String} ◊pyret{n}.
@@ -283,11 +283,11 @@ check:
 end
 }
 
-  ◊function["string-toupper" #:contract (a-arrow S S) #:return S]
+  ◊function["string-toupper" #:contract (a-ftype (a-var-type "s" S)  S) #:return S]
 
   The same as ◊pyret{string-to-upper}.
 
-  ◊function["string-to-upper" #:contract (a-arrow S S) #:return S]
+  ◊function["string-to-upper" #:contract (a-ftype (a-var-type "s" S)  S) #:return S]
 
 ◊margin-note{Pyret uses JavaScript's built-in string operations, and so will
 have the same behavior as ◊link["https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/toUpperCase" "toUpperCase"].}
@@ -318,11 +318,11 @@ end
 }
 
 
-  ◊function["string-tolower" #:contract (a-arrow S S) #:return S]
+  ◊function["string-tolower" #:contract (a-ftype (a-var-type "s" S)  S) #:return S]
 
   The same as ◊pyret{string-to-lower}.
 
-  ◊function["string-to-lower" #:contract (a-arrow S S) #:return S]
+  ◊function["string-to-lower" #:contract (a-ftype (a-var-type "s" S)  S) #:return S]
 
 Converts a ◊pyret{String} to all lower case.
   
@@ -335,7 +335,7 @@ check:
 end
 }
 
-  ◊function["string-to-code-point" #:contract (a-arrow S N) #:return N]
+  ◊function["string-to-code-point" #:contract (a-ftype (a-var-type "s" S)  N) #:return N]
 
   ◊note{For strings
   that contain a single character whose code point is greater than
@@ -356,7 +356,7 @@ check:
 end
   }
 
-  ◊function["string-to-code-points" #:contract (a-arrow S (L-of N)) #:return (L-of N)]
+  ◊function["string-to-code-points" #:contract (a-ftype (a-var-type "codes" S) (L-of N)) #:return (L-of N)]
 
   Converts the string (of any length) to a list of code points.  Note that
   strings are encoded in such a way that some characters correspond to two code
@@ -371,7 +371,7 @@ check:
 end
 }
 
-  ◊function["string-from-code-point" #:contract (a-arrow N S) #:return S]
+  ◊function["string-from-code-point" #:contract (a-ftype (a-var-type "code" N) S) #:return S]
 
   ◊note{Code points greater than 65535 are not supported.  You must encode
   higher code points with a ◊link["http://en.wikipedia.org/wiki/UTF-16"
@@ -388,7 +388,7 @@ check:
 end
 }
 
-  ◊function["string-from-code-points" #:contract (a-arrow (L-of N) S) #:return S]
+  ◊function["string-from-code-points" #:contract (a-ftype (a-var-type "codes" (L-of N)) S) #:return S]
 
   Converts from a list of code points to a Pyret string.
 

@@ -75,7 +75,7 @@ positive integer that is similar to the returned time); the other
 produces both the duration and the value produced by the computation.
 
   ◊function["time-only"
-    #:contract (a-arrow (T-of "T") N)
+    #:contract (a-ftype (a-var-type "f" (p-a-ftype "T")) N)
     #:args '(("f" #f))
     #:return N
   ]{
@@ -96,7 +96,7 @@ end
 }
 
   ◊function["time-value"
-    #:contract (a-arrow (T-of "T") (a-tuple N "T"))
+    #:contract (a-ftype (a-var-type "f" (p-a-ftype "T")) (a-tuple N "T"))
     #:args '(("f" #f))
     #:return (a-tuple N "T")
   ]{

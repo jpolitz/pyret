@@ -2,7 +2,7 @@
 
 
 
-◊(define (ss-method name #:args args #:return ret #:contract contract)
+◊(define (ss-method name #:args [args #f] #:return ret #:contract contract)
   (method-doc "Spreadsheet" #f name #:alt-docstrings "" #:args args #:return ret #:contract contract))
 ◊(define (ws-method name #:args args #:return ret #:contract contract)
   (method-doc "Worksheet" #f name #:alt-docstrings "" #:args args #:return ret #:contract contract))
@@ -28,9 +28,7 @@ load them into tables.
 
 ◊section{Spreadsheet Functions}
 ◊function["create-spreadsheet"
-  #:contract (a-arrow S SS)
-  #:args '(("name" ""))
-  #:return SS
+  #:contract (a-ftype (a-var-type "name" S) SS)
   ]{
   Creates a new Google Sheets document with the given name, in the currently
   logged-in user's Google Documents account.  The newly created file will not
@@ -38,8 +36,7 @@ load them into tables.
   }
 
 ◊function["my-spreadsheet"
-  #:contract (a-arrow S SS)
-  #:args '(("name" ""))
+  #:contract (a-ftype (a-var-type "name" S) SS)
   #:return SS
   ]{
   Accesses a private Google Sheets file and produces a ◊pyret-id{Spreadsheet}.
@@ -48,8 +45,7 @@ load them into tables.
   }
 
 ◊function["load-spreadsheet"
-  #:contract (a-arrow S SS)
-  #:args '(("id" ""))
+  #:contract (a-ftype (a-var-type "id" S) SS)
   #:return SS
   ]{
   Accesses a publicly shared Google sheets file and produces a
@@ -67,8 +63,7 @@ animal-sheet2 = load-spreadsheet("1VeR2_bhpLvnRUZslmCAcSRKfZWs_5RNVujtZgEl6umA")
   }
 
 ◊function["open-sheet"
-  #:contract (a-arrow SS S B WS)
-  #:args '(("spreadsheet" "") ("name" "") ("skipHeaders" ""))
+  #:contract (a-ftype (a-var-type "spreadsheet" SS) (a-var-type "name" S) (a-var-type "skipHeaders" B) WS)
   #:return WS
   ]{
   Obtains the ◊pyret-id{Worksheet} of the given name from the given
@@ -81,8 +76,7 @@ animal-sheet2 = load-spreadsheet("1VeR2_bhpLvnRUZslmCAcSRKfZWs_5RNVujtZgEl6umA")
   }
 
 ◊function["open-sheet-by-index"
-  #:contract (a-arrow SS N B WS)
-  #:args '(("spreadsheet" "") ("index" "") ("skipHeaders" ""))
+  #:contract (a-ftype (a-var-type "spreadsheet" SS) (a-var-type "index" N) (a-var-type "skipHeaders" B) WS)
   #:return WS
   ]{
   Much like ◊pyret-id{open-sheet}, except it selects the worksheet by its index
@@ -93,7 +87,7 @@ animal-sheet2 = load-spreadsheet("1VeR2_bhpLvnRUZslmCAcSRKfZWs_5RNVujtZgEl6umA")
 
 ◊section{Spreadsheet Methods}
 ◊ss-method["sheet-names"
-  #:contract (a-arrow SS (L-of S))
+  #:contract (a-arrow (L-of S))
   #:args (list (list "self" #f))
   #:return (L-of S)
 ]
@@ -104,8 +98,7 @@ from left to right.  The names in this list can be used with
 list can be used with ◊pyret-method["Spreadsheet" "sheet-by-index"].
 
 ◊ss-method["sheet-by-name"
-  #:contract (a-arrow SS S B WS)
-  #:args '(("self" #f) ("name" "") ("skipHeaders" ""))
+  #:contract (a-ftype (a-var-type "name" S) (a-var-type "skipHeaders" B) WS)
   #:return WS
 ]
 Obtains a ◊pyret-id{Worksheet} of the given name from the given worksheet.  The
@@ -114,7 +107,7 @@ sheet when extracting its contents as a table (i.e. to treat the first row as a
 header row rather than a data row).
 
 ◊ss-method["sheet-by-index"
-  #:contract (a-arrow SS N B WS)
+  #:contract (a-ftype   (a-var-type "index" N) (a-var-type "skipHeaders" B) WS)
   #:args '(("self" #f) ("index" "") ("skipHeaders" ""))
   #:return WS
 ]

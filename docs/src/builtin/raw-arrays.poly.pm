@@ -34,7 +34,8 @@ continue to work.
 
      ◊section{RawArray Functions}
 
-◊collection-doc["raw-array" #:contract `(a-arrow ("value" "a") ,(RA-of "a"))]
+
+◊collection-doc["raw-array" #:fields (list (a-var-type "value" "a")) #:return  (RA-of "a")]
 
 Constructs a ◊pyret-id{RawArray} with the given elements.
 
@@ -65,7 +66,7 @@ check:
 end
 }
 
-  ◊function["raw-array-of" #:contract (a-arrow "a" N (RA-of "a"))]
+  ◊function["raw-array-of" #:contract (a-ftype (a-var-type "value" "a") (a-var-type "count" N ) (RA-of "a"))]
 
 Constructs an ◊pyret{RawArray} of length ◊tt{count}, where every element is the value
 given as ◊pyret{value}.
@@ -96,7 +97,7 @@ end
 
 }
 
-  ◊function["raw-array-get" #:contract (a-arrow (RA-of "a") N "a") #:return "a"]
+  ◊function["raw-array-get" #:contract (a-ftype (a-var-type "array" (RA-of "a")) (a-var-type "index" N) "a") #:return "a"]
 
 Returns the value at the given ◊tt{index}.
 
@@ -111,7 +112,7 @@ check:
 end
 }
   
-  ◊function["raw-array-set" #:contract (a-arrow (RA-of "a") N "a" (RA-of "a")) #:return (RA-of "a")]
+  ◊function["raw-array-set" #:contract (a-ftype (a-var-type "array" (RA-of "a")) (a-var-type "index" N) (a-var-type "new-value" "a") (RA-of "a")) #:return (RA-of "a")]
 
 Updates the value at the given ◊tt{index}, returning the new value.  The update is stateful,
 so all references to the ◊pyret{RawArray} see the update.  
@@ -134,7 +135,7 @@ end
 }
 
           
-  ◊function["raw-array-length" #:contract (a-arrow (RA-of "a") N) #:return N]
+  ◊function["raw-array-length" #:contract (a-ftype (a-var-type "array" (RA-of "a")) N) #:return N]
 
 ◊examples{
 check:
@@ -144,7 +145,7 @@ check:
   raw-array-length(b) is 0
 end
 }
-  ◊function["raw-array-to-list" #:contract (a-arrow (RA-of "a") (L-of "a")) #:return (L-of "a")]
+  ◊function["raw-array-to-list" #:contract (a-ftype (a-var-type "array" (RA-of "a")) (L-of "a")) #:return (L-of "a")]
 
     Converts a ◊pyret-id{RawArray} to a ◊pyret-id["List" "lists"] containing
     the same elements in the same order.
@@ -163,7 +164,7 @@ check:
 end
     }
 
-  ◊function["raw-array-from-list" #:contract (a-arrow (L-of "a") (RA-of "a")) #:return (RA-of "a")]
+  ◊function["raw-array-from-list" #:contract (a-ftype (a-var-type "lst" (L-of "a")) (RA-of "a")) #:return (RA-of "a")]
 
     Converts a ◊pyret-id["List" "lists"] to a ◊pyret-id{RawArray} containing
     the same elements in the same order.
@@ -179,7 +180,7 @@ end
 }
 
 
-  ◊function["raw-array-build" #:contract (a-arrow (a-arrow N "a") N (RA-of "a")) #:return (RA-of "a")]
+  ◊function["raw-array-build" #:contract (a-ftype (a-var-type "f" (p-a-arrow N "a")) (a-var-type "size" N) (RA-of "a")) #:return (RA-of "a")]
 
     Constructs an array of length ◊pyret{size}, and fills it with the result of
     calling the function ◊pyret{f} with each index from ◊pyret{0} to ◊pyret{size - 1}.
@@ -192,7 +193,7 @@ end
   }
 
 
-  ◊function["raw-array-build-opt" #:contract (a-arrow (a-arrow N (O-of A)) N) #:return (RA-of A)]
+  ◊function["raw-array-build-opt" #:contract (a-ftype (a-var-type "f" (p-a-arrow N (O-of A))) (a-var-type "size" N) (RA-of "a")) #:return (RA-of A)]
   
     Constructs an array based on the results of
     calling the function ◊pyret{f} with each index from ◊pyret{0} to ◊pyret{size
@@ -212,7 +213,7 @@ check:
 end    
    } 
   
-  ◊function["raw-array-map" #:contract (a-arrow (a-arrow "a" "b") (RA-of "a")) #:return (RA-of "b")]
+  ◊function["raw-array-map" #:contract (a-ftype (a-var-type "f" (p-a-arrow "a" "b")) (a-var-type "array" (RA-of "a")) (RA-of "a")) #:return (RA-of "b")]
 
   Creates a new array by applying ◊pyret{f} to each element of the array.
   Similar to ◊pyret-id["map" "lists"]. Has an argument order that works with
@@ -233,7 +234,7 @@ end
   ◊pyret-id["equal-always" "equality"], they are ◊pyret-id["equal-now"
   "equality"].
   
-  ◊function["raw-array-filter" #:contract (a-arrow (a-arrow "a" B) (RA-of "a")) #:return (RA-of "a")]
+  ◊function["raw-array-filter" #:contract (a-ftype (a-var-type "f" (p-a-arrow "a" B)) (a-var-type "array" (RA-of "a")) (RA-of "a")) #:return (RA-of "a")]
 
   Applies function ◊pyret{f} to each element of ◊pyret{array} from left to right,
   constructing a new ◊pyret{RawArray} out of the elements for which ◊pyret{f}
@@ -251,7 +252,7 @@ check:
 end
   }
   
-  ◊function["raw-array-sort-nums" #:contract (a-arrow (RA-of N) B) #:return (RA-of N)]
+  ◊function["raw-array-sort-nums" #:contract (a-ftype (a-var-type "array" (RA-of N)) (a-var-type "asc" B) (RA-of N)) #:return (RA-of N)]
 
   Sorts the given array ◊emph{in-place} in ascending or descending order
   according to the ◊pyret{asc} parameter. Returns a reference to the
@@ -270,7 +271,7 @@ check:
 end
 }
 
-  ◊function["raw-array-sort-by" #:contract (a-arrow (RA-of "a") (a-arrow "a" N) B) #:return (RA-of "a")]
+  ◊function["raw-array-sort-by" #:contract (a-ftype (a-var-type "array" (RA-of "a")) (a-var-type "key" (p-a-arrow "a" N)) (a-var-type "asc" B) (RA-of "a")) #:return (RA-of "a")]
 
   Creates a new array containing the sorted contents of the given array. The sort
   order is determined by calling the ◊pyret{key} function on each element to
@@ -294,7 +295,7 @@ end
 }
   
 
-  ◊function["raw-array-fold" #:contract (a-arrow (a-arrow "b" "a" N "b") "b" (RA-of "a") N "b") #:return "b"]
+  ◊function["raw-array-fold" #:contract (a-ftype (a-var-type "f" (p-a-arrow "b" "a" N "b")) (a-var-type "init" "b") (a-var-type "array" (RA-of "a")) (a-var-type "start-index" N) "b") #:return "b"]
 
   Combines the elements in the array with a function that accumulates each
   element with an intermediate result.
@@ -317,7 +318,7 @@ check:
 end
   }
   
-  ◊function["raw-array-concat" #:contract (a-arrow (RA-of "a") (RA-of "a" )) #:return (RA-of "a")]
+  ◊function["raw-array-concat" #:contract (a-ftype (a-var-type "array1" (RA-of "a")) (a-var-type "array2" (RA-of "a" )) (RA-of "a")) #:return (RA-of "a")]
   
   Creates a new array with all the elements of ◊pyret{array1} followed by all
   the elements of ◊pyret{array2}.
@@ -337,7 +338,7 @@ end
 
   
 
-  ◊function["raw-array-duplicate"]
+  ◊function["raw-array-duplicate" #:contract (a-ftype (a-var-type "array" (RA-of "a")) (RA-of "a"))]
 
   Returns a copy of the given array, such that corresponding elements in the
   result are ◊seclink["eq-fun-identical"] to those in the source array.
