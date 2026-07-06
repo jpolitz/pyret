@@ -82,8 +82,8 @@ how the total predicates work [◊secref["s:total-equality-predicates"]].
 
 ◊section[#:tag "eq-fun-equal-always"]{Equal Always}
 
-◊function["equal-always" #:contract (a-arrow A A B)]
-◊function["==" #:contract (a-arrow A A B)]
+◊function["equal-always" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) B)]
+◊function["==" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) B)]
 
 Checks if two values will be equal for all time. When it returns
 ◊pyret{true}, it means the two values can always be used in place of
@@ -104,7 +104,7 @@ Checking that mutable values are ◊pyret-id{identical} is what ensures
 that if two values were ◊pyret-id{equal-always} at any point, they
 will still be ◊pyret-id{equal-always} later.
 
-◊function["<>" #:contract (a-arrow A A B)]
+◊function["<>" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) B)]
 
 The negation of ◊pyret{==}: returns ◊pyret{true} if the values are not
 ◊pyret{equal-always} and ◊pyret{false} otherwise.
@@ -198,8 +198,8 @@ end
 
 ◊section[#:tag "eq-fun-equal-now"]{Equal Now}
 
-◊function["equal-now" #:contract (a-arrow A A B)]
-◊function["=~" #:contract (a-arrow A A B)]
+◊function["equal-now" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) B)]
+◊function["=~" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) B)]
 
 Checks if the two values are equal ◊emph{now}. They may not be equal
 later, so they can't be used in place of one another at all
@@ -300,8 +300,8 @@ end
 
 ◊section[#:tag "eq-fun-identical"]{Identical}
 
-◊function["identical" #:contract (a-arrow A A B)]
-◊function["<=>" #:contract (a-arrow A A B)]
+◊function["identical" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) B)]
+◊function["<=>" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) B)]
 
 Checks if two seemingly different values are in fact exactly the same
 value. When it returns ◊pyret{true}, it means the two values can
@@ -473,7 +473,7 @@ Pyret has a family of built-in functions for cases like this, and the default
 is ◊pyret-id{within}.  To explain it precisely, it is clearer to first explain the
 other two functions, ◊pyret-id{within-rel} and ◊pyret-id{within-abs}:
 
-◊function["within-rel" #:contract (a-arrow N A)]
+◊function["within-rel" #:contract (a-ftype (a-var-type "tol" N) (p-a-arrow A A B))]
 
 It takes an argument representing the ◊emph{relative error}, and returns a
 function that can be used to check equality up to that relative error.  For
@@ -528,7 +528,7 @@ check:
 end
 }
 
-◊function["within-abs" #:contract (a-arrow N A)]
+◊function["within-abs" #:contract (a-ftype (a-var-type "tol" N) (p-a-arrow A A B))]
 
 Like ◊pyret-id{within-rel}, but compares with ◊emph{absolute} tolerance rather
 than relative.  The definition is equivalent to:
@@ -556,8 +556,8 @@ check:
 end
 }
 
-◊function["within" #:contract (a-arrow N A)]
-◊function["roughly-equal" #:contract (a-arrow A A B)]
+◊function["within" #:contract (a-ftype (a-var-type "tol" N) (p-a-arrow A A B))]
+◊function["roughly-equal" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) B)]
 
 The definitions above work smoothly, but provide unintuitive behavior when both
 values are tiny.  In particular, there are ◊emph{no values at all} that are
@@ -610,10 +610,10 @@ check:
 end
 }
 
-◊function["within-now" #:contract (a-arrow N A)]
-◊function["within-rel-now" #:contract (a-arrow N A)]
-◊function["within-abs-now" #:contract (a-arrow N A)]
-◊function["roughly-equal-now" #:contract (a-arrow A A B)]
+◊function["within-now" #:contract (a-ftype (a-var-type "tol" N) (p-a-arrow A A B))]
+◊function["within-rel-now" #:contract (a-ftype (a-var-type "tol" N) (p-a-arrow A A B))]
+◊function["within-abs-now" #:contract (a-ftype (a-var-type "tol" N) (p-a-arrow A A B))]
+◊function["roughly-equal-now" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) B)]
 
 Like ◊pyret-id{within}, ◊pyret-id{within-rel}, ◊pyret-id{within-abs} and ◊pyret-id{roughly-equal}, but
 they traverse mutable structures as in ◊pyret{equal-now}.
@@ -905,9 +905,6 @@ unknown, we define the result of a total equality check with a new datatype:
                                                 ,(make-arg "value1" "Any")
                                                 ,(make-arg "value2" "Any")) T]
 
-  ◊function["is-Equal" #:alt-docstrings ""]
-  ◊function["is-NotEqual" #:alt-docstrings ""]
-  ◊function["is-Unknown" #:alt-docstrings ""]
   }
 
 We define three parallel functions to the equality predicates that return
@@ -915,9 +912,9 @@ We define three parallel functions to the equality predicates that return
 ◊pyret-id{NotEqual} whenever the corresponding function would, and
 ◊pyret-id{Unknown} whenever the corresponding function would throw an error:
 
-  ◊function["equal-always3" #:contract (a-arrow A A T)]
-  ◊function["equal-now3" #:contract (a-arrow A A T)]
-  ◊function["identical3" #:contract (a-arrow A A T)]
+  ◊function["equal-always3" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) T)]
+  ◊function["equal-now3" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) T)]
+  ◊function["identical3" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) T)]
 
 ◊examples{
 check:
@@ -1013,11 +1010,11 @@ We can now modify our table from above to be more complete:
 
 There are corresponding total functions defined for ◊pyret-id{within} as well:
 
-◊function["within3" #:contract (a-arrow N A)]
-◊function["within-rel3" #:contract (a-arrow N A)]
-◊function["within-rel-now3" #:contract (a-arrow N A)]
-◊function["within-abs3" #:contract (a-arrow N A)]
-◊function["within-abs-now3" #:contract (a-arrow N A)]
+◊function["within3" #:contract (a-ftype (a-var-type "tol" N) (p-a-arrow A A T))]
+◊function["within-rel3" #:contract (a-ftype (a-var-type "tol" N) (p-a-arrow A A T))]
+◊function["within-rel-now3" #:contract (a-ftype (a-var-type "tol" N) (p-a-arrow A A T))]
+◊function["within-abs3" #:contract (a-ftype (a-var-type "tol" N) (p-a-arrow A A T))]
+◊function["within-abs-now3" #:contract (a-ftype (a-var-type "tol" N) (p-a-arrow A A T))]
 
 ◊section[#:tag "s:datatype-defined-equality"]{Datatype-defined Equality}
 
@@ -1189,14 +1186,14 @@ compared lexicographically (examples below).  For objects with overloaded
 methods, the method should return a ◊B and that return value is used as the
 result.
 
-◊function["<=" #:contract (a-arrow A A B)]
-◊function["_lessequal" #:contract (a-arrow A A B)]
-◊function["<" #:contract (a-arrow A A B)]
-◊function["_lessthan" #:contract (a-arrow A A B)]
-◊function[">=" #:contract (a-arrow A A B)]
-◊function["_greaterequal" #:contract (a-arrow A A B)]
-◊function[">" #:contract (a-arrow A A B)]
-◊function["_greaterthan" #:contract (a-arrow A A B)]
+◊function["<=" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) B)]
+◊function["_lessequal" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) B)]
+◊function["<" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) B)]
+◊function["_lessthan" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) B)]
+◊function[">=" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) B)]
+◊function["_greaterequal" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) B)]
+◊function[">" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) B)(a-arrow A A B)]
+◊function["_greaterthan" #:contract (a-ftype (a-var-type "val1" A) (a-var-type "val2" A) B)]
 
 ◊pyret-block{
 check "strings":
