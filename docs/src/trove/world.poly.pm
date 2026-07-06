@@ -102,7 +102,7 @@ big-bang(10, on-tick(increment))
             #:return (a-app WC "a")
             #:args (list '("handler" ""))]{
     Consumes a function and returns a handler that, when passed to
-    ◊secref[(tag-name "world" "big-bang")], will be called each program tick
+    ◊pyret-id["big-bang" "world"], will be called each program tick
     with the current world state.
   }
   ◊function["on-tick-n"
@@ -113,7 +113,7 @@ big-bang(10, on-tick(increment))
             #:args (list '("handler" "")
                          '("n" ""))]{
     Consumes a function and returns a handler that, when passed to
-    ◊secref[(tag-name "world" "big-bang")], will be called every ◊pyret{n}
+    ◊pyret-id["big-bang" "world"], will be called every ◊pyret{n}
     program ticks with the current world state.
   }
   
@@ -124,7 +124,7 @@ big-bang(10, on-tick(increment))
             #:return (a-app WC "a")
             #:args (list '("drawer" ""))]{
     Consumes a function and returns a handler that, when passed to
-    ◊secref[(tag-name "world" "big-bang")], will inform the world program
+    ◊pyret-id[ "big-bang" "world" ], will inform the world program
     what to draw.
   }
 
@@ -135,9 +135,9 @@ big-bang(10, on-tick(increment))
             #:return (a-app WC "a")
             #:args (list '("onKey" ""))]{
     Consumes a function and returns a handler that, when passed to
-    ◊secref[(tag-name "world" "big-bang")], will be called every time a
+    ◊pyret-id[ "big-bang" "world" ], will be called every time a
     key is pressed. The function is called with the current world state
-    and a ◊secref[(tag-name "<global>" "String")] representing the pressed
+    and a ◊pyret-id[  "String" "<global>"] representing the pressed
     key. For most keys, this is just the corresponding single character.
 
     The special keys are:
@@ -175,10 +175,10 @@ big-bang(10, on-tick(increment))
             #:return (a-app WC "a")
             #:args (list '("mouse-handler" ""))]{
     Consumes a function and returns a handler that, when passed to
-    ◊secref[(tag-name "world" "big-bang")], will be called on every sampled
+    ◊pyret-id[ "big-bang" "world"], will be called on every sampled
     mouse movement. The function will receive the world state, the current
-    ◊pyret{x} and ◊pyret{y} positions of the mouse, and a ◊secref[(tag-name
-    "<global>" "String")] representing a mouse event. Possible mouse
+    ◊pyret{x} and ◊pyret{y} positions of the mouse, and a ◊pyret-id[
+    "String" "<global>" ] representing a mouse event. Possible mouse
     events are:
 
     ◊itemlist[(item (pyret "\"button-down\"") 
@@ -200,16 +200,16 @@ big-bang(10, on-tick(increment))
             #:return (a-app WC "a")
             #:args (list '("stopper" ""))]{
     Consumes a function and returns a handler that, when passed to
-    ◊secref[(tag-name "world" "big-bang")], will be called to determine if
+    ◊pyret-id[  "big-bang" "world"], will be called to determine if
     the world should stop running. If the function returns ◊pyret{true},
-    then no other handlers will be called. The ◊secref[(tag-name "world" "big-bang")] 
+    then no other handlers will be called. The ◊pyret-id["big-bang" "world"]
     function will return this last world state.
   }
   ◊function["is-world-config"
             #:contract (a-ftype (a-var-type "v" A) B)
             #:return (a-app WC "a")
             #:args (list '("v" ""))]{
-    Tests if the input is of type ◊secref[(tag-name "world" "WorldConfig")].
+    Tests if the input is of type ◊pyret-id[ "WorldConfig" "world"].
   }
   ◊function["is-key-equal"
             #:contract (a-ftype (a-var-type "key1" S)

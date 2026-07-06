@@ -145,7 +145,7 @@ function should return the same type.  So for a ◊(R-of "a"), the type of the
 on-tick handler is:
 
 ◊tt{
-on-tick :: ◊(a-arrow "a" "a")
+on-tick :: ◊(p-a-arrow "a" "a")
 }
 
 This function is called every time the reactor's clock ticks, which happens by
@@ -181,7 +181,7 @@ type of the to-draw handler is:
 ◊(image "to-draw.gif")
 
 ◊tt{
-to-draw :: ◊(a-arrow "a" Image)
+to-draw :: ◊(p-a-arrow "a" Image)
 }
 
 This function is called each time the reactor's value changes, and is displayed
@@ -197,7 +197,7 @@ The ◊pyret{on-key} handler expects to be given a function of two arguments,
 which describe the current reactor state and a key event:
 
 ◊tt{
-on-key :: ◊(a-arrow "a" S "a")
+on-key :: ◊(a-ftype "a" S "a")
 }
 
 The string describes a single keypress.  Most keys map directly to
@@ -237,7 +237,7 @@ The ◊pyret{on-mouse} handler expects to be given a function of four arguments,
 which describe the current reactor state and a mouse event:
 
 ◊tt{
-on-mouse :: ◊(a-arrow "a" N N S "a")
+on-mouse :: ◊(p-a-arrow "a" N N S "a")
 }
 
 The two numbers indicate the x and y coordinates of the mouse, and the string
@@ -263,7 +263,7 @@ The ◊pyret{stop-when} handler expects to be given a function of one argument.
 The argument is the reactor state, and it should return a ◊|B|:
 
 ◊tt{
-stop-when :: ◊(a-arrow "a" B)
+stop-when :: ◊(p-a-arrow "a" B)
 }
 
 This function is called each time the reactor changes its state.  If it returns
