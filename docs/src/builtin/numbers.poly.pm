@@ -1,9 +1,9 @@
 #lang pollen
 
-◊(define eq '(a-id "EqualityResult" (xref "equality" "EqualityResult")))
-◊(define eqfun `(a-arrow ,A ,A ,B))
-◊(define eq3fun `(a-arrow ,A ,A ,eq))
-◊(define numpred `(a-arrow ,N ,N ,B))
+◊(define eq (a-id "EqualityResult" (xref "equality" "EqualityResult")))
+◊(define eqfun (a-arrow A A B))
+◊(define eq3fun (a-arrow A A eq))
+◊(define numpred (a-arrow N N B))
 
 
 
