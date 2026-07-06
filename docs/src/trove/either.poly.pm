@@ -17,8 +17,8 @@
   ◊constructor-doc["Either" "left" left-args (E-of "a" "b")]
   ◊constructor-doc["Either" "right" right-args (E-of "a" "b")]
 
-  ◊function["is-left" #:alt-docstrings ""]
-  ◊function["is-right" #:alt-docstrings ""]
+  ◊function["is-left" #:contract (a-arrow (p-a-var-type "val" A) B)]
+  ◊function["is-right" #:contract (a-arrow (p-a-var-type "val" A) B)]
   }
   }
 
