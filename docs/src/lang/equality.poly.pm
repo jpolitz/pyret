@@ -905,6 +905,10 @@ unknown, we define the result of a total equality check with a new datatype:
                                                 ,(make-arg "value1" "Any")
                                                 ,(make-arg "value2" "Any")) T]
 
+  ◊function["is-Equal" #:contract (a-arrow (p-a-var-type "val" A) B)]
+  ◊function["is-NotEqual" #:contract (a-arrow (p-a-var-type "val" A) B)]
+  ◊function["is-Unknown" #:contract (a-arrow (p-a-var-type "val" A) B)]
+
   }
 
 We define three parallel functions to the equality predicates that return

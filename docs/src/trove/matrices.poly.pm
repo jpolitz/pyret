@@ -11,7 +11,7 @@
 ◊(define vec3d-type (a-id "Vector3D" (xref "matrices" "Vector3D")))
 ◊(define Nat (a-id "Nat" (xref "matrices" "Nat")))
 ◊(define NonZeroNat (a-id "NonZeroNat" (xref "matrices" "NonZeroNat")))
-◊(define (L-of typ) `(a-app (a-id "List" (xref "lists" "List")) ,typ))
+◊(define (L-of typ) (a-app (a-id "List" (xref "lists" "List")) typ))
 
 ◊; Creates a LaTeX inline environment
 ◊(define (math-in-env name . strs)
@@ -42,6 +42,10 @@ operations.
 This library defines both the ◊pyret-id["Vector"] datatype and the
 ◊pyret-id["Matrix"] datatype.  All functionality in this library is defined
 both as methods on the data values and as analogous functions.
+
+◊example-preamble{
+include matrices
+}
 
 ◊section{The Vector Datatype}
 
@@ -74,7 +78,7 @@ Vector constructor which only creates three-dimensional vector instances.
 Vectors are defined to permit using addition and subtraction operators on them,
 whenever the lengths of the vectors are the same:
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [vector: 1, 2, 3] + [vector: 4, 5, 6] is [vector: 5, 7, 9]
   [vector: 1] + [vector: 1, 2] raises "vectors of different lengths"
@@ -89,7 +93,7 @@ Two vectors are considered equal when their lengths are the same and their
 corresponding elements are equal, and obeys the same restrictions on comparing
 exact and rough numbers for equality:
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   ([vector: 1] == [vector: 1, 2]) is false
   ([vector: 1, 2] == [vector: 1, 2]) is true
@@ -104,7 +108,7 @@ end
 
 Returns the item at the given index in this vector.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [vector: 3, 5].get(1) is 5
 end
@@ -114,7 +118,7 @@ end
 
 Returns the length of this vector.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [vector: 1, 2, 3, 4].length() is 4
 end
@@ -124,7 +128,7 @@ end
 
 Returns the dot product of this vector with the given vector.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [vector: 1, 2, 3].dot([vector: 3, 2, 1]) is 10
 end
@@ -134,7 +138,7 @@ end
 
 Returns the magnitude of this vector.
 
-◊examples{
+◊examples[#:load-preamble #t]{
   check:
     [vector: 3, 4].magnitude() is 5
     [vector: 4, 0].magnitude() is 4
@@ -146,7 +150,7 @@ Returns the magnitude of this vector.
 Returns the cross product of this 3D vector and the given 3D vector.
 (Raises an error if either this or that vector are not 3-dimensional)
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [vector: 2, -3, 1].cross([vector: -2, 1, 1]) is [vector: -4, -4, -4]
 end
@@ -156,7 +160,7 @@ end
 
 Normalizes this vector into a unit vector.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [vector: 1, 2, 3].normalize()
     is [vector: (1 / num-sqrt(14)), (2 / num-sqrt(14)), (3 / num-sqrt(14))]
@@ -168,7 +172,7 @@ end
 
 Scales this vector by the given constant.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [vector: 1, 2, 3].scale(2) is [vector: 2, 4, 6]
 end
@@ -178,7 +182,7 @@ end
 
 Converts this vector to a one-row matrix.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [vector: 4, 5, 6].to-row-matrix() is [matrix(1, 3): 4, 5, 6]
 end
@@ -188,7 +192,7 @@ end
 
 Converts this vector to a one-column matrix.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [vector: 4, 5, 6].to-row-matrix() is [matrix(3, 1): 4, 5, 6]
 end
@@ -200,7 +204,7 @@ end
 
 Returns the item at the given index in the given vector.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   vec-get([vector: 3, 5], 1) is 5
 end
@@ -212,7 +216,7 @@ See ◊pyret-method["Vector" "get"].
 
 Returns the length of the given vector.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   vec-length([vector: 1, 2, 3, 4]) is 4
 end
@@ -224,7 +228,7 @@ See ◊pyret-method["Vector" "length"].
 
 Returns the dot product of the first vector with the second vector.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   vec-dot[vector: 1, 2, 3], ([vector: 3, 2, 1]) is 10
 end
@@ -236,7 +240,7 @@ See ◊pyret-method["Vector" "dot"].
 
 Returns the magnitude of the given vector.
 
-◊examples{
+◊examples[#:load-preamble #t]{
   check:
     vec-magnitude([vector: 3, 4]) is 5
     vec-magnitude([vector: 4, 0]) is 4
@@ -250,7 +254,7 @@ See ◊pyret-method["Vector" "magnitude"].
 Returns the cross product of the two given 3D vectors.
 (Raises an error if either vector is not 3-dimensional)
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   vec-cross([vector: 2, -3, 1], [vector: -2, 1, 1]) is [vector: -4, -4, -4]
 end
@@ -262,7 +266,7 @@ See ◊pyret-method["Vector" "cross"].
 
 Normalizes the given vector into a unit vector.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   vec-normalize([vector: 1, 2, 3])
     is [vector: (1 / num-sqrt(14)), (2 / num-sqrt(14)), (3 / num-sqrt(14))]
@@ -276,7 +280,7 @@ See ◊pyret-method["Vector" "normalize"].
 
 Scales the given vector by the given constant.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   vec-scale([vector: 1, 2, 3], 2) is [vector: 2, 4, 6]
 end
@@ -289,7 +293,7 @@ See ◊pyret-method["Vector" "scale"].
 
 Adds the second vector to first one.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   vec-add([vector: 1, 2, 3], [vector: 4, 5, 6]) is [vector: 5, 7, 9]
   vec-add([vector: 1], [vector: 1, 2]) raises "vectors of different lengths"
@@ -301,7 +305,7 @@ end
 
 Subtracts the second vector from first one.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   vec-sub([vector: 1, 2, 3], [vector: 4, 5, 6]) is [vector: -3, -3, -3]
   vec-sub([vector: 1], [vector: 1, 2]) raises "vectors of different lengths"
@@ -315,14 +319,21 @@ The ◊pyret{Matrix} type represents mathematical matrices.
 
 ◊nested[#:style 'inset]{
 
-◊function["is-matrix" #:contract (a-ftype (a-var-type "val" A) B) #:alt-docstrings ""]
+◊function["is-matrix" #:contract (a-ftype (a-var-type "val" A) B) #:alt-docstrings ""
+#:examples
+◊examples[#:load-preamble #t]{
+check:
+  is-matrix([matrix(2, 2): 1, 1, 1, 2]) is true
+  is-matrix(1) is false
+end
+}]
 
 }
 
 Every matrix has a ◊pyret{rows} field and a ◊pyret{cols} field, which are the
 dimensions of the matrix.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2, 3): 10, 20, 30, 40, 50, 60].rows is 2
   [matrix(2, 3): 10, 20, 30, 40, 50, 60].cols is 3
@@ -342,14 +353,14 @@ Publicly exposed constructor which constructs a matrix of size
 
 The following example represents the matrix ◊math-imtx{1 & 2 & 3 \\ 4 & 5 & 6}:
 
-◊examples{
+◊examples[#:load-preamble #t]{
 [matrix(2,3): 1, 2, 3, 4, 5, 6]
 }
 
 Supplying an inconsistent quantity of elements for a given matrix dimension
 will produce an error:
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(4, 2): 100] raises "Invalid 1x2 Matrix"
 end
@@ -362,7 +373,7 @@ Constructor which returns a one-row matrix containing the given entries.
 
 The following will construct the matrix ◊math-imtx{1 & 2 & 3}:
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [row-matrix: 1, 2, 3] is [matrix(1,3): 1, 2, 3]
 end
@@ -375,7 +386,7 @@ Constructor which returns a one-column matrix containing the given entries.
 
 The following will construct the matrix ◊math-imtx{1 \\ 2 \\ 3}:
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [col-matrix: 1, 2, 3] is [matrix(3,1): 1, 2, 3]
 end
@@ -385,7 +396,7 @@ end
 
 Constructs an ◊math-in{n \times n} identity matrix.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   identity-matrix(2) is [matrix(2,2): 1, 0,
                                       0, 1]
@@ -399,7 +410,7 @@ end
 
 Constructs a matrix of the given size using only the given element.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   make-matrix(2, 3, 1) is [matrix(2,3): 1, 1, 1,
                                         1, 1, 1]
@@ -413,7 +424,7 @@ end
 
 Constructs a matrix of the given size containing only zeroes.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   zero-matrix(2, 3) is [matrix(2,3): 0, 0, 0,
                                      0, 0, 0]
@@ -425,7 +436,7 @@ end
 
 Constructs a matrix of the given size, where entry ◊math{(i,j)} is the result of ◊pyret{proc(i,j)}.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   build-matrix(2, 3, lam(i,j): i + j end) is [matrix(3,2): 0, 1, 1, 2, 2, 3]
 end
@@ -439,7 +450,7 @@ These methods are available on all matrices.
 
 Returns the matrix's entry in the ◊math{i^th} row and the ◊math{j^th} column.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(3,2): 1, 2, 3, 4, 5, 6].get(1,1) is 4
   [matrix(3,2): 1, 2, 3, 4, 5, 6].get(2,0) is 5
@@ -453,7 +464,7 @@ Returns the matrix as a list of numbers in row-major order.
 
 For example, given the matrix ◊math-imtx{2 & 4 & 6 \\ 8 & 10 & 12 \\ 14 & 16 & 18}:
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(3,3): 2, 4, 6,
                 8, 10, 12,
@@ -466,7 +477,7 @@ end
 
 Returns a one-row/one-column matrix as a vector.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,1): 4, 5].to-vector() is [vector: 4, 5]
   [matrix(1,2): 4, 5].to-vector() is [matrix(2,1): 4, 5].to-vector()
@@ -480,7 +491,7 @@ end
 Returns the matrix as a list of lists of numbers, with each list
 corresponding to one row.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,3): 1, 2, 3, 4, 5, 6].to-lists()
     is [list: [list: 1, 2, 3],
@@ -497,7 +508,7 @@ with each list corresponding to one column.
 For example, the matrix ◊math-imtx{1 & 2 & 3 \\ 4 & 5 & 6} corresponds to the
 vectors ◊math-imtx{1 \\ 4}, ◊math-imtx{2 \\ 5}, and ◊math-imtx{3 \\ 6}: 
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,3): 1, 2, 3, 4, 5, 6].to-vectors()
     is [list: [vector: 1, 4],
@@ -510,7 +521,7 @@ end
 
 Returns a one-row matrix with the matrix's given row.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,3): 1, 2, 3, 4, 5, 6].row(2)
     is [matrix(1,3): 4, 5, 6]
@@ -524,7 +535,7 @@ end
 
 Returns a one-column matrix with the matrix's given column.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,3): 1, 2, 3, 4, 5, 6].col(2)
     is [matrix(2,1): 2, 5]
@@ -557,7 +568,7 @@ a_{22} & a_{23}\end{matrix}\right]}
 
 This is shown in the below example:
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(3,3): 1, 2, 3, 4, 5, 6, 7, 8, 9].submatrix([list: 1, 2], [list: 2, 3])
     is [matrix(2,2): 2, 3, 4, 5]
@@ -571,7 +582,7 @@ Returns the transposition of the matrix. For example,
                  \overrightarrow{Transpose}
                  \begin{bmatrix}1 & 4 \\ 2 & 5 \\ 3 & 6\end{bmatrix}}
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,3): 1, 2, 3, 4, 5, 6].transpose()
     is [matrix(3,2): 1, 4, 2, 5, 3, 6]
@@ -587,7 +598,7 @@ complex numbers, this is synonymous with ◊pyret-method["Matrix" "transpose"].
 
 Returns a one-row matrix containing the matrix's diagonal entries.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(3,3): 1, 2, 3, 4, 5, 6, 7, 8, 9].diagonal()
     is [matrix(1,3): 1, 5, 9]
@@ -604,7 +615,7 @@ consists of all the values on or above the main diagonal, and zeroes below it.
 For example, the upper triangle of ◊math-imtx{1 & 2 & 3\\ 4 & 5 & 6\\ 7 & 8 & 9}
 would be ◊math-imtx{1 & 2 & 3\\ 0 & 5 & 6 \\ 0 & 0 & 9}.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,2): 1, 2,
                 3, 4].upper-triangle()
@@ -627,7 +638,7 @@ consists of all the values on or below the main diagonal, and zeroes above it.
 For example, the upper triangle of ◊math-imtx{1 & 2 & 3\\ 4 & 5 & 6\\ 7 & 8 & 9}
 would be ◊math-imtx{1 & 0 & 0\\ 4 & 5 & 0\\ 7 & 8 & 9}.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,2): 1, 2,
                 3, 4].lower-triangle()
@@ -649,7 +660,7 @@ Returns the matrix as a list of one-row matrices.
 (Very similar to ◊pyret-method["Matrix" "to-lists"], except this method
 returns a list of matrices instead.)
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,3): 1, 2, 3, 4, 5, 6].row-list()
     is [list: [matrix(1,3): 1, 2, 3],
@@ -663,7 +674,7 @@ Returns the matrix as a list of one-column matrices.
 (Very similar to ◊pyret-method["Matrix" "to-vectors"], except this method
 returns a list of matrices instead.)
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,3): 1, 2, 3, 4, 5, 6].col-list()
     is [list: [matrix(2,1): 1, 4],
@@ -676,7 +687,7 @@ end
 
 Maps the given function entrywise over the matrix.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   multTwo = lam(x): x * 2 end
   [matrix(2,2): 1, 2, 3, 4].map(multTwo)
@@ -688,7 +699,7 @@ end
 Maps the given function entrywise over corresponding elements of this and the
 given matrix.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   m1 = [matrix(2,2): 10, 20, 30, 40]
   m2 = [matrix(2,2): 4, 3, 2, 1]
@@ -702,7 +713,7 @@ end
 
 Maps the given function over each row in the matrix.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   # sumRow :: 1*n matrix
   # Computes the total sum of all entries in the given row
@@ -715,7 +726,7 @@ end
 
 Maps the given function over each column in the matrix.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   # sumCol :: m*1 matrix
   # Computes the total sum of all entries in the given column
@@ -731,7 +742,7 @@ example, augmenting the matrix ◊math-imtx{1 & 2\\4 & 5} with
 the matrix ◊math-imtx{3\\ 6} yields the matrix
 ◊math-imtx{1 & 2 & 3\\ 4 & 5 & 6}.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,2): 1, 2,
                 4, 5].augment([matrix(2,1): 3,
@@ -748,7 +759,7 @@ example, stacking the matrix ◊math-imtx{1 & 2 & 3} on top of
 the matrix ◊math-imtx{4 & 5 & 6} gives the matrix
 ◊math-imtx{1 & 2 & 3\\ 4 & 5 & 6}.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(1,3): 1, 2, 3].stack([matrix(1,3): 4, 5, 6])
     is [matrix(2,3): 1, 2, 3,
@@ -760,7 +771,7 @@ end
 
 Returns the trace of the matrix (i.e. the sum of its diagonal values).
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(3,3): 1, 2, 3,
                 4, 5, 6,
@@ -774,7 +785,7 @@ end
 
 Multiplies each entry in the matrix by the given value.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,2): 1, 2, 3, 4].scale(2) is [matrix(2,2): 2, 4, 6, 8]
 
@@ -796,7 +807,7 @@ denotes matrix multiplication):
 \underbrace{\left[\begin{smallmatrix}(1\cdot 4)+(2\cdot 2)+(3\cdot \frac{4}{3})\end{smallmatrix}\right]}_{
 1\times 1 \text{ matrix}}}◊pyret{.trace()}◊math-in{=12}
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(1,3): 1, 2, 3].dot([matrix(1,3): 4, 2, 4/3]) is 12
   [matrix(1,3): 1, 2, 3].dot([matrix(1,3): 1, 1, 1]) is 6
@@ -807,7 +818,7 @@ end
 
 Multiplies the matrix by itself the given number of times.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   a = [matrix(2,2): 1, 2, 3, 4]
   a.expt(1) is a
@@ -821,7 +832,7 @@ end
 Returns the determinant of the matrix, calculated via a recursive
 implementation of Laplace expansion.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(5,5): 1, 2, 1, 2, 3,
                 2, 3, 1, 0, 1,
@@ -853,7 +864,7 @@ Returns the Reduced Row Echelon Form of the matrix. For example:
                  \overrightarrow{RREF}
                  \begin{bmatrix}1 & 0 & -1\\ 0 & 1 & 2\end{bmatrix}}
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,3): 1, 2, 3, 4, 5, 6].rref() is [matrix(2,3): 1, 0,-1, 0, 1, 2]
 end
@@ -867,7 +878,7 @@ echelon form). For example:
 ◊math-disp{\begin{bmatrix}1 & 0 & 4\\ 1 & 1 & 6\\ -3 & 0 & -10\end{bmatrix}^{-1}
                  = \begin{bmatrix}-5 & 0 & -2\\ -4 & 1 & -1\\ ^3/_2 & 0 & ^1/_2\end{bmatrix}}
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(3,3): 1, 0, 4, 1, 1, 6, -3, 0, -10].inverse()
     is [matrix(3,3): -5, 0, -2, -4, 1, -1, 3/2, 0, 1/2]
@@ -922,7 +933,7 @@ Computes the ◊math{L^p} norm of the matrix using the given number.
 
 Computes the ◊math{L^1}, ◊math{L^2}, and ◊math{L}◊superscript{∞} norms of the matrix, respectively.
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   a = [matrix(3,1): 1, 2, 3]
   b = [matrix(3,3): 1, 0, 0, 2, 0, 0, 3, 0, 0]
@@ -954,7 +965,7 @@ Returns an orthogonal matrix whose image is the same as the span of the matrix's
 Matrices are defined to permit using addition, subtraction, and multiplication
 operators on them, whenever the dimensions are compatible:
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,2): 1, 2, 3, 4] + [matrix(2,2): 1, 2, 3, 4]
     is [matrix(2,2): 2, 4, 6, 8]
@@ -964,7 +975,7 @@ check:
 end
 }
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,2): 1, 2, 3, 4] - [matrix(2,2): 0, 2, 3, 3]
     is [matrix(2,2): 1, 0, 0, 1]
@@ -974,7 +985,7 @@ check:
 end
 }
 
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   [matrix(2,2): 1, 2, 3, 4] * [matrix(2,2): 3, 0, 0, 3]
     is [matrix(2,2): 3, 6, 9, 12]
@@ -1170,7 +1181,7 @@ Adds, subtracts, or multiplies the two matrices.  See ◊secref{s:matrix-binary-
 
 ◊function["is-row-matrix" #:contract (a-ftype (a-var-type "mtx" mtx-type) B)]
 Returns whether the matrix has exactly one row:
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   is-row-matrix([matrix(1, 3): 10, 20, 10]) is true
   is-row-matrix([matrix(3, 1): 10, 20, 10]) is false
@@ -1180,14 +1191,14 @@ end
 
 ◊function["is-col-matrix" #:contract (a-ftype (a-var-type "mtx" mtx-type) B)]
 Returns whether the matrix has exactly one column:
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   is-row-matrix([matrix(1, 3): 10, 20, 10]) is false
   is-row-matrix([matrix(3, 1): 10, 20, 10]) is true
 end
 }
 ◊function["is-square-matrix" #:contract (a-ftype (a-var-type "mtx" mtx-type) B)]{Returns true if the given matrix has the same number of rows and columns.}
-◊examples{
+◊examples[#:load-preamble #t]{
 check:
   is-square-matrix([matrix(2, 2): 10, 20, 30, 40]) is true
   is-square-matrix([matrix(4, 1): 10, 20, 30, 40]) is false
@@ -1199,7 +1210,7 @@ end
   "vector-to-matrix"
   #:contract (a-ftype (a-var-type "v" vec-type) mtx-type)
   #:examples
-  ◊examples{
+  ◊examples[#:load-preamble #t]{
   check:
     vector-to-matrix([vector: 1, 2, 3]) is [matrix(1,3): 1, 2, 3]
   end
@@ -1210,7 +1221,7 @@ end
   "list-to-matrix"
   #:contract (a-ftype (a-var-type "rows" NonZeroNat) (a-var-type "cols" NonZeroNat) (a-var-type "lst" (L-of N)) mtx-type)
   #:examples
-  ◊examples{
+  ◊examples[#:load-preamble #t]{
   check:
     list-to-matrix(2, 2, [list: 1, 2, 3, 4])
       is [matrix(2,2): 1, 2, 3, 4]
@@ -1225,7 +1236,7 @@ end
   "list-to-row-matrix"
   #:contract (a-ftype (a-var-type "lst" (L-of N)) mtx-type)
   #:examples
-  ◊examples{
+  ◊examples[#:load-preamble #t]{
   check:
     list-to-row-matrix([list: 1, 2, 3, 4]) is [matrix(1,4): 1, 2, 3, 4]
   end
@@ -1236,7 +1247,7 @@ end
   "list-to-col-matrix"
   #:contract (a-ftype (a-var-type "lst" (L-of N)) mtx-type)
   #:examples
-  ◊examples{
+  ◊examples[#:load-preamble #t]{
   check:
     list-to-col-matrix([list: 1, 2, 3, 4]) is [matrix(4,1): 1, 2, 3, 4]
   end
@@ -1247,7 +1258,7 @@ end
   "lists-to-matrix"
   #:contract (a-ftype (a-var-type "lst" (L-of (L-of N))) mtx-type)
   #:examples
-  ◊examples{
+  ◊examples[#:load-preamble #t]{
   check:
     lists-to-matrix([list: [list: 1, 2, 3, 4]]) is [matrix(1,4): 1, 2, 3, 4]
     lists-to-matrix([list: [list: 1, 2, 3],
@@ -1260,7 +1271,7 @@ end
   "vectors-to-matrix"
   #:contract (a-ftype (a-var-type "lst" (L-of vec-type)) mtx-type)
   #:examples
-  ◊examples{
+  ◊examples[#:load-preamble #t]{
   check:
     vectors-to-matrix([list: [vector: 1, 2, 3]]) is [matrix(3,1): 1, 2, 3]
     vectors-to-matrix([list: [vector: 1, 3, 5], [vector: 2, 4, 6]])

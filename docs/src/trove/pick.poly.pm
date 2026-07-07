@@ -17,8 +17,8 @@
   ◊singleton-doc["Pick" "pick-none" (P-of "a" "b")]
   ◊constructor-doc["Pick" "pick-some" s-pick-args (P-of "a" "b")]
 
-  ◊function["is-pick-none" #:alt-docstrings ""]
-  ◊function["is-pick-some" #:alt-docstrings ""]
+  ◊function["is-pick-none" #:contract (a-arrow (p-a-var-type "val" A) B)]
+  ◊function["is-pick-some" #:contract (a-arrow (p-a-var-type "val" A) B)]
   }
   
 The primary use of ◊pyret{pick} is as a way of obtaining values from sets.
@@ -50,7 +50,26 @@ fun sum-queue(q :: Queue) -> Number:
 end
 }
 with the expected behavior:
-◊examples{
+◊example-preamble{
+import pick as P
+
+data Queue<T>:
+  | queue(elts :: List<T>) with:
+    method pick(self):
+      cases (List) self.elts:
+        | empty => P.pick-none
+        | link(f, r) => P.pick-some(f, queue(r))
+      end
+    end
+end
+fun sum-queue(q :: Queue) -> Number:
+  cases (P.Pick) q.pick():
+    | pick-none => 0
+    | pick-some(e, r) => e + sum-queue(r)
+  end
+end
+}
+◊examples[#:load-preamble #t]{
 check:
   q = queue([list: 1, 2, 3])
   sum-queue(q) is 6
