@@ -259,6 +259,7 @@ end
   original array, which will have its contents mutably updated.
 
   ◊examples{
+include global
 check:
   a = [raw-array: 3, 1, 4, 1, 5, 9, 2]
 
@@ -280,6 +281,7 @@ end
   broken by the order in which the element is present in the initial array.
   
   ◊examples{
+include global
 check:
   a = [raw-array: "let", "us", "go", "then", "you", "and", "i"]
 
@@ -324,6 +326,7 @@ end
   the elements of ◊pyret{array2}.
   
 ◊examples{
+include global
 check:
   a1 = [raw-array: 5, 6, 7]
   a2 = [raw-array: 0, 3, 99, -1, 7]
@@ -344,6 +347,7 @@ end
   result are ◊seclink["eq-fun-identical"] to those in the source array.
   
   ◊examples{
+include global
 check:
   a = [raw-array: 1, 2, 3]
   b = raw-array-duplicate(a)
