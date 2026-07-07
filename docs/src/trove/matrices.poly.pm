@@ -1,5 +1,35 @@
 #lang pollen
 
+◊(require (only-in racket/system [system shell]))
+◊(define lualatex-path (path->string (find-executable-path "lualatex")))
+◊(define magick-path (path->string (find-executable-path "magick")))
+◊(define math-image-dir (path->string (current-directory)))
+
+◊(define (combine-strings ss)
+  (let loop ([ss (reverse ss)] [out ""])
+    (if (null? ss) out
+        (loop (cdr ss) (string-append out " " (car ss))))))
+
+◊(define (math-image mtx-file-basename . latex-fragments)
+   (let* ([mtx-dir math-image-dir]
+          [mtx-path-basename (path->string (build-path mtx-dir mtx-file-basename))]
+          [mtx-png-file (string-append mtx-path-basename ".png")])
+     (unless (file-exists? mtx-png-file)
+       (let ([mtx-latex-file (string-append mtx-path-basename ".tex")])
+         (call-with-output-file mtx-latex-file
+           (lambda (o)
+             (fprintf o "\\documentclass[preview]{standalone}\n")
+             (fprintf o "\\usepackage{amsmath}\n")
+             (fprintf o "\\begin{document}\n")
+             (for-each (lambda (x) (display x o) (display " " o)) latex-fragments)
+             (fprintf o "\n\\end{document}\n"))
+           #:exists 'replace)
+         (shell (format "~a -output-directory=~a ~a" lualatex-path mtx-dir mtx-path-basename))
+         (shell (format "~a -density 300 ~a.pdf -quality 90 ~a.png"
+                   magick-path mtx-path-basename mtx-path-basename))))
+     `(img ([src ,(string-append mtx-file-basename ".png")]
+            [alt ,(combine-strings latex-fragments)]
+            [width "100%"]))))
 
 ◊(define (matrix-method name #:args (args #f) #:return (return #f) #:contract (contract #f))
    (method-doc "Matrix" #f name #:alt-docstrings "" #:args args #:return return #:contract contract))
@@ -394,7 +424,7 @@ end
 
 ◊function["identity-matrix" #:contract (a-ftype (a-var-type "n" NonZeroNat) mtx-type)]
 
-Constructs an ◊math-in{n \times n} identity matrix.
+Constructs an ◊emph{n} × ◊emph{n} identity matrix.
 
 ◊examples[#:load-preamble #t]{
 check:
@@ -550,21 +580,24 @@ end
 Returns the submatrix of the matrix comprised of the intersection
 of the given list of rows and the given list of columns.
 
-For example, if our list of rows is ◊math-in{\{1, 2\}} and our
-list of columns is ◊math-in{\{2, 3\}}, then the positions in the
-resulting submatrix will be the elements with ◊math-in{(row,col)} positions
-◊math-in{\{(1, 2), (1, 3), (2, 2), (2, 3)\}}.
+For example, if our list of rows is {1, 2} and our
+list of columns is {2, 3}, then the positions in the
+resulting submatrix will be the elements with (◊emph{row}, ◊emph{col}) positions
+{(1, 2), (1, 3), (2, 2), (2, 3)}.
 
-◊math-in{
+◊math-image["matrix-submatrix"]{
+\[
 \left[\begin{matrix} 
             a_{11} & a_{12} & a_{13} \\
             a_{21} & a_{22} & a_{23} \\
             a_{31} & a_{32} & a_{33}
-            \end{matrix}\right]}◊pyret{.submatrix([list: 1, 2], [list: 2, 3])}
-                                     ◊math-in{=
+            \end{matrix}\right]\mathtt{.submatrix([list: 1, 2], [list: 2, 3])}
+                                     =
 \left[\begin{matrix}
-a_{12} & a_{13} \\
-a_{22} & a_{23}\end{matrix}\right]}
+       a_{12} & a_{13} \\
+       a_{22} & a_{23}\end{matrix}\right]
+\]
+}
 
 This is shown in the below example:
 
@@ -578,9 +611,15 @@ end
 ◊matrix-method["transpose" #:contract (a-arrow mtx-type)]
 
 Returns the transposition of the matrix. For example,
-◊math-disp{\begin{bmatrix}1 & 2 & 3 \\ 4 & 5 & 6\end{bmatrix}
-                 \overrightarrow{Transpose}
-                 \begin{bmatrix}1 & 4 \\ 2 & 5 \\ 3 & 6\end{bmatrix}}
+
+◊math-image["matrix-transpose"]{
+\[
+\begin{bmatrix}1 & 2 & 3 \\ 4 & 5 & 6\end{bmatrix}
+  \overrightarrow{Transpose}
+\begin{bmatrix}1 & 4 \\ 2 & 5 \\ 3 & 6\end{bmatrix}
+\]
+}
+
 
 ◊examples[#:load-preamble #t]{
 check:
@@ -798,14 +837,18 @@ end
 Returns the Frobenius Product of the matrix with the given matrix (for
 1-dimensional matrices, this is simply the dot product). This is done by
 multiplying the matrix with the transposition of ◊pyret{other} and taking
-the trace of the result. An example of this calculation (◊math-in{\ast} 
+the trace of the result. An example of this calculation (*
 denotes matrix multiplication):
 
-◊math-in{\left(\left[\begin{smallmatrix}1 & 2 & 3\end{smallmatrix}\right]
-\ast\left[\begin{smallmatrix}4\\ 2\\ ^4/_3 \end{smallmatrix}\right]\right)}◊pyret{.trace()}
-◊math-in{=
+◊math-image["matrix-frobenius"]{
+\[
+\left(\left[\begin{smallmatrix}1 & 2 & 3\end{smallmatrix}\right]
+\ast\left[\begin{smallmatrix}4\\ 2\\ ^4/_3 \end{smallmatrix}\right]\right)\mathtt{.trace()}
+=
 \underbrace{\left[\begin{smallmatrix}(1\cdot 4)+(2\cdot 2)+(3\cdot \frac{4}{3})\end{smallmatrix}\right]}_{
-1\times 1 \text{ matrix}}}◊pyret{.trace()}◊math-in{=12}
+1\times 1 \text{ matrix}}\mathtt{.trace()}=12
+\]
+}
 
 ◊examples[#:load-preamble #t]{
 check:
@@ -853,16 +896,21 @@ Returns true if the matrix is invertible, that is, it has a nonzero determinant.
 meaning that all rows (when treated as vectors) each have
 ◊pyret-method["Vector" "magnitude"] 1, are all distinct, and distinct rows
 ◊pyret-method["Vector" "dot"] of zero.  Mathematically, this computes whether
-◊math-in{self * self^T} is the identity matrix.  Since numerical inaccuracy is
+self * self◊sup{T} is the identity matrix.  Since numerical inaccuracy is
 quite likely, this check is performed using ◊pyret-id["roughly-equal"
 "equality"].
 
 ◊matrix-method["rref" #:contract (a-arrow mtx-type)]
 
 Returns the Reduced Row Echelon Form of the matrix. For example:
-◊math-disp{\begin{bmatrix}1 & 2 & 3 \\ 4 & 5 & 6\end{bmatrix}
-                 \overrightarrow{RREF}
-                 \begin{bmatrix}1 & 0 & -1\\ 0 & 1 & 2\end{bmatrix}}
+
+◊math-image["matrix-rref"]{
+\[
+\begin{bmatrix}1 & 2 & 3 \\ 4 & 5 & 6\end{bmatrix}
+  \overrightarrow{RREF}
+\begin{bmatrix}1 & 0 & -1\\ 0 & 1 & 2\end{bmatrix}
+\]
+}
 
 ◊examples[#:load-preamble #t]{
 check:
@@ -875,8 +923,13 @@ end
 Returns the inverse of the matrix, if it is invertible (found
 by augmenting the matrix with itself and finding the reduced-row
 echelon form). For example:
-◊math-disp{\begin{bmatrix}1 & 0 & 4\\ 1 & 1 & 6\\ -3 & 0 & -10\end{bmatrix}^{-1}
-                 = \begin{bmatrix}-5 & 0 & -2\\ -4 & 1 & -1\\ ^3/_2 & 0 & ^1/_2\end{bmatrix}}
+
+◊math-image["matrix-inverse"]{
+\[
+\begin{bmatrix}1 & 0 & 4\\ 1 & 1 & 6\\ -3 & 0 & -10\end{bmatrix}^{-1}
+= \begin{bmatrix}-5 & 0 & -2\\ -4 & 1 & -1\\ ^3/_2 & 0 & ^1/_2\end{bmatrix}
+\]
+}
 
 ◊examples[#:load-preamble #t]{
 check:
@@ -905,7 +958,8 @@ of this matrix, if possible.  This returns a pair of matrices, ◊pyret{L} and
 "upper-triangle")]{lower-triangular} and ◊seclink[(pyret-method-ref "Matrix"
 "upper-triangle")]{upper-triangular}, and whose product is this matrix:
 
-◊math-disp{
+◊math-image["matrix-decomp"]{
+\[
   \begin{bmatrix}
     a_{11} & a_{12} & a_{13} \\
     a_{21} & a_{22} & a_{23} \\
@@ -921,6 +975,8 @@ of this matrix, if possible.  This returns a pair of matrices, ◊pyret{L} and
          0 & u_{22} & u_{23} \\
          0 &      0 & u_{33}
   \end{bmatrix}
+\]
+}
 }
 
 ◊matrix-method["lp-norm" #:contract (a-ftype (a-var-type "power" N) N)]
