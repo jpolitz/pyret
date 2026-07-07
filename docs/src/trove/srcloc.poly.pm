@@ -44,6 +44,7 @@
             "format" #:contract (a-ftype (a-var-type "show-file" A) A)
 
             ;; N.B. Pyret contract: (Srcloc, Any -> Any)
+            #:doc "Returns either 'file: line, col' or just 'line, col', depending on the show-file flag"
             
           ]
           ◊method-spec[
@@ -56,6 +57,7 @@
             "before" #:contract (a-ftype (a-var-type "other" SL) A)
 
             ;; N.B. Pyret contract: (Srcloc, Srcloc60 -> Any)
+            #:doc "Returns true if this location comes before the other one, assuming they come from the same file"
             
           ]
         }

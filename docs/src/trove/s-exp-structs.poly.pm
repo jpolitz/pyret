@@ -35,9 +35,9 @@
   ◊constructor-doc["S-Exp" "s-str" s-str-args S-Exp]
   ◊constructor-doc["S-Exp" "s-sym" s-sym-args S-Exp]
 
-  ◊function["is-s-list" #:alt-docstrings ""]
-  ◊function["is-s-num" #:alt-docstrings ""]
-  ◊function["is-s-str" #:alt-docstrings ""]
-  ◊function["is-s-sym" #:alt-docstrings ""]
+  ◊function["is-s-list" #:contract (a-ftype (a-var-type "val" A) B) #:alt-docstrings ""]
+  ◊function["is-s-num" #:contract (a-ftype (a-var-type "val" A) B) #:alt-docstrings ""]
+  ◊function["is-s-str" #:contract (a-ftype (a-var-type "val" A) B) #:alt-docstrings ""]
+  ◊function["is-s-sym" #:contract (a-ftype (a-var-type "val" A) B) #:alt-docstrings ""]
   }
 }

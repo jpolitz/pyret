@@ -2,7 +2,7 @@
 
 
 
-◊(define BR (a-id (a-id "Brand" (xref "<global>" "Brand"))))
+◊(define BR (a-id "Brand" (xref "brands" "Brand")))
 
 ◊docmodule["brands" #:friendly-title "Brands"]{
 

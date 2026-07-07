@@ -4,8 +4,9 @@
 ◊(define (make-arg name type)
    `(,name ("type" "normal") ("contract" ,type)))
 
-◊(define (ppd-method name)
-  (method-doc "PPrintDoc" #f name #:alt-docstrings ""))
+
+◊(define (ppd-method name #:contract [contract #f])
+  (method-doc "PPrintDoc" #f name #:alt-docstrings "" #:contract contract))
 
 
 
@@ -146,82 +147,82 @@
 
 These methods are available on all ◊pyret-id{PPrintDoc}s.
 
-◊ppd-method["_plus"]
+◊ppd-method["_plus" #:contract (a-ftype (a-var-type "other" PPD) PPD)]
 Combines two ◊pyret-id{PPrintDoc}s into a single document.
-◊ppd-method["_output"]
+◊ppd-method["_output" #:contract (a-ftype A)]
 Internal method for displaying the structure of this ◊pyret-id{PPrintDoc}.
-◊ppd-method["pretty"]
+◊ppd-method["pretty" #:contract (a-ftype (a-var-type "width" N) (L-of S))]
 Renders this ◊pyret-id{PPrintDoc} at the desired line width.  Returns a list of
 the individual lines of output.
   
   ◊section[#:tag-prefix "pprint_Functions"]{Functions}
-  ◊function["str"]{Constructs a document containing the given string.  Any
+  ◊function["str" #:contract (a-ftype (a-var-type "s" A) A)]{Constructs a document containing the given string.  Any
   whitespace in this string is considered unbreakable.}
-  ◊function["number"]{Constructs a document containing the number ◊math{n} printed as a
+  ◊function["number" #:contract (a-ftype (a-var-type "n" N) A)]{Constructs a document containing the number ◊math{n} printed as a
   string.  This is merely a convenient shorthand for
   ◊pyret-id{str}◊pyret{(}◊pyret-id["tostring" "<global>"]◊pyret{(n))}.}
-  ◊function["blank"]{Produces the requested number of non-breaking spaces.}
-  ◊function["sbreak"]{When typeset in flat mode, this produces the requested
+  ◊function["blank" #:contract (a-ftype (a-var-type "n" A) A)]{Produces the requested number of non-breaking spaces.}
+  ◊function["sbreak" #:contract (a-ftype (a-var-type "n" A) A)]{When typeset in flat mode, this produces the requested
   number of non-breaking spaces.  When typeset in vertical mode, produces a
   single linebreak.}
-  ◊function["concat"]{Combines two documents into one, consecutively.}
-  ◊function["nest"]{Adds ◊math{n} to the current indentation level while
+  ◊function["concat" #:contract (a-ftype (a-var-type "fst" A) (a-var-type "snd" A) A)]{Combines two documents into one, consecutively.}
+  ◊function["nest" #:contract (a-ftype (a-var-type "n" A) (a-var-type "d" A) A)]{Adds ◊math{n} to the current indentation level while
   typesetting the given document.}
-  ◊function["if-flat"]{Allows choosing between two documents, depending on
+  ◊function["if-flat" #:contract (a-ftype (a-var-type "flat" A) (a-var-type "vert" A) A)]{Allows choosing between two documents, depending on
   whether this combined document is typeset in flat mode or not.}
-  ◊function["group"]{Wraps the given document in a group, so that it can be
+  ◊function["group" #:contract (a-ftype (a-var-type "d" A) A)]{Wraps the given document in a group, so that it can be
   typeset in flat mode (if possible) even if the surrounding document is in
   vertical mode.  This helps ensure that linebreaks happen at the ``outer''
   layers of the document, and nested groups stay intact whenever possible.}
-  ◊function["flow"]{Combines a given list of documents with soft line breaks.
+  ◊function["flow" #:contract (a-ftype (a-var-type "items" A) A)]{Combines a given list of documents with soft line breaks.
   When given a list of words, for example, this produces a paragraph that
   automatially line-wraps to fit the available space.}
-  ◊function["vert"]{Combines a given list of documents with hard line breaks.
+  ◊function["vert" #:contract (a-ftype (a-var-type "items" A) A)]{Combines a given list of documents with hard line breaks.
   Note that unless the individual items are ◊pyret-id{group}ed, this will cause
   them all to be typeset vertically as well.}
-  ◊function["flow-map"]{A shorthand to ◊pyret-id["map" "lists"] a given list of values into a list
+  ◊function["flow-map"  #:contract (a-ftype (a-var-type "sep" A) (a-var-type "f" A) (a-var-type "items" A) A)]{A shorthand to ◊pyret-id["map" "lists"] a given list of values into a list
   of documents, then combine them with some separator via ◊pyret-id{separate}.}
-  ◊function["parens"]{Surrounds the given document in parentheses, and
+  ◊function["parens" #:contract (a-ftype (a-var-type "d" A) A)]{Surrounds the given document in parentheses, and
   surrounds them all in a ◊pyret-id{group}.}
-  ◊function["braces"]{Surrounds the given document in curly braces, and
+  ◊function["braces" #:contract (a-ftype (a-var-type "d" A) A)]{Surrounds the given document in curly braces, and
   surrounds them all in a ◊pyret-id{group}.}
-  ◊function["brackets"]{Surrounds the given document in square brackets, and
+  ◊function["brackets" #:contract (a-ftype (a-var-type "d" A) A)]{Surrounds the given document in square brackets, and
   surrounds them all in a ◊pyret-id{group}.}
-  ◊function["dquote"]{Surrounds the given document in double-quotes, and
+  ◊function["dquote" #:contract (a-ftype (a-var-type "s" A) A)]{Surrounds the given document in double-quotes, and
   surrounds them all in a ◊pyret-id{group}.}
-  ◊function["squote"]{Surrounds the given document in single-quotes, and
+  ◊function["squote" #:contract (a-ftype (a-var-type "s" A) A)]{Surrounds the given document in single-quotes, and
   surrounds them all in a ◊pyret-id{group}.}
-  ◊function["align"]{Aligns the given document to the current column, wherever
+  ◊function["align" #:contract (a-ftype (a-var-type "d" A) A)]{Aligns the given document to the current column, wherever
   it might be.}
-  ◊function["hang"]{Typesets the given document with a hanging indent of the
+  ◊function["hang" #:contract (a-ftype (a-var-type "i" A) (a-var-type "d" A) A)]{Typesets the given document with a hanging indent of the
   given length.  The first line is typeset at the current position, and the
   remaining lines are all indented.}
-  ◊function["prefix"]{Takes two documents and typesets them together as a
+  ◊function["prefix" #:contract (a-ftype (a-var-type "n" A) (a-var-type "b" A)(a-var-type "x" A)(a-var-type "y" A) A)]{Takes two documents and typesets them together as a
   pyret-id{group}.  If they can fit on one line, this is equivalent to
   concatenating them.  Otherwise, this increases the ◊pyret-id{nest}ing level
   of the second document by ◊math{n}.}
-  ◊function["infix"]{Typesets infix operators as a ◊pyret-id{group}, preferring to break lines after
+  ◊function["infix" #:contract (a-ftype (a-var-type "n" A) (a-var-type "b" A) (a-var-type "op" PPD) (a-var-type "x" PPD)(a-var-type "y" PPD) A)]{Typesets infix operators as a ◊pyret-id{group}, preferring to break lines after
   the operator.  Surrounds the operator with ◊math{b} blank spaces on either
   side, and indents any new lines by ◊math{n} spaces.}
-  ◊function["infix-break"]{Typesets infix operators as a ◊pyret-id{group}, preferring to break lines before
+  ◊function["infix-break" #:contract (a-ftype (a-var-type "n" A) (a-var-type "b" A) (a-var-type "op" PPD) (a-var-type "x" PPD)(a-var-type "y" PPD) A)]{Typesets infix operators as a ◊pyret-id{group}, preferring to break lines before
   the operator.  Surrounds the operator with ◊math{b} blank spaces on either
   side, and indents any new lines by ◊math{n} spaces.}
-  ◊function["separate"]{Interleaves each document of the provided list with the
+  ◊function["separate" #:contract (a-ftype (a-var-type "sep" PPD) (a-var-type "docs" "list.List") A )]{Interleaves each document of the provided list with the
   given separator document.}
-  ◊function["surround"]{Given a document with many potential line breaks, and
+  ◊function["surround" #:contract (a-ftype (a-var-type "n" N) (a-var-type "b" N) (a-var-type "open" PPD) (a-var-type "contents" PPD)(a-var-type "close" PPD) A)]{Given a document with many potential line breaks, and
   an opening and a closing document to surround it with, this function produces
   a document that either typesets everything on one line with ◊math{b} spaces
   between the contents and the enclosing documents, or typesets the opening,
   closing and contents on separate lines and indents the contents by ◊math{n}.
   Useful for typesetting things like data definitions, where each variant goes
   on its own line, as does the ◊pyret{data} and ◊pyret{end} keywords.}
-  ◊function["soft-surround"]{Like ◊pyret-id{surround}, but tries to keep the
+  ◊function["soft-surround" #:contract (a-ftype (a-var-type "n" N) (a-var-type "b" N) (a-var-type "open" PPD) (a-var-type "contents" PPD)(a-var-type "close" PPD) A)]{Like ◊pyret-id{surround}, but tries to keep the
   closing document on the same line as the last line of the contents.  Useful
   for typesetting things like s-expressions, where the closing parentheses look
   better on the last line of the content.}
-  ◊function["surround-separate"]{A combination of ◊pyret-id{surround} and
+  ◊function["surround-separate" #:contract (a-ftype (a-var-type "n" N) (a-var-type "b" N) (a-var-type "void" PPD) (a-var-type "open" PPD) (a-var-type "sep" PPD)(a-var-type "close" PPD) (a-var-type "docs" "list.List") A)]{A combination of ◊pyret-id{surround} and
   ◊pyret-id{separate}.  Useful for typesetting delimited, comma-separated lists
   of items, or similar other other output.}
-  ◊function["label-align-surround"]{Similar to ◊pyret-id{soft-surround}, but
+  ◊function["label-align-surround" #:contract (a-ftype (a-var-type "label" A) (a-var-type "open" A)   (a-var-type "sep" A)(a-var-type "contents" A)(a-var-type "close" A)  A)]{Similar to ◊pyret-id{soft-surround}, but
   with different alignment.}
 }

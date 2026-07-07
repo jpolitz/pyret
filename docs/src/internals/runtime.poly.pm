@@ -218,7 +218,13 @@ a particular type, and throw an exception if not:
   Runtime.checkFunction(Any) → Undefined
 }
 
+◊doc-internal{
+  Runtime.checkMethod(Any) → Undefined
+}
 
+◊doc-internal{
+  Runtime.checkArray(Any) → Undefined
+}
 
 ◊doc-internal{
   Runtime.checkPyretVal(Any) → Undefined

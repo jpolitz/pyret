@@ -1,7 +1,7 @@
 #lang pollen
 
 ◊(define (in-link T) (a-id T (xref "chart" T)))
-◊(define (in-image f) (image (string-append "src/trove/chart-images/" f ".png") #:scale 0.4))
+◊(define (in-image f) (image (string-append "chart-images/" f ".png") #:scale 0.4))
 ◊(define Self A)
 ◊(define Color (a-id "Color" (xref "color" "Color")))
 ◊(define Image (a-id "Image" (xref "image" "Image")))

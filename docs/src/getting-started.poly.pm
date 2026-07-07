@@ -16,4 +16,4 @@ which gives a structured introduction to programming in Pyret.
 ◊(table-of-contents)
 
 ◊include-section["platforms/platforms.poly.pm"]
-◊include-section["tour.poly.pm"]
+◊; ◊include-section["tour.poly.pm"]
