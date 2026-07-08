@@ -170,13 +170,9 @@ end
 The grammar of ◊tt{spy} statements is:
 
 ◊bnf['Pyret]{
-SPY: "spy"
-END: "end"
-COLON: ":"
-COMMA: ","
-spy-stmt: SPY [expr] COLON spy-body END
-spy-body: spy-field [COMMA spy-field]*
-spy-field: NAME | NAME COLON binop-expr
+◊nt{spy-stmt}: ◊tk{SPY} [◊nt{expr}] ◊tk{COLON} ◊nt{spy-body} ◊tk{END}
+◊nt{spy-body}: ◊nt{spy-field} [◊tk{COMMA} ◊nt{spy-field}]*
+◊nt{spy-field}: ◊tmi{NAME} | ◊tmi{NAME} ◊tk{COLON} ◊nt{binop-expr}
 }
 
 

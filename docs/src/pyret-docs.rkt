@@ -414,10 +414,6 @@
        result
        ))
 
-(define (bnf . terms)
-  "<<BNF pending>>"
-  )
-
 ; (define (nd elem)
 ;   `(span () ,(make-gloss (format "~a-~a" *bnf-type* elem)) "‹" ,elem "›"))
 
@@ -537,7 +533,7 @@
 
 (define *bnf-type* 'Pyret)
 
-(define (ebnf type . elems)
+(define (bnf type . elems)
   ; (printf "\n\nBNF\n\n")
   ; (for ([elem elems])
   ;   (printf "elemX = ~s\n" elem))

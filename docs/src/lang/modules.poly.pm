@@ -316,32 +316,17 @@ provide fewer names than ◊pyret{provide: * end}, a module can use one or more
 simple examples follow:
 
 ◊bnf['PyretModules]{
-COLON: ":"
-STAR: "*"
-AS: "as"
-PARENSPACE: "("
-RPAREN: ")"
-COMMA: ","
-TYPE: "type"
-DATA: "data"
-MODULE: "module"
-DOT: "."
-HIDING: "hiding"
-END: "end"
-PROVIDECOLON: "provide:"
-PROVIDE: "provide"
-FROM: "from"
-provide-block: PROVIDECOLON [provide-spec (COMMA provide-spec)* [COMMA]] END | ...
+◊nt{provide-block}: ◊tk{PROVIDECOLON} [◊nt{provide-spec} (◊tk{COMMA} ◊nt{provide-spec})* [◊tk{COMMA}]] ◊tk{END} | ...
 
-provide-spec: provide-value-spec | ...
+◊nt{provide-spec}: ◊nt{provide-value-spec} | ...
 
-name-spec: STAR [hiding-spec] | module-ref | module-ref AS NAME
+◊nt{name-spec}: ◊tk{STAR} [◊nt{hiding-spec}] | ◊nt{module-ref} | ◊nt{module-ref} ◊tk{AS} ◊tmi{NAME}
 
-provide-value-spec: name-spec
+◊nt{provide-value-spec}: ◊nt{name-spec}
 
-hiding-spec: HIDING PARENSPACE [(NAME COMMA)* NAME] RPAREN
+◊nt{hiding-spec}: ◊tk{HIDING} ◊tk{PARENSPACE} [(◊tmi{NAME} ◊tk{COMMA})* ◊tmi{NAME}] ◊tk{RPAREN}
 
-module-ref: (NAME DOT)* NAME
+◊nt{module-ref}: (◊tmi{NAME} ◊tk{DOT})* ◊tmi{NAME}
 }
 
 A ◊tech{provide block} contains one or more ◊deftech{provide specifications}
@@ -411,12 +396,7 @@ A module can also re-export values that it imported, and it can do so using
 module ids:
 
 ◊bnf['PyretModules]{
-PROVIDE: "provide"
-FROM: "from"
-END: "end"
-COLON: ":"
-COMMA: ","
-provide-block: ... | PROVIDE FROM module-ref COLON [provide-spec (COMMA provide-spec)* [COMMA]] END
+◊nt{provide-block}: ... | ◊tk{PROVIDE} ◊tk{FROM} ◊nt{module-ref} ◊tk{COLON} [◊nt{provide-spec} (◊tk{COMMA} ◊nt{provide-spec})* [◊tk{COMMA}]] ◊tk{END}
 }
 
 For example, this module exports both one name it defines, and all the names
@@ -455,24 +435,8 @@ The syntax above can be used to provide them as well.
 
 ◊subsection{Types}
 ◊bnf['PyretModules]{
-COLON: ":"
-STAR: "*"
-AS: "as"
-PARENSPACE: "("
-RPAREN: ")"
-COMMA: ","
-TYPE: "type"
-DATA: "data"
-MODULE: "module"
-DOT: "."
-HIDING: "hiding"
-END: "end"
-PROVIDECOLON: "provide:"
-PROVIDE: "provide"
-FROM: "from"
-
-provide-spec: ... | provide-type-spec | ...
-provide-type-spec: TYPE name-spec
+◊nt{provide-spec}: ... | ◊nt{provide-type-spec} | ...
+◊nt{provide-type-spec}: ◊tk{TYPE} ◊nt{name-spec}
 }
 
 Providing a ◊seclink["s:type-decl"]{type definition} is analogous to providing a
@@ -494,24 +458,8 @@ some types.
 ◊subsection{Modules}
 
 ◊bnf['PyretModules]{
-COLON: ":"
-STAR: "*"
-AS: "as"
-PARENSPACE: "("
-RPAREN: ")"
-COMMA: ","
-TYPE: "type"
-DATA: "data"
-MODULE: "module"
-DOT: "."
-HIDING: "hiding"
-END: "end"
-PROVIDECOLON: "provide:"
-PROVIDE: "provide"
-FROM: "from"
-
-provide-spec: ... | provide-module-spec | ...
-provide-module-spec: MODULE name-spec
+◊nt{provide-spec}: ... | ◊nt{provide-module-spec} | ...
+◊nt{provide-module-spec}: ◊tk{MODULE} ◊nt{name-spec}
 }
 
 Providing a module id is also quite similar
@@ -531,25 +479,9 @@ a single file can conveniently give access to all the submodules of the program.
 
 ◊subsection{Data definitions}
 ◊bnf['PyretModules]{
-COLON: ":"
-STAR: "*"
-AS: "as"
-PARENSPACE: "("
-RPAREN: ")"
-COMMA: ","
-TYPE: "type"
-DATA: "data"
-MODULE: "module"
-DOT: "."
-HIDING: "hiding"
-END: "end"
-PROVIDECOLON: "provide:"
-PROVIDE: "provide"
-FROM: "from"
-
-provide-spec: ... | provide-data-spec
-provide-data-spec: DATA data-name-spec [hiding-spec]
-data-name-spec: STAR | module-ref
+◊nt{provide-spec}: ... | ◊nt{provide-data-spec}
+◊nt{provide-data-spec}: ◊tk{DATA} ◊nt{data-name-spec} [◊nt{hiding-spec}]
+◊nt{data-name-spec}: ◊tk{STAR} | ◊nt{module-ref}
 }
 
 Providing a ◊seclink["s:data-decl"]{data definition} is more sophisticated,
@@ -647,38 +579,20 @@ take a ◊emph{module id} and a list of specifications of names to include.
 (That module id must first have been ◊pyret{import}ed and given a name.)
 
 ◊bnf['PyretModules]{
-COLON: ":"
-STAR: "*"
-AS: "as"
-LPAREN: "("
-RPAREN: ")"
-COMMA: ","
-TYPE: "type"
-DATA: "data"
-MODULE: "module"
-DOT: "."
-HIDING: "hiding"
-END: "end"
-INCLUDECOLON: "include:"
-INCLUDE: "include"
-IMPORT: "import"
-FROM: "from"
+◊nt{import-stmt}: ◊tk{INCLUDE} ◊nt{import-source}
+           | ◊tk{INCLUDE} ◊tk{FROM} ◊nt{module-ref} ◊tk{COLON} [◊nt{include-spec} (◊tk{COMMA} ◊nt{include-spec})* [◊tk{COMMA}]] ◊tk{END}
+           | ◊tk{IMPORT} ◊nt{import-source} ◊tk{AS} ◊tmi{NAME}
+           | ◊tk{IMPORT} ◊tmi{NAME} (◊tk{COMMA} ◊tmi{NAME})*  ◊tk{FROM} ◊nt{import-source}
+◊nt{import-source}: ◊nt{import-special} | ◊nt{import-name}
+◊nt{import-special}: ◊tmi{NAME} ◊tk{LPAREN} ◊tmi{STRING} (◊tk{COMMA} ◊tmi{STRING})* ◊tk{RPAREN}
+◊nt{import-name}: ◊tmi{NAME}
 
-import-stmt: INCLUDE import-source
-           | INCLUDE FROM module-ref COLON [include-spec (COMMA include-spec)* [COMMA]] END
-           | IMPORT import-source AS NAME
-           | IMPORT NAME (COMMA NAME)*  FROM import-source
-import-source: import-special | import-name
-import-special: NAME LPAREN STRING (COMMA STRING)* RPAREN
-import-name: NAME
+◊nt{include-spec}: ◊nt{include-name-spec} | ◊nt{include-type-spec} | ◊nt{include-data-spec} | ◊nt{include-module-spec}
 
-include-spec: include-name-spec | include-type-spec | include-data-spec | include-module-spec
-
-include-name-spec: name-spec
-include-type-spec: TYPE name-spec
-include-data-spec: DATA data-name-spec [hiding-spec]
-include-module-spec: MODULE name-spec
-
+◊nt{include-name-spec}: ◊nt{name-spec}
+◊nt{include-type-spec}: ◊tk{TYPE} ◊nt{name-spec}
+◊nt{include-data-spec}: ◊tk{DATA} ◊nt{data-name-spec} [◊nt{hiding-spec}]
+◊nt{include-module-spec}: ◊tk{MODULE} ◊nt{name-spec}
 }
 
 Some examples:
