@@ -1,8 +1,8 @@
 #lang pollen
 
 ◊(require (only-in racket/system [system shell]))
-◊(define lualatex-path (path->string (find-executable-path "lualatex")))
-◊(define magick-path (path->string (find-executable-path "magick")))
+◊(define lualatex-path #f)
+◊(define magick-path #f)
 ◊(define math-image-dir (path->string (current-directory)))
 
 ◊(define (combine-strings ss)
@@ -15,6 +15,9 @@
           [mtx-path-basename (path->string (build-path mtx-dir mtx-file-basename))]
           [mtx-png-file (string-append mtx-path-basename ".png")])
      (unless (file-exists? mtx-png-file)
+       (unless (and lualatex-path magick-path)
+         (set! lualatex-path (path->string (find-executable-path "lualatex")))
+         (set! magick-path (path->string (find-executable-path "magick"))))
        (let ([mtx-latex-file (string-append mtx-path-basename ".tex")])
          (call-with-output-file mtx-latex-file
            (lambda (o)
