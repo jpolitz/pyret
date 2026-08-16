@@ -108,6 +108,8 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Demote TailFlat tier verdicts to Gen (promise backend; disable the sync-with-direct-tail-returns tier, for A/B measurement)')],
     ['no-few-suspend',
       C.flag(C.once, 'Demote FewSuspend tier verdicts to Gen (promise backend; disable the guarded-suspend-site sync tier, for A/B measurement)')],
+    ['vm-tiers',
+      C.nextValDefault(C.Str, 'none', undefined, C.once, 'Hybrid bytecode machine (promise backend): comma-separated tier verdicts to compile to bytecode instead of JS (gen, few-suspend, tail-flat; or none / nonflat = all three). Default none.')],
     ['collect-times',
       C.flag(C.once, 'Collect timing information about compilation')],
     ['type-check',
@@ -164,6 +166,16 @@ export function main(args: string[]): number {
     const genResidue = r.has('gen-residue');
     const tailFlat = !r.has('no-tail-flat');
     const fewSuspend = !r.has('no-few-suspend');
+    const vmTiersStr: string = r.get('vm-tiers');
+    const vmTiers: string[] =
+      (vmTiersStr === 'none' || vmTiersStr === '') ? []
+      : vmTiersStr === 'nonflat' ? ['gen', 'few-suspend', 'tail-flat']
+      : vmTiersStr.split(',').map((t) => t.trim()).filter((t) => t !== '');
+    for (const t of vmTiers) {
+      if (t !== 'gen' && t !== 'few-suspend' && t !== 'tail-flat') {
+        return raise('Unknown vm tier: ' + t + ' (expected gen, few-suspend, tail-flat)');
+      }
+    }
     const compiledDir = r.get('compiled-dir');
     const standaloneFile = r.get('standalone-file');
     const addProfiling = r.has('profile');
@@ -253,6 +265,7 @@ export function main(args: string[]): number {
           genResidue: genResidue,
           tailFlat: tailFlat,
           fewSuspend: fewSuspend,
+          vmTiers: vmTiers,
           stackBackend: stackBackend,
           compiledCache: compiledDir,
           compiledReadOnly: r.has('compiled-read-only-dir') ? r.get('compiled-read-only-dir') : [],
@@ -302,6 +315,7 @@ export function main(args: string[]): number {
         genResidue: genResidue,
         tailFlat: tailFlat,
         fewSuspend: fewSuspend,
+        vmTiers: vmTiers,
         stackBackend: stackBackend,
         compileModule: false,
         displayProgress: displayProgress

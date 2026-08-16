@@ -32,6 +32,7 @@ import * as CS from './compile-structs';
 import * as CL from './concat-lists';
 import * as FL from './flatness';
 import * as TIER from './tier';
+import * as VM from './vm/vm-compile';
 import * as DAG from './js-dag-utils';
 import * as AU from './ast-util';
 import * as T from './type-structs';
@@ -462,13 +463,28 @@ function ext<T extends object>(obj: T, fields: Record<string, any>): T {
 //
 // Post-ANF binding atoms are globally unique (`SAtom.key()` includes a serial),
 // so membership-by-key is unambiguous across the read/decl/assign sites.
-function collectUnboxableVarKeys(body: N.AExpr): Set<string> {
+//
+// HYBRID MACHINE RULE: a bytecode function captures its free variables BY
+// VALUE (see vm/vm-compile.ts), so a var it can see must be a box that both
+// sides share. Any var/letrec binding that is DECLARED inside a VM-tier
+// function, or REFERENCED anywhere lexically inside one (which includes JS
+// functions nested below it -- their captures flow through the bytecode
+// closure's by-value upvalues), stays boxed. Vars whose every use is on the
+// JS side of the tier boundary unbox exactly as before.
+function collectUnboxableVarKeys(body: N.AExpr, tierMap?: TIER.TierMap, vmTiers?: Set<string>): Set<string> {
   const candidates = new Set<string>();
   const unsafeLetrecRefs = new Set<string>();
+  const mustBox = new Set<string>();
   let depth = 0;
+  let vmDepth = 0;
+  function isVm(node: N.ALam | N.AMethod): boolean {
+    if (tierMap === undefined || vmTiers === undefined || vmTiers.size === 0) { return false; }
+    return vmTiers.has(TIER.tierVerdictFor(tierMap, node, node.l.key()).tier);
+  }
   const visitor: any = ext(N.defaultMapVisitor as any, {
     aVar(node: N.AVar): any {
       if (depth > 0) { candidates.add(node.bind.id.key()); }
+      if (vmDepth > 0) { mustBox.add(node.bind.id.key()); }
       node.e.visit(this);
       node.body.visit(this);
       return node;
@@ -477,23 +493,44 @@ function collectUnboxableVarKeys(body: N.AExpr): Set<string> {
       // Only the unsafe (uninitialized-guard) reads force the binding to stay
       // boxed; safe reads are fine unboxed.
       if (!node.safe) { unsafeLetrecRefs.add(node.id.key()); }
+      if (vmDepth > 0) { mustBox.add(node.id.key()); }
+      return node;
+    },
+    aIdSafeLetrec(node: N.AIdSafeLetrec): any {
+      if (vmDepth > 0) { mustBox.add(node.id.key()); }
+      return node;
+    },
+    aIdVar(node: N.AIdVar): any {
+      if (vmDepth > 0) { mustBox.add(node.id.key()); }
+      return node;
+    },
+    aAssign(node: N.AAssign): any {
+      if (vmDepth > 0) { mustBox.add(node.id.key()); }
+      node.value.visit(this);
       return node;
     },
     aLam(node: N.ALam): any {
+      const vm = isVm(node);
       depth++;
+      if (vm) { vmDepth++; }
       node.body.visit(this);
+      if (vm) { vmDepth--; }
       depth--;
       return node;
     },
     aMethod(node: N.AMethod): any {
+      const vm = isVm(node);
       depth++;
+      if (vm) { vmDepth++; }
       node.body.visit(this);
+      if (vm) { vmDepth--; }
       depth--;
       return node;
     },
   });
   body.visit(visitor);
   for (const k of unsafeLetrecRefs) { candidates.delete(k); }
+  for (const k of mustBox) { candidates.delete(k); }
   return candidates;
 }
 
@@ -2650,6 +2687,134 @@ function genFunStmts(
   return clist<J.JStmt>(jVar(genId, theGen), jVar(temp, theWrapper));
 }
 
+// --- Hybrid bytecode machine: the JS side of the seam --------------------------
+//
+// vmRootExpr compiles a VM-tier ALam/AMethod to bytecode (through the
+// module's VMModuleCompiler) and returns the JS expression that builds its
+// value at run time: `R.$vm.mkFun($BC, idx, [captures...])`, where the
+// captures are the function's free variables that are not module globals,
+// read as the JS bindings they are (boxes for vars/letrec cells -- see
+// collectUnboxableVarKeys' hybrid rule).
+//
+// The bytecode compiler calls back through a VMHost for anything it wants
+// emitted as JS (thunks): a JS-tier lambda/method nested inside bytecode, an
+// object literal, a data declaration, a structural annotation, an update.
+// Each thunk is a plain JS function over the construct's free variables,
+// compiled by THIS emitter with a fresh per-thunk apploc, so its body is
+// exactly what the JS backend would have emitted for the same construct.
+export const VM_PROG_NAME = constId('$BC');
+
+function vmThunkFun(compiler: CompilerVisitor, params: A.Name[], build: (c: CompilerVisitor) => CList<J.JStmt>): J.JExprT {
+  const al = freshId(compilerName('al'));
+  const c = ext(compiler, {
+    curApploc: al,
+    tailPos: false,
+    complete: completeReturn,
+    rest: fnExitRest,
+    curLetBind: undefined,
+    inTcoLoop: false,
+    mintsTokens: false,
+    allowTco: false,
+    fnTier: 'flat',
+  });
+  const body = clCons(jVar(al, UNDEFINED) as J.JStmt, build(c));
+  return jFun(J.nextJFunId(), '', CL.from_list(params.map((n) => jsIdOf(n))), jBlock(body));
+}
+
+function makeVmHost(compiler: CompilerVisitor): VM.VMHost {
+  return {
+    getLocId: (l: Loc) => compiler.getLocId(l),
+    flatnessEnv: compiler.flatnessEnv,
+    typeFlatnessEnv: compiler.typeFlatnessEnv,
+    flatMethodApps: compiler.flatMethodApps,
+    flatMethods: compiler.flatMethods,
+    redundantAnnChecks: compiler.redundantAnnChecks,
+    moduleBindings: compiler.moduleBindings,
+    env: compiler.env,
+    tierMap: compiler.tierMap,
+    options: compiler.options,
+    resolveCasesDataType: (typ: A.Ann) => resolveCasesDataType(compiler, typ),
+    thunkForLam: (node: N.ALam, letBind: N.ABind | undefined, params: A.Name[]) =>
+      vmThunkFun(compiler, params, (c) => {
+        const ce = compileALam(c, node, node.l, node.name, node.args, node.ret, node.body,
+          letBind !== undefined ? new BLet(letBind) : undefined);
+        return clSnoc(ce.otherStmts, jReturn(ce.exp) as J.JStmt);
+      }),
+    thunkForMethod: (node: N.AMethod, params: A.Name[]) =>
+      vmThunkFun(compiler, params, (c) => {
+        const ce = c.aMethod(node);
+        return clSnoc(ce.otherStmts, jReturn(ce.exp) as J.JStmt);
+      }),
+    thunkForLettable: (node: N.ALettable, params: A.Name[]) =>
+      vmThunkFun(compiler, params, (c) => {
+        const ce = node.visit(c) as DAG.CExp;
+        return clSnoc(ce.otherStmts, jReturn(ce.exp) as J.JStmt);
+      }),
+    thunkForAnnCheck: (b: N.ABind, params: A.Name[]) => {
+      const v = freshId(compilerName('v'));
+      return vmThunkFun(compiler, [v, ...params], (c) => {
+        const ca = compileAnn(b.ann, undefined, c);
+        return clSnoc(ca.otherStmts, jReturn(rtMethod('_checkAnn',
+          clist(c.getLoc(annLoc(b.ann)), ca.exp, jId(jsIdOf(v))))) as J.JStmt);
+      });
+    },
+    thunkForAnn: (ann: A.Ann, optName: string | undefined, params: A.Name[]) =>
+      vmThunkFun(compiler, params, (c) => {
+        const ca = compileAnn(ann, optName, c);
+        return clSnoc(ca.otherStmts, jReturn(ca.exp) as J.JStmt);
+      }),
+    thunkForUpdate: (node: N.AUpdate, params: A.Name[]) =>
+      vmThunkFun(compiler, params, (c) => {
+        const objCe = node.supe.visit(c) as DAG.CExp;
+        const fieldCes = node.fields.map((fld) => fld.value.visit(c) as DAG.CExp);
+        const pre = clAppend(objCe.otherStmts, argsOtherStmts(fieldCes));
+        const fieldNames = CL.map_list((fld: N.AField) => jStr(fld.name) as J.JExprT, node.fields);
+        const fieldLocs = CL.map_list((fld: N.AField) => c.getLoc(fld.l), node.fields);
+        const fieldVals = CL.map_list(getExp, fieldCes);
+        const call = rtMethod('checkRefAnns',
+          clist(objCe.exp, jList(false, fieldNames), jList(false, fieldVals), jList(false, fieldLocs),
+            c.getLoc(node.l), c.getLoc(node.supe.l)));
+        return clSnoc(pre, jReturn(call) as J.JStmt);
+      }),
+  };
+}
+
+function vmRootExpr(compiler: CompilerVisitor, node: N.ALam | N.AMethod, isMethod: boolean): DAG.CExp {
+  const vm = compiler.vm as VM.VMModuleCompiler;
+  const prevHost = vm.host;
+  vm.host = makeVmHost(compiler);
+  let root: VM.RootResult;
+  try {
+    root = vm.compileRootFunction(node);
+  } finally {
+    vm.host = prevHost;
+  }
+  const caps = jList(false, CL.from_list(root.captures.map((n) => jId(jsIdOf(n)) as J.JExprT)));
+  return cExp(
+    jMethod(rtField('$vm'), isMethod ? 'mkMeth' : 'mkFun',
+      clist<J.JExprT>(jId(VM_PROG_NAME), jNum(root.idx), caps)),
+    clEmpty);
+}
+
+// The module's one bytecode-program declaration, prepended to the toplevel:
+//   var $BC = R.$vm.load(<program>, L, [globals...], [thunks...]);
+function vmProgramDecl(vm: VM.VMModuleCompiler): J.JStmt {
+  vm.finish();
+  const globals: J.JExprT[] = vm.globalNames.map((n) => jId(jsIdOf(n)) as J.JExprT);
+  for (const g of vm.globalExprs) {
+    const base = jBracket(jDot(jDot(jDot(jId(jsIdOf(g.id)), 'dict'), 'values'), 'dict'), jStr(g.name));
+    // A var cell is hoisted as the CELL (its contents change; which cell it
+    // is does not) -- the machine unboxes at each read.
+    globals.push(base);
+  }
+  return jVar(VM_PROG_NAME,
+    jMethod(rtField('$vm'), 'load', clist<J.JExprT>(
+      jRawCode(JSON.stringify(vm.prog)),
+      jId(constId('L')),
+      jList(true, CL.from_list(globals)),
+      jList(true, CL.from_list(vm.thunks))))) as J.JStmt;
+}
+
 export function compileALam(
   compiler: CompilerVisitor,
   node: N.ALam,
@@ -2680,6 +2845,12 @@ export function compileALam(
         'tier/flatness disagreement for lambda "' + name + '" at ' + l.key()
         + ': tier=' + verdict.tier + ' but emitter isFlat=' + isFlat);
     }
+  }
+  // Hybrid machine: a VM-tier lambda compiles to bytecode; its value is
+  // built by the machine from the module's program plus this scope's
+  // captures (by value; see vm/vm-compile.ts).
+  if (compiler.vm !== undefined && verdict !== undefined && compiler.vm.isVmTier(verdict.tier)) {
+    return vmRootExpr(compiler, node, false);
   }
   const newStep = freshId(compilerName('step'));
   const temp = freshId(compilerName('temp_lam'));
@@ -3010,6 +3181,10 @@ export class CompilerVisitor {
   // after tier analysis rebuilt nodes), never a fallback. undefined =
   // -no-gen-functions legacy all-async emission (the A/B baseline).
   tierMap: TIER.TierMap | undefined = undefined;
+  // The hybrid bytecode compiler for this module (vm/vm-compile.ts), when
+  // options.vmTiers is non-empty and a tier map exists; installed by
+  // compile-module. compileALam / aMethod route VM-tier functions to it.
+  vm: VM.VMModuleCompiler | undefined = undefined;
   bindings!: Map<string, CS.ValueBind>;
   typeBindings!: Map<string, CS.TypeBind>;
   moduleBindings!: Map<string, CS.ModuleBind>;
@@ -3330,6 +3505,9 @@ export class CompilerVisitor {
           'tier/flatness disagreement for method "' + node.name + '" at ' + node.l.key()
           + ': tier=' + verdict.tier + ' but emitter isFlat=' + isFlat);
       }
+    }
+    if (this.vm !== undefined && verdict !== undefined && this.vm.isVmTier(verdict.tier)) {
+      return vmRootExpr(this, node, true);
     }
     const funArgs = CL.map_list((a: N.ABind) => formalShadowName(a.id), node.args);
     const tokenCell: Map<string, boolean> = new Map();
@@ -4158,6 +4336,22 @@ export function compileModule(
   const apploc = freshId(compilerName('al'));
   const resumer = compilerName('resumer');
   const resumerBind = new N.ABind(l, resumer, A.aBlank);
+  // Hybrid machine: one bytecode compiler per module, holding the program
+  // every VM-tier function of this module compiles into. Its globals are the
+  // module's cross-module names -- exactly the free ids declared as JS vars
+  // above (globalBinds/moduleBinds) plus the imports -- handed to the loader
+  // as their JS variables. Created only when the option asks for bytecode
+  // and a tier map exists; otherwise the emitter's output is unchanged.
+  const vmTiers: string[] = (self.options as any).vmTiers || [];
+  let vm: VM.VMModuleCompiler | undefined = undefined;
+  if (vmTiers.length > 0 && self.tierMap !== undefined) {
+    const externals: A.Name[] = [];
+    for (const n of freeIds) { externals.push(n); }
+    for (const i of imports) { externals.push(i.name); }
+    // The host is installed per root by vmRootExpr; this placeholder is
+    // never used for compilation.
+    vm = new VM.VMModuleCompiler(makeVmHost(self as CompilerVisitor), externals, vmTiers);
+  }
   const bodyCompiler: CompilerVisitor = ext(self, {
     progProvides: progProvides,
     getLoc: getLoc,
@@ -4167,14 +4361,22 @@ export function compileModule(
     allowTco: false,
     dispatches: casesDispatches,
     localDataDefs: provides.dataDefinitions,
+    vm: vm,
   });
   // The toplevel module fn is called directly (`await bodyName()`) and its result
   // is the module value, not driven through a `.app` wrapper, so it must NEVER mint
   // a token: can-mint-tokens = false. A tail-position call at program top drives to
   // a value via the callee's own `.app`.
-  const visitedBody = compileFunBody(l, step, toplevelName,
+  const visitedBody0 = compileFunBody(l, step, toplevelName,
     bodyCompiler, // resumer gets js-id-of'ed in compile-fun-body
     [resumerBind], undefined, prog, true, false, false, false);
+  // Prepend the bytecode program (if any function of this module compiled to
+  // it): `var $BC = R.$vm.load(...)` as the toplevel's first statement, so
+  // its thunks see every module-level binding lexically and every
+  // `R.$vm.mkFun($BC, ...)` below it finds the program.
+  const visitedBody = (vm !== undefined && vm.prog.funcs.length > 0)
+    ? jBlock(clCons(vmProgramDecl(vm), jBlockToStmtList(visitedBody0)))
+    : visitedBody0;
   const toplevelFun = jAsyncFun(J.nextJFunId(), makeFunName(bodyCompiler, l), clist<A.Name>(formalShadowName(resumer)), visitedBody);
   const defineLocations = jVar(LOCS, jList(true, locations));
   // NOTE: as in the Pyret source, wrap-modules' j-block sits directly in
@@ -4233,7 +4435,9 @@ export class SplittingCompiler extends CompilerVisitor {
     this.addPhase('Freevars-e', freevars);
     // Function-local var box elimination (promise backend codegen knob). Gated
     // on -no-unbox-vars; see collectUnboxableVarKeys.
-    this.unboxedVars = this.options.unboxVars ? collectUnboxableVarKeys(node.body) : new Set();
+    this.unboxedVars = this.options.unboxVars
+      ? collectUnboxableVarKeys(node.body, this.tierMap, new Set(this.options.vmTiers))
+      : new Set();
     this.addPhase('Unboxable vars: ' + this.unboxedVars.size, undefined);
     const ans = compileModule(this, node.l, node.provides, node.imports, node.body, freevars as Map<string, A.Name>, this.$provides, this.env);
     this.addPhase('Total simplification: ' + String(totalTime), undefined);

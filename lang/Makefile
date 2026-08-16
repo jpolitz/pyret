@@ -400,6 +400,23 @@ ts-parity-promise-test: ts-compiler $(PHASEA)/pyret.jarr
                       $(EXTRA_FLAGS) \
                       --require-config src/scripts/standalone-configA-async.json
 
+# Hybrid: the promise backend with the bytecode machine running the VM tiers
+# (VM_TIERS, default gen -- see -vm-tiers). SEPARATE cache dir: hybrid modules
+# carry bytecode + thunks and must never mix with plain promise modules.
+#   make examples/foo.ts.h.jarr
+#   make VM_TIERS=gen,few-suspend examples/foo.ts.h.jarr   (into the same cache: clean first)
+VM_TIERS ?= gen
+%.ts.h.jarr: ts-compiler $(PHASEA)/js/runtime-async.js %.arr
+	$(TS_PYRET) --outfile $*.ts.h.jarr \
+                      --build-runnable $*.arr \
+                      --builtin-js-dir src/js/trove/ \
+                      --builtin-arr-dir src/arr/trove/ \
+                      --compiled-dir compiled-ts-hybrid/ \
+                      --stack-backend promise \
+                      --vm-tiers $(VM_TIERS) \
+                      $(EXTRA_FLAGS) \
+                      --require-config src/scripts/standalone-configA-async.json
+
 # Cross-backend run parity (within the TS compiler): TS-cont vs TS-promise on
 # tests/pyret/main2.arr (the independent semantic check for Promise-leak / flatness
 # bugs the byte oracle is blind to).
@@ -423,6 +440,46 @@ $(TS_PROMISE_SUITE_JARRS): tests/pyret/%-ts-promise.jarr: tests/pyret/%.arr ts-c
 		--outfile $@ \
 		--build-runnable $< \
 		-check-all
+
+# Hybrid analogues of the promise suite jarrs (bytecode machine for VM_TIERS;
+# separate cache tests/ts-compiled-hybrid/). ts-hybrid-exec-test is the fast
+# execution-only oracle; ts-hybrid-pyret-test is the full main2.
+TS_HYBRID_SUITE_JARRS = tests/pyret/main2-ts-hybrid.jarr \
+                        tests/pyret/main2-exec-ts-hybrid.jarr \
+                        tests/pyret/main2-compile-ts-hybrid.jarr
+
+$(TS_HYBRID_SUITE_JARRS): tests/pyret/%-ts-hybrid.jarr: tests/pyret/%.arr ts-compiler $(PHASEA)/js/runtime-async.js $(TEST_FILES)
+	$(TS_PYRET) \
+		  --builtin-js-dir src/js/trove/ \
+			--builtin-arr-dir src/arr/trove/ \
+			--require-config src/scripts/standalone-configA-async.json \
+			--compiled-dir tests/ts-compiled-hybrid/ \
+			--stack-backend promise \
+			--vm-tiers $(VM_TIERS) \
+		--outfile $@ \
+		--build-runnable $< \
+		-check-all
+
+.PHONY : ts-hybrid-exec-test
+ts-hybrid-exec-test: tests/pyret/main2-exec-ts-hybrid.jarr
+	@echo "=== TS-hybrid EXECUTION suite (expect: all tests pass) ==="
+	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-exec-ts-hybrid.jarr | tee /tmp/ts-hybrid-exec-result.txt; \
+	code=$${PIPESTATUS[0]}; \
+	test $$code -eq 0 && echo "TS-HYBRID EXEC SUITE OK" || { echo "TS-HYBRID EXEC SUITE: failures (exit $$code)"; exit 1; }
+
+.PHONY : ts-hybrid-pyret-test
+ts-hybrid-pyret-test: warm-promise-cache tests/pyret/main2-ts-hybrid.jarr
+	@echo "=== TS-hybrid suite (expect: all tests pass) ==="
+	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-ts-hybrid.jarr | tee /tmp/ts-hybrid-suite-result.txt; \
+	code=$${PIPESTATUS[0]}; \
+	test $$code -eq 0 && echo "TS-HYBRID SUITE OK" || { echo "TS-HYBRID SUITE: failures (exit $$code)"; exit 1; }
+
+.PHONY : ts-hybrid-compile-test
+ts-hybrid-compile-test: warm-promise-cache tests/pyret/main2-compile-ts-hybrid.jarr
+	@echo "=== TS-hybrid COMPILE-pipeline suite (expect: all tests pass) ==="
+	NODE_PATH=$(CURDIR)/node_modules $(NODE22) tests/pyret/main2-compile-ts-hybrid.jarr | tee /tmp/ts-hybrid-compile-result.txt; \
+	code=$${PIPESTATUS[0]}; \
+	test $$code -eq 0 && echo "TS-HYBRID COMPILE SUITE OK" || { echo "TS-HYBRID COMPILE SUITE: failures (exit $$code)"; exit 1; }
 
 # Like pyret-test-promise (the Pyret-promise reference oracle) but for the TS-promise
 # compiler. The suite runs ~247 nested run-task compiles that resolve a CWD-relative

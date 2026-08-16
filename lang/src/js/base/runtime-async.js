@@ -6249,11 +6249,1089 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
 
     };
 
+    // =====================================================================
+    // The hybrid bytecode machine ("pvm2")
+    // =====================================================================
+    //
+    // The execution half of the hybrid backend. Its input is the bytecode
+    // src/ts-compiler/src/vm/vm-compile.ts emits for the functions the
+    // tier analysis put on the machine (the Gen tier by default -- the
+    // functions that can genuinely suspend mid-body); everything else in a
+    // module is the promise backend's ordinary compiled JS, and the two
+    // kinds of function call each other freely through the runtime's own
+    // Awaitable ABI: `.app(...)` / `.full_meth(...)` return a Pyret value,
+    // or a thenable when the callee actually suspended.
+    //
+    // Shape of the machine: a register machine over an explicit array of
+    // heap frames, { fdef, code, pc, locals, upvals, mod, dest, locK }. A
+    // call between bytecode functions pushes a frame and jumps -- it does
+    // not grow the JS stack -- so bytecode recursion is bounded by memory,
+    // and a tail call reuses its frame (and slot array) outright.
+    //
+    // Suspension: when a JS callee returns a thenable, or the fuel runs out,
+    // the machine parks the frame's pc, hands the whole State to a `.then`
+    // and returns that promise -- to whoever called into the machine, which
+    // sees exactly what it would see from any other non-flat function. One
+    // promise stands for the entire bytecode stack, however deep. Resuming
+    // re-enters runMachine with the same State.
+    //
+    // Crossing into JS: an ordinary `.app(...)`. Crossing into bytecode from
+    // JS: the closure's `.app` builds a State and runs the machine on the
+    // caller's JS stack, exactly like calling any sync JS function -- and
+    // charges the runtime's fuel at entry, which is what bounds the JS
+    // stack across bytecode<->JS alternation, exactly as compiled non-flat
+    // functions bound it among themselves.
+    // =====================================================================
+
+    // Must match src/ts-compiler/src/vm/opcodes.ts.
+    var VM_FORMAT_VERSION = 1;
+
+    var VM_OPCODE_NAMES = [
+      'MOVE', 'BOX', 'UNBOX', 'SETVAR', 'LETREC', 'MODREF', 'MODVARREF', 'ARRSET',
+      'JMP', 'IF', 'RET', 'CALL', 'CALLFLAT', 'TAILCALL', 'METHCALL', 'METHCALLD',
+      'PRIMAPP', 'CLOSURE', 'METHOD', 'THUNK', 'DOT', 'DOTD', 'DOTC', 'COLON', 'GETBANG',
+      'TUPLEGET', 'CASES', 'CASESPRE', 'CASESBIND', 'CASESBINDD', 'ANNCHECKV',
+      'TUPLECHK', 'NEWTYPE', 'NOP'
+    ];
+
+    var OP_MOVE = 0, OP_BOX = 1, OP_UNBOX = 2, OP_SETVAR = 3, OP_LETREC = 4,
+        OP_MODREF = 5, OP_MODVARREF = 6, OP_ARRSET = 7, OP_JMP = 8, OP_IF = 9,
+        OP_RET = 10, OP_CALL = 11, OP_CALLFLAT = 12, OP_TAILCALL = 13,
+        OP_METHCALL = 14, OP_METHCALLD = 15, OP_PRIMAPP = 16, OP_CLOSURE = 17,
+        OP_METHOD = 18, OP_THUNK = 19, OP_DOT = 20, OP_DOTD = 21, OP_DOTC = 22,
+        OP_COLON = 23, OP_GETBANG = 24, OP_TUPLEGET = 25, OP_CASES = 26,
+        OP_CASESPRE = 27, OP_CASESBIND = 28, OP_CASESBINDD = 29, OP_ANNCHECKV = 30,
+        OP_TUPLECHK = 31, OP_NEWTYPE = 32, OP_NOP = 33;
+
+    // value-source tags
+    var VS_LOCAL = 0, VS_UPVAL = 1, VS_CONST = 2, VS_GLOBAL = 3;
+
+    // constant-pool descriptor tags
+    var CONST_NUM_STR = 0, CONST_FIXNUM = 1, CONST_STR = 2, CONST_BOOL = 3,
+        CONST_UNDEFINED = 4, CONST_RT = 5, CONST_LOC = 6;
+
+    // How many bytecode-internal calls happen between two consultations of
+    // the runtime's fuel. Bytecode-to-bytecode calls do not touch the JS
+    // stack, so they need none of GAS's stack bounding; RUNGAS (the
+    // time-slice for macrotask yields / the Stop button) is what this
+    // rations, at a granularity comparable to compiled code's per-entry
+    // needsPause().
+    var VM_FUEL_QUANTUM = 64;
+    var vmFuel = VM_FUEL_QUANTUM;
+
+    var IC_EMPTY = {};
+    var vmHasOwn = Object.prototype.hasOwnProperty;
+
+    // Whether `obj.dict[name]` is a property of the VARIANT rather than of
+    // this one instance -- the condition for memoizing it against the shape
+    // ($constructor). A variant's dict is create(base): fields are own
+    // properties, sharing:/with: members come through the prototype. A
+    // singleton's members are all own, but its $constructor belongs to that
+    // one value alone ($arity === -1), so memoizing is sound there too.
+    function vmIcFillable(obj, name) {
+      return !vmHasOwn.call(obj.dict, name) || obj.$arity === -1;
+    }
+
+    // ---- closures -------------------------------------------------------
+    // Bytecode closures are PFunction / PMethod instances (same prototypes,
+    // so isFunction/isMethod/brand/... all hold) carrying one extra field
+    // naming their code. Functions and methods use DIFFERENT field names for
+    // it so that `f(x)` on a method value fails exactly as it does for
+    // compiled code (`typeof f.app !== "function"`).
+    function PVMFunction(app, name, pvm) {
+      this.app = app;
+      this.appBody = app;
+      this.name = name || "anonymous";
+      this.$pvm = pvm;
+    }
+    PVMFunction.prototype = PFunction.prototype;
+
+    function PVMMethod(full, name, pvm) {
+      this['meth'] = appN;
+      this['full_meth'] = full;
+      this['full_methBody'] = full;
+      this.name = name || "anonymous";
+      this.$pvmm = pvm;
+    }
+    PVMMethod.prototype = PMethod.prototype;
+
+    // ---- loading --------------------------------------------------------
+
+    function VMMod(prog, locs, globals, thunks) {
+      this.prog = prog;
+      this.locs = locs;
+      this.names = prog.names;
+      this.funcs = prog.funcs;
+      this.dispatches = prog.dispatches;
+      this.globals = globals;
+      this.thunks = thunks;
+      var consts = [];
+      var descs = prog.consts;
+      for (var i = 0; i < descs.length; i++) {
+        var d = descs[i];
+        switch (d[0]) {
+          case CONST_NUM_STR: consts.push(makeNumberFromString(d[1])); break;
+          case CONST_FIXNUM: consts.push(d[1]); break;
+          case CONST_STR: consts.push(d[1]); break;
+          case CONST_BOOL: consts.push(d[1]); break;
+          case CONST_UNDEFINED: consts.push(undefined); break;
+          case CONST_RT: consts.push(thisRuntime[d[1]]); break;
+          case CONST_LOC: consts.push(locs[d[1]]); break;
+          default: throw new Error("pvm: unknown constant tag " + d[0]);
+        }
+      }
+      this.consts = consts;
+      // Per instantiation, never on the program (multi-realm); built by
+      // pushing so it stays PACKED.
+      var ic = [];
+      for (var j = 0; j < prog.ncaches; j++) { ic.push(IC_EMPTY); }
+      this.ic = ic;
+    }
+
+    // Called by every hybrid module at the top of its toplevel function:
+    //   var $BC = R.$vm.load(PROG, L, [globals...], [thunks...]);
+    function vmLoad(prog, locs, globals, thunks) {
+      if (prog.v !== VM_FORMAT_VERSION) {
+        throw new Error("pvm: module was compiled for bytecode format " + prog.v +
+                        " but this machine speaks " + VM_FORMAT_VERSION +
+                        " (delete the hybrid compiled-module cache and rebuild)");
+      }
+      if (globals.length !== prog.nglobals || thunks.length !== prog.nthunks) {
+        throw new Error("pvm: module globals/thunks table size mismatch");
+      }
+      return new VMMod(prog, locs, globals, thunks);
+    }
+
+    // ---- frames and machine state ----------------------------------------
+
+    function VMFrame() {
+      this.fdef = null;
+      this.code = null;
+      this.pc = 0;
+      this.locals = null;
+      this.upvals = null;
+      this.mod = null;
+      this.dest = -1;
+      this.locK = 0;
+    }
+
+    function vmSetFrame(f, fdef, mod, upvals, locals, dest) {
+      f.fdef = fdef;
+      f.code = fdef.c;
+      f.pc = 0;
+      f.locals = locals;
+      f.upvals = upvals;
+      f.mod = mod;
+      f.dest = dest;
+      f.locK = fdef.l;
+      return f;
+    }
+
+    function vmFrameLoc(f) { return f.mod.locs[f.locK]; }
+
+    function vmFrameAt(frames, fp) {
+      var f = frames[fp];
+      if (f === undefined) { f = frames[fp] = new VMFrame(); }
+      return f;
+    }
+
+    function VMState() {
+      this.frames = [new VMFrame()];
+      this.fp = 0;
+      // Where the value handed back by a resumed suspension goes: a slot
+      // index in the top frame, or -1 to discard it.
+      this.resumeDest = -1;
+      this.resumeVal = undefined;
+    }
+
+    // States are pooled: a call from JS into bytecode takes one, and hands
+    // it back when the machine returns normally. A suspended state stays out
+    // of the pool until its resumption completes.
+    var vmStatePool = [];
+    function vmNewState() {
+      var st = vmStatePool.pop();
+      if (st === undefined) { st = new VMState(); }
+      st.fp = 0;
+      st.resumeDest = -1;
+      st.resumeVal = undefined;
+      return st;
+    }
+    function vmReleaseState(st) {
+      // Do not pin values: the frames' slot arrays are dropped.
+      var frames = st.frames;
+      for (var i = 0; i < frames.length; i++) {
+        var f = frames[i];
+        if (f.locals === null) { break; }
+        f.locals = null; f.upvals = null; f.fdef = null; f.code = null; f.mod = null;
+      }
+      if (vmStatePool.length < 64) { vmStatePool.push(st); }
+    }
+
+    // Slot arrays are built by pushing, never `new Array(n)`: an array made
+    // with a length is HOLEY in V8, and every read of a holey element pays a
+    // prototype check.
+    function vmNewLocals(fdef, args, nargs) {
+      var locals = [];
+      var i = 0;
+      for (; i < nargs; i++) { locals.push(args[i]); }
+      for (; i < fdef.s; i++) { locals.push(undefined); }
+      return locals;
+    }
+
+    // Read a tagged value source in the context of frame `f`.
+    function rd(vs, f) {
+      var i = vs >> 2;
+      switch (vs & 3) {
+        case VS_LOCAL: return f.locals[i];
+        case VS_UPVAL: return f.upvals[i];
+        case VS_CONST: return f.mod.consts[i];
+        default: return f.mod.globals[i];
+      }
+    }
+
+    // ---- suspension -------------------------------------------------------
+
+    // Attribute a failure to the machine's frames, innermost first (the
+    // same information compiled code contributes through its JS stack).
+    function vmPushFrames(e, st, fp) {
+      if (isPyretException(e)) {
+        var frames = st.frames;
+        for (var i = fp; i >= 0; i--) {
+          e.pyretStack.push(vmFrameLoc(frames[i]));
+        }
+      }
+    }
+
+    // A JS callee handed back a thenable: park the machine on it. `dest` is
+    // the slot in the top frame the value belongs in, or -1 to discard it.
+    function vmSuspendOn(st, f, fp, thenable, dest, resumePc) {
+      f.pc = resumePc;
+      st.fp = fp;
+      st.resumeDest = dest;
+      return thenable.then(function(v) {
+        st.resumeVal = v;
+        return runMachine(st);
+      }, function(e) {
+        vmPushFrames(e, st, fp);
+        vmReleaseState(st);
+        throw e;
+      });
+    }
+
+    // The fuel ran out at an instruction boundary: yield, then re-execute
+    // the instruction (only pure operand reads have happened).
+    function vmPause(st, f, fp, retryPc) {
+      f.pc = retryPc;
+      st.fp = fp;
+      st.resumeDest = -1;
+      return checkPause().then(function() { return runMachine(st); });
+    }
+
+    // Arity mismatch on a call to bytecode. Cold; kept out of the loop.
+    function vmArityFail(pvm, callee, code, pc, n, f) {
+      var args = new Array(n);
+      for (var i = 0; i < n; i++) { args[i] = rd(code[pc + i], f); }
+      checkArityC(pvm.m.locs[callee.l], callee.a, args, callee.m);
+    }
+
+    // The cross-realm-safe thenable test (see isThenable), inlined in the
+    // loop as `vmIsThenable(x)`; V8 inlines this small function.
+    function vmIsThenable(x) {
+      return x !== null && typeof x === "object" && typeof x.then === "function";
+    }
+
+    // ---- the interpreter ----------------------------------------------------
+
+    function runMachine(st) {
+      var frames = st.frames;
+      var fp = st.fp;
+      var f = frames[fp];
+      var code = f.code, pc = f.pc, locals = f.locals, upvals = f.upvals, mod = f.mod;
+      var names = mod.names, locs = mod.locs, cache = mod.ic;
+      var ans;
+
+      if (st.resumeDest >= 0) { locals[st.resumeDest] = st.resumeVal; }
+      st.resumeDest = -1;
+      st.resumeVal = undefined;
+
+      try {
+        for (;;) {
+          var op = code[pc++];
+          switch (op) {
+
+            case OP_MOVE: {
+              var d = code[pc++]; locals[d] = rd(code[pc++], f);
+              continue;
+            }
+
+            case OP_BOX: {
+              var d = code[pc++]; locals[d] = { "$var": rd(code[pc++], f) };
+              continue;
+            }
+
+            case OP_UNBOX: {
+              var d = code[pc++]; locals[d] = rd(code[pc++], f)["$var"];
+              continue;
+            }
+
+            case OP_SETVAR: {
+              var box = rd(code[pc++], f);
+              box["$var"] = rd(code[pc++], f);
+              locals[code[pc++]] = nothing;
+              continue;
+            }
+
+            case OP_LETREC: {
+              var d = code[pc++];
+              var cell = rd(code[pc++], f);
+              var lk = code[pc++], nk = code[pc++];
+              var v = cell["$var"];
+              if (v === undefined) {
+                thisRuntime.ffi.throwUninitializedIdMkLoc(locs[lk], names[nk]);
+              }
+              locals[d] = v;
+              continue;
+            }
+
+            case OP_MODREF: {
+              var d = code[pc++];
+              var m = rd(code[pc++], f);
+              locals[d] = m.dict.values.dict[names[code[pc++]]];
+              continue;
+            }
+
+            case OP_MODVARREF: {
+              var d = code[pc++];
+              var m = rd(code[pc++], f);
+              locals[d] = m.dict.values.dict[names[code[pc++]]]["$var"];
+              continue;
+            }
+
+            case OP_ARRSET: {
+              var arr = rd(code[pc++], f);
+              var idx = code[pc++];
+              arr[idx] = rd(code[pc++], f);
+              continue;
+            }
+
+            case OP_JMP: {
+              pc = code[pc];
+              continue;
+            }
+
+            case OP_IF: {
+              var c = rd(code[pc++], f);
+              var target = code[pc++];
+              if (c === true) { continue; }
+              if (c === false) { pc = target; continue; }
+              checkPyretTrue(c);
+              continue;
+            }
+
+            case OP_RET: {
+              var rv = rd(code[pc++], f);
+              var dest = f.dest;
+              fp--;
+              if (fp < 0) { st.fp = -1; vmReleaseState(st); return rv; }
+              f.locals = null;
+              var callerF = frames[fp];
+              callerF.locals[dest] = rv;
+              f = callerF;
+              code = f.code; pc = f.pc; locals = f.locals; upvals = f.upvals;
+              if (mod !== f.mod) {
+                mod = f.mod;
+                names = mod.names; locs = mod.locs; cache = mod.ic;
+              }
+              continue;
+            }
+
+            case OP_CALL: {
+              var ipc = pc - 1;
+              var d = code[pc++];
+              var fnv = rd(code[pc++], f);
+              var lk = code[pc++];
+              var n = code[pc++];
+              f.locK = lk;
+              var pvm = (fnv === undefined || fnv === null) ? undefined : fnv.$pvm;
+              if (pvm !== undefined) {
+                var callee = pvm.f;
+                if (callee.a !== n) { vmArityFail(pvm, callee, code, pc, n, f); }
+                if (--vmFuel <= 0) {
+                  vmFuel = VM_FUEL_QUANTUM;
+                  if (needsPause()) { return vmPause(st, f, fp, ipc); }
+                }
+                var nlocals = [];
+                for (var i = 0; i < n; i++) { nlocals.push(rd(code[pc++], f)); }
+                for (var i = n; i < callee.s; i++) { nlocals.push(undefined); }
+                f.pc = pc;
+                fp++;
+                f = vmSetFrame(vmFrameAt(frames, fp), callee, pvm.m, pvm.u, nlocals, d);
+                code = f.code; pc = 0; locals = nlocals; upvals = f.upvals;
+                if (mod !== f.mod) {
+                  mod = f.mod;
+                  names = mod.names; locs = mod.locs; cache = mod.ic;
+                }
+                continue;
+              }
+              if (fnv === undefined || fnv === null || typeof fnv.app !== "function") {
+                thisRuntime.ffi.throwNonFunApp(locs[lk], fnv);
+              }
+              ans = vmApplyJS(fnv, code, pc, n, f);
+              pc += n;
+              if (vmIsThenable(ans)) { return vmSuspendOn(st, f, fp, ans, d, pc); }
+              locals[d] = ans;
+              continue;
+            }
+
+            case OP_CALLFLAT: {
+              // Statically flat callee: compiled JS that returns a value
+              // synchronously (never a thenable, never bytecode).
+              var d = code[pc++];
+              var fnv = rd(code[pc++], f);
+              var lk = code[pc++];
+              var chk = code[pc++];
+              var n = code[pc++];
+              f.locK = lk;
+              if (chk === 1 && (fnv === undefined || fnv === null || typeof fnv.app !== "function")) {
+                thisRuntime.ffi.throwNonFunApp(locs[lk], fnv);
+              }
+              locals[d] = vmApplyJS(fnv, code, pc, n, f);
+              pc += n;
+              continue;
+            }
+
+            case OP_TAILCALL: {
+              var ipc = pc - 1;
+              var fnv = rd(code[pc++], f);
+              var lk = code[pc++];
+              var n = code[pc++];
+              f.locK = lk;
+              var pvm = (fnv === undefined || fnv === null) ? undefined : fnv.$pvm;
+              if (pvm !== undefined) {
+                var callee = pvm.f;
+                if (callee.a !== n) { vmArityFail(pvm, callee, code, pc, n, f); }
+                // Before anything is written: reusing the frame overwrites
+                // the slots a retried instruction would read from.
+                if (--vmFuel <= 0) {
+                  vmFuel = VM_FUEL_QUANTUM;
+                  if (needsPause()) { return vmPause(st, f, fp, ipc); }
+                }
+                // Frame reuse is safe because ANF bindings are
+                // single-assignment and closures captured their upvalues by
+                // value. The slot array is reused when large enough (always,
+                // for a self tail call), so a loop iteration allocates nothing.
+                var reuse = (locals.length >= callee.s);
+                var nlocals = reuse ? locals : [];
+                if (n === 1) {
+                  var a0 = rd(code[pc], f);
+                  if (reuse) { nlocals[0] = a0; } else { nlocals.push(a0); }
+                  pc += 1;
+                } else if (n === 2) {
+                  var b0 = rd(code[pc], f), b1 = rd(code[pc + 1], f);
+                  if (reuse) { nlocals[0] = b0; nlocals[1] = b1; }
+                  else { nlocals.push(b0); nlocals.push(b1); }
+                  pc += 2;
+                } else if (n === 3) {
+                  var c0 = rd(code[pc], f), c1 = rd(code[pc + 1], f), c2 = rd(code[pc + 2], f);
+                  if (reuse) { nlocals[0] = c0; nlocals[1] = c1; nlocals[2] = c2; }
+                  else { nlocals.push(c0); nlocals.push(c1); nlocals.push(c2); }
+                  pc += 3;
+                } else if (n > 0) {
+                  var incoming = [];
+                  for (var i = 0; i < n; i++) { incoming.push(rd(code[pc + i], f)); }
+                  for (var i = 0; i < n; i++) {
+                    if (reuse) { nlocals[i] = incoming[i]; } else { nlocals.push(incoming[i]); }
+                  }
+                  pc += n;
+                }
+                if (!reuse) {
+                  for (var i = n; i < callee.s; i++) { nlocals.push(undefined); }
+                }
+                f.fdef = callee;
+                f.code = code = callee.c;
+                f.upvals = upvals = pvm.u;
+                f.locals = locals = nlocals;
+                f.mod = pvm.m;
+                f.locK = callee.l;
+                pc = 0;
+                if (mod !== f.mod) {
+                  mod = f.mod;
+                  names = mod.names; locs = mod.locs; cache = mod.ic;
+                }
+                continue;
+              }
+              // JS callee in tail position: its result IS this frame's
+              // result. When this is the machine's bottom frame the result
+              // (value or thenable) goes straight back to our caller -- the
+              // Awaitable ABI's tail direct return, the O(1) bounce. Otherwise
+              // a thenable parks the machine with the caller's dest.
+              if (fnv === undefined || fnv === null || typeof fnv.app !== "function") {
+                thisRuntime.ffi.throwNonFunApp(locs[lk], fnv);
+              }
+              ans = vmApplyJS(fnv, code, pc, n, f);
+              var dest = f.dest;
+              fp--;
+              if (fp < 0) { st.fp = -1; vmReleaseState(st); return ans; }
+              f.locals = null;
+              var callerF = frames[fp];
+              f = callerF;
+              code = f.code; pc = f.pc; locals = f.locals; upvals = f.upvals;
+              if (mod !== f.mod) {
+                mod = f.mod;
+                names = mod.names; locs = mod.locs; cache = mod.ic;
+              }
+              if (vmIsThenable(ans)) { return vmSuspendOn(st, f, fp, ans, dest, pc); }
+              locals[dest] = ans;
+              continue;
+            }
+
+            case OP_METHCALL: {
+              var ipc = pc - 1;
+              var d = code[pc++];
+              var obj = rd(code[pc++], f);
+              var nameK = code[pc++];
+              var lk = code[pc++];
+              var flat = code[pc++];
+              var ci = code[pc++];
+              var n = code[pc++];
+              f.locK = lk;
+              // A hit skips the member resolution: the keyed dict load and the
+              // two reads that decide how to call what came back.
+              var shape = (obj === undefined || obj === null) ? null : obj.$constructor;
+              var field, pvm, isMeth;
+              if (cache[ci] === shape) {
+                field = cache[ci + 1];
+                pvm = cache[ci + 2];
+                isMeth = cache[ci + 3];
+              } else {
+                var mname = names[nameK];
+                field = getColonFieldLoc(obj, mname, locs[lk]);
+                isMeth = false;
+                pvm = undefined;
+                if (field !== undefined && field !== null) {
+                  pvm = field.$pvmm;
+                  if (pvm !== undefined) { isMeth = true; }
+                  else { pvm = field.$pvm; }
+                }
+                if (shape !== undefined && shape !== null && vmIcFillable(obj, mname)) {
+                  cache[ci] = shape;
+                  cache[ci + 1] = field;
+                  cache[ci + 2] = pvm;
+                  cache[ci + 3] = isMeth;
+                }
+              }
+              if (pvm !== undefined) {
+                var callee = pvm.f;
+                var off = isMeth ? 1 : 0;
+                var nAll = n + off;
+                if (callee.a !== nAll) {
+                  var badArgs = new Array(nAll);
+                  if (isMeth) { badArgs[0] = obj; }
+                  for (var i = 0; i < n; i++) { badArgs[i + off] = rd(code[pc + i], f); }
+                  checkArityC(pvm.m.locs[callee.l], callee.a, badArgs, callee.m);
+                }
+                if (--vmFuel <= 0) {
+                  vmFuel = VM_FUEL_QUANTUM;
+                  if (needsPause()) { return vmPause(st, f, fp, ipc); }
+                }
+                var nlocals = [];
+                if (isMeth) { nlocals.push(obj); }
+                for (var i = 0; i < n; i++) { nlocals.push(rd(code[pc++], f)); }
+                for (var i = nAll; i < callee.s; i++) { nlocals.push(undefined); }
+                f.pc = pc;
+                fp++;
+                f = vmSetFrame(vmFrameAt(frames, fp), callee, pvm.m, pvm.u, nlocals, d);
+                code = f.code; pc = 0; locals = nlocals; upvals = f.upvals;
+                if (mod !== f.mod) {
+                  mod = f.mod;
+                  names = mod.names; locs = mod.locs; cache = mod.ic;
+                }
+                continue;
+              }
+              ans = vmApplyField(obj, field, locs[lk], code, pc, n, f);
+              pc += n;
+              if (flat === 0 && vmIsThenable(ans)) { return vmSuspendOn(st, f, fp, ans, d, pc); }
+              locals[d] = ans;
+              continue;
+            }
+
+            case OP_METHCALLD: {
+              // Direct dispatch (type-flow proved `obj` is a data value on
+              // which `name` is a genuine method): obj.dict[name].full_meth.
+              var ipc = pc - 1;
+              var d = code[pc++];
+              var obj = rd(code[pc++], f);
+              var nameK = code[pc++];
+              var lk = code[pc++];
+              var flat = code[pc++];
+              var n = code[pc++];
+              f.locK = lk;
+              var field = obj.dict[names[nameK]];
+              var pvm = field.$pvmm;
+              if (pvm !== undefined) {
+                var callee = pvm.f;
+                var nAll = n + 1;
+                if (callee.a !== nAll) {
+                  var badArgs = new Array(nAll);
+                  badArgs[0] = obj;
+                  for (var i = 0; i < n; i++) { badArgs[i + 1] = rd(code[pc + i], f); }
+                  checkArityC(pvm.m.locs[callee.l], callee.a, badArgs, callee.m);
+                }
+                if (--vmFuel <= 0) {
+                  vmFuel = VM_FUEL_QUANTUM;
+                  if (needsPause()) { return vmPause(st, f, fp, ipc); }
+                }
+                var nlocals = [obj];
+                for (var i = 0; i < n; i++) { nlocals.push(rd(code[pc++], f)); }
+                for (var i = nAll; i < callee.s; i++) { nlocals.push(undefined); }
+                f.pc = pc;
+                fp++;
+                f = vmSetFrame(vmFrameAt(frames, fp), callee, pvm.m, pvm.u, nlocals, d);
+                code = f.code; pc = 0; locals = nlocals; upvals = f.upvals;
+                if (mod !== f.mod) {
+                  mod = f.mod;
+                  names = mod.names; locs = mod.locs; cache = mod.ic;
+                }
+                continue;
+              }
+              ans = vmApplyFullMeth(field, obj, code, pc, n, f);
+              pc += n;
+              if (flat === 0 && vmIsThenable(ans)) { return vmSuspendOn(st, f, fp, ans, d, pc); }
+              locals[d] = ans;
+              continue;
+            }
+
+            case OP_PRIMAPP: {
+              var d = code[pc++];
+              var prim = names[code[pc++]];
+              var lk = code[pc++];
+              var step = code[pc++];
+              var n = code[pc++];
+              f.locK = lk;
+              ans = vmApplyPrim(prim, code, pc, n, f);
+              pc += n;
+              if (step === 1 && vmIsThenable(ans)) { return vmSuspendOn(st, f, fp, ans, d, pc); }
+              locals[d] = ans;
+              continue;
+            }
+
+            case OP_CLOSURE: {
+              var d = code[pc++];
+              locals[d] = vmMakeClosure(mod, mod.funcs[code[pc++]], locals, upvals);
+              continue;
+            }
+
+            case OP_METHOD: {
+              var d = code[pc++];
+              locals[d] = vmMakeMethodClosure(mod, mod.funcs[code[pc++]], locals, upvals);
+              continue;
+            }
+
+            case OP_THUNK: {
+              var d = code[pc++];
+              var th = mod.thunks[code[pc++]];
+              var lk = code[pc++];
+              var step = code[pc++];
+              var n = code[pc++];
+              f.locK = lk;
+              ans = vmApplyThunk(th, code, pc, n, f);
+              pc += n;
+              if (step === 1 && vmIsThenable(ans)) { return vmSuspendOn(st, f, fp, ans, d, pc); }
+              locals[d] = ans;
+              continue;
+            }
+
+            case OP_DOT: {
+              var d = code[pc++];
+              var obj = rd(code[pc++], f);
+              var nameK = code[pc++];
+              var lk = code[pc++];
+              f.locK = lk;
+              // getFieldLoc's fast path, inlined: an own/inherited plain field
+              // on an object. Anything else (missing, method to curry, ref,
+              // non-object) takes the runtime's full path and its errors.
+              if (obj instanceof PObject) {
+                var fv = obj.dict[names[nameK]];
+                if (fv !== undefined && !(fv instanceof PMethod) && !(fv instanceof PRef)) {
+                  locals[d] = fv;
+                  continue;
+                }
+              }
+              locals[d] = getFieldLoc(obj, names[nameK], locs[lk]);
+              continue;
+            }
+
+            case OP_DOTD: {
+              // Direct field (type-flow proved a plain data field).
+              var d = code[pc++];
+              var obj = rd(code[pc++], f);
+              locals[d] = obj.dict[names[code[pc++]]];
+              continue;
+            }
+
+            case OP_DOTC: {
+              // A loop-invariant immutable field read memoized in a cache
+              // cell (ANF optimizer LICM): `cell ?? (cell = read)`. The cell
+              // is a slot of this frame or one of this closure's upvalues.
+              var d = code[pc++];
+              var obj = rd(code[pc++], f);
+              var nameK = code[pc++];
+              var lk = code[pc++];
+              var direct = code[pc++];
+              var cvs = code[pc++];
+              var cv = rd(cvs, f);
+              if (cv === undefined || cv === null) {
+                f.locK = lk;
+                cv = (direct === 1) ? obj.dict[names[nameK]] : getFieldLoc(obj, names[nameK], locs[lk]);
+                if ((cvs & 3) === VS_LOCAL) { locals[cvs >> 2] = cv; }
+                else if ((cvs & 3) === VS_UPVAL) { upvals[cvs >> 2] = cv; }
+                else { throw new Error("pvm: DOTC cache cell is not a local or upvalue"); }
+              }
+              locals[d] = cv;
+              continue;
+            }
+
+            case OP_COLON: {
+              var d = code[pc++];
+              var obj = rd(code[pc++], f);
+              var nameK = code[pc++];
+              var lk = code[pc++];
+              locals[d] = getColonFieldLoc(obj, names[nameK], locs[lk]);
+              continue;
+            }
+
+            case OP_GETBANG: {
+              var d = code[pc++];
+              var obj = rd(code[pc++], f);
+              var nameK = code[pc++];
+              var lk = code[pc++];
+              locals[d] = getFieldRef(obj, names[nameK], locs[lk]);
+              continue;
+            }
+
+            case OP_TUPLEGET: {
+              var d = code[pc++];
+              var t = rd(code[pc++], f);
+              var idx = code[pc++];
+              locals[d] = getTuple(t, idx, locs[code[pc++]]);
+              continue;
+            }
+
+            case OP_CASES: {
+              var v = rd(code[pc++], f);
+              var di = code[pc++];
+              var lk = code[pc++];
+              var elseTarget = code[pc++];
+              f.locK = lk;
+              var target = mod.dispatches[di][v.$name];
+              pc = (target === undefined) ? elseTarget : target;
+              continue;
+            }
+
+            case OP_CASESPRE: {
+              var v = rd(code[pc++], f);
+              var wanted = code[pc++];
+              var brLk = code[pc++];
+              var casesLk = code[pc++];
+              var got = v.$arity;
+              if (wanted < 0) {
+                if (got !== -1) {
+                  thisRuntime.ffi.throwCasesSingletonErrorC(locs[brLk], false, locs[casesLk], v.$loc);
+                }
+              } else if (got !== wanted) {
+                if (got >= 0) {
+                  thisRuntime.ffi.throwCasesArityErrorC(locs[brLk], wanted, got, locs[casesLk], v.$loc);
+                } else {
+                  thisRuntime.ffi.throwCasesSingletonErrorC(locs[brLk], true, locs[casesLk], v.$loc);
+                }
+              }
+              continue;
+            }
+
+            case OP_CASESBIND: {
+              var v = rd(code[pc++], f);
+              var n = code[pc++];
+              var ci = code[pc++];
+              var shape = v.$constructor;
+              var fieldNames, mask;
+              if (cache[ci] === shape) {
+                fieldNames = cache[ci + 1];
+                mask = cache[ci + 2];
+              } else {
+                fieldNames = shape.$fieldNames;
+                mask = v.$mut_fields_mask;
+                cache[ci] = shape;
+                cache[ci + 1] = fieldNames;
+                cache[ci + 2] = mask;
+              }
+              for (var i = 0; i < n; i++) {
+                var slot = code[pc++];
+                var isRef = code[pc++] === 1;
+                locals[slot] = derefField(v.dict[fieldNames[i]], mask[i], isRef);
+              }
+              continue;
+            }
+
+            case OP_CASESBINDD: {
+              // Direct cases: field names statically known.
+              var v = rd(code[pc++], f);
+              var n = code[pc++];
+              var vdict = v.dict;
+              for (var i = 0; i < n; i++) {
+                var slot = code[pc++];
+                var fv = vdict[names[code[pc++]]];
+                var mode = code[pc++];
+                locals[slot] = (mode === 0) ? fv
+                  : derefField(fv, (mode & 2) !== 0, (mode & 4) !== 0);
+              }
+              continue;
+            }
+
+            case OP_ANNCHECKV: {
+              var annVal = rd(code[pc++], f);
+              var v = rd(code[pc++], f);
+              var lk = code[pc++];
+              var step = code[pc++];
+              // A passing check against a runtime-native flat annotation
+              // (PPrimAnn: primitives AND data-type branders) needs none of
+              // _checkAnn's machinery.
+              if (annVal instanceof PPrimAnn && annVal.pred(v) === true) { continue; }
+              f.locK = lk;
+              ans = _checkAnn(locs[lk], annVal, v);
+              if (step === 1 && vmIsThenable(ans)) { return vmSuspendOn(st, f, fp, ans, -1, pc); }
+              continue;
+            }
+
+            case OP_TUPLECHK: {
+              var v = rd(code[pc++], f);
+              var n = code[pc++];
+              checkTupleBind(v, n, locs[code[pc++]]);
+              continue;
+            }
+
+            case OP_NEWTYPE: {
+              var dBrander = code[pc++];
+              var dAnn = code[pc++];
+              var nm = names[code[pc++]];
+              var brander = namedBrander(nm, locs[code[pc++]]);
+              locals[dBrander] = brander;
+              locals[dAnn] = makeBranderAnn(brander, nm);
+              continue;
+            }
+
+            case OP_NOP:
+              continue;
+
+            default:
+              throw new Error("pvm: unknown opcode " + op + " at pc " + (pc - 1) +
+                              " in " + f.fdef.n);
+          }
+        }
+      } catch (e) {
+        f.pc = pc;
+        vmPushFrames(e, st, fp);
+        vmReleaseState(st);
+        throw e;
+      }
+    }
+
+    // ---- calling out ---------------------------------------------------------
+
+    function vmApplyJS(fnv, code, pc, n, f) {
+      switch (n) {
+        case 0: return fnv.app();
+        case 1: return fnv.app(rd(code[pc], f));
+        case 2: return fnv.app(rd(code[pc], f), rd(code[pc + 1], f));
+        case 3: return fnv.app(rd(code[pc], f), rd(code[pc + 1], f), rd(code[pc + 2], f));
+        case 4: return fnv.app(rd(code[pc], f), rd(code[pc + 1], f), rd(code[pc + 2], f),
+                               rd(code[pc + 3], f));
+        default: {
+          var args = new Array(n);
+          for (var i = 0; i < n; i++) { args[i] = rd(code[pc + i], f); }
+          return fnv.app.apply(fnv, args);
+        }
+      }
+    }
+
+    function vmApplyFullMeth(field, obj, code, pc, n, f) {
+      switch (n) {
+        case 0: return field.full_meth(obj);
+        case 1: return field.full_meth(obj, rd(code[pc], f));
+        case 2: return field.full_meth(obj, rd(code[pc], f), rd(code[pc + 1], f));
+        case 3: return field.full_meth(obj, rd(code[pc], f), rd(code[pc + 1], f), rd(code[pc + 2], f));
+        default: {
+          var args = new Array(n + 1);
+          args[0] = obj;
+          for (var i = 0; i < n; i++) { args[i + 1] = rd(code[pc + i], f); }
+          return field.full_meth.apply(field, args);
+        }
+      }
+    }
+
+    // `obj.m(...)` where the field turned out not to be bytecode: a method
+    // takes the receiver as its first argument, a function does not.
+    function vmApplyField(obj, field, loc, code, pc, n, f) {
+      if (field instanceof PMethod) {
+        return vmApplyFullMeth(field, obj, code, pc, n, f);
+      }
+      if (!(field instanceof PFunction)) {
+        thisRuntime.ffi.throwNonFunApp(loc, field);
+      }
+      return vmApplyJS(field, code, pc, n, f);
+    }
+
+    function vmApplyPrim(prim, code, pc, n, f) {
+      var fn = thisRuntime[prim];
+      if (typeof fn !== "function") {
+        throw new Error("pvm: no runtime primitive named " + prim);
+      }
+      switch (n) {
+        case 0: return fn();
+        case 1: return fn(rd(code[pc], f));
+        case 2: return fn(rd(code[pc], f), rd(code[pc + 1], f));
+        case 3: return fn(rd(code[pc], f), rd(code[pc + 1], f), rd(code[pc + 2], f));
+        default: {
+          var args = new Array(n);
+          for (var i = 0; i < n; i++) { args[i] = rd(code[pc + i], f); }
+          return fn.apply(thisRuntime, args);
+        }
+      }
+    }
+
+    function vmApplyThunk(th, code, pc, n, f) {
+      switch (n) {
+        case 0: return th();
+        case 1: return th(rd(code[pc], f));
+        case 2: return th(rd(code[pc], f), rd(code[pc + 1], f));
+        case 3: return th(rd(code[pc], f), rd(code[pc + 1], f), rd(code[pc + 2], f));
+        case 4: return th(rd(code[pc], f), rd(code[pc + 1], f), rd(code[pc + 2], f), rd(code[pc + 3], f));
+        default: {
+          var args = new Array(n);
+          for (var i = 0; i < n; i++) { args[i] = rd(code[pc + i], f); }
+          return th.apply(null, args);
+        }
+      }
+    }
+
+    // ---- calling in: the .app / .full_meth entries a JS caller sees ----------
+
+    var VM_EMPTY_UPVALS = [];
+
+    function vmCaptureUpvals(fdef, locals, upvals) {
+      var descs = fdef.u, n = descs.length;
+      if (n === 0) { return VM_EMPTY_UPVALS; }
+      var out = [];
+      for (var i = 0; i < n; i++) {
+        var dsc = descs[i];
+        out.push((dsc & 1) ? upvals[dsc >> 1] : locals[dsc >> 1]);
+      }
+      return out;
+    }
+
+    // Start the machine on a fresh state whose bottom frame is `fdef` with
+    // the given (already arity-checked) locals. Charges the runtime's fuel
+    // exactly like a compiled non-flat function's entry does -- that is what
+    // bounds the JS stack across bytecode<->JS alternation.
+    function vmStart(pvm, locals) {
+      var st = vmNewState();
+      vmSetFrame(st.frames[0], pvm.f, pvm.m, pvm.u, locals, -1);
+      if (needsPause()) {
+        return checkPause().then(function() { return runMachine(st); });
+      }
+      return runMachine(st);
+    }
+
+    function vmEntryArityFail(pvm, args) {
+      var arr = new Array(args.length);
+      for (var i = 0; i < args.length; i++) { arr[i] = args[i]; }
+      checkArityC(pvm.m.locs[pvm.f.l], pvm.f.a, arr, pvm.f.m);
+    }
+
+    // One entry function per arity, so the common cases build the slot
+    // array without an intermediate argument array.
+    function vmMakeEntry(pvm) {
+      var fdef = pvm.f;
+      var nslots = fdef.s;
+      switch (fdef.a) {
+        case 0: return function() {
+          if (arguments.length !== 0) { return vmEntryArityFail(pvm, arguments); }
+          var l = [];
+          for (var i = 0; i < nslots; i++) { l.push(undefined); }
+          return vmStart(pvm, l);
+        };
+        case 1: return function(a0) {
+          if (arguments.length !== 1) { return vmEntryArityFail(pvm, arguments); }
+          var l = [a0];
+          for (var i = 1; i < nslots; i++) { l.push(undefined); }
+          return vmStart(pvm, l);
+        };
+        case 2: return function(a0, a1) {
+          if (arguments.length !== 2) { return vmEntryArityFail(pvm, arguments); }
+          var l = [a0, a1];
+          for (var i = 2; i < nslots; i++) { l.push(undefined); }
+          return vmStart(pvm, l);
+        };
+        case 3: return function(a0, a1, a2) {
+          if (arguments.length !== 3) { return vmEntryArityFail(pvm, arguments); }
+          var l = [a0, a1, a2];
+          for (var i = 3; i < nslots; i++) { l.push(undefined); }
+          return vmStart(pvm, l);
+        };
+        case 4: return function(a0, a1, a2, a3) {
+          if (arguments.length !== 4) { return vmEntryArityFail(pvm, arguments); }
+          var l = [a0, a1, a2, a3];
+          for (var i = 4; i < nslots; i++) { l.push(undefined); }
+          return vmStart(pvm, l);
+        };
+        default: return function() {
+          var n = arguments.length;
+          if (n !== fdef.a) { return vmEntryArityFail(pvm, arguments); }
+          var l = [];
+          for (var i = 0; i < n; i++) { l.push(arguments[i]); }
+          for (; i < nslots; i++) { l.push(undefined); }
+          return vmStart(pvm, l);
+        };
+      }
+    }
+
+    function vmMakeClosure(mod, fdef, locals, upvals) {
+      var pvm = { f: fdef, u: vmCaptureUpvals(fdef, locals, upvals), m: mod };
+      return new PVMFunction(vmMakeEntry(pvm), fdef.n, pvm);
+    }
+
+    function vmMakeMethodClosure(mod, fdef, locals, upvals) {
+      var pvm = { f: fdef, u: vmCaptureUpvals(fdef, locals, upvals), m: mod };
+      return new PVMMethod(vmMakeEntry(pvm), fdef.n, pvm);
+    }
+
+    // The JS emitter's way in: `R.$vm.mkFun($BC, idx, [captures])`, where
+    // the captures array is in the order of the function's upvalue list.
+    function vmMkFun(mod, idx, upvals) {
+      var fdef = mod.funcs[idx];
+      var pvm = { f: fdef, u: upvals, m: mod };
+      return new PVMFunction(vmMakeEntry(pvm), fdef.n, pvm);
+    }
+
+    function vmMkMeth(mod, idx, upvals) {
+      var fdef = mod.funcs[idx];
+      var pvm = { f: fdef, u: upvals, m: mod };
+      return new PVMMethod(vmMakeEntry(pvm), fdef.n, pvm);
+    }
+
+    var vmApi = {
+      'load': vmLoad,
+      'mkFun': vmMkFun,
+      'mkMeth': vmMkMeth,
+      'FORMAT_VERSION': VM_FORMAT_VERSION,
+      'OPCODE_NAMES': VM_OPCODE_NAMES,
+    };
+
     //Export the runtime
     //String keys should be used to prevent renaming
     var thisRuntime = {
       'builtins': builtins,
       'run': runAsync,
+      '$vm': vmApi,
       'runTrampoline': run,
       'needsPause': needsPause,
       'checkPause': checkPause,

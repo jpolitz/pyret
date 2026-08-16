@@ -1205,6 +1205,12 @@ export interface CompileOptions {
   // -no-few-suspend demotes FewSuspend verdicts to Gen inside the tier
   // analysis, for A/B measurement of the guarded-suspend-site sync emission.
   fewSuspend: boolean;
+  // Hybrid bytecode machine (promise backend): the tier verdicts whose
+  // functions compile to bytecode run by the machine in runtime-async.js
+  // instead of JS. Empty = no bytecode at all (today's output, byte for
+  // byte). Values: 'gen', 'few-suspend', 'tail-flat'; 'flat' is never on
+  // the machine (a flat callee is what CALLFLAT relies on being JS).
+  vmTiers: string[];
   stackBackend: StackBackend;
   inlineCaseBodyLimit: number;
   moduleEval: boolean;
@@ -1259,6 +1265,7 @@ export const defaultCompileOptions: CompileOptions = {
   genResidue: false,
   tailFlat: true,
   fewSuspend: true,
+  vmTiers: [],
   stackBackend: compiledStackBackend,
   inlineCaseBodyLimit: 5,
   moduleEval: true,
