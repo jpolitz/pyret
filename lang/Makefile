@@ -417,6 +417,54 @@ VM_TIERS ?= gen
                       $(EXTRA_FLAGS) \
                       --require-config src/scripts/standalone-configA-async.json
 
+# ===== Hybrid self-host fixpoint (the strongest oracle for the machine) =====
+# phaseB-tsp: the Pyret-hosted compiler (src/arr/compiler/pyret.arr) built by
+#             the TS compiler, promise backend, all JS.
+# phaseB-tsh: the same, hybrid (-vm-tiers $(VM_TIERS)): the compiler's own
+#             Gen-tier functions run on the machine.
+# phaseC-tsp / phaseC-tsh: each of those compiles pyret.arr (same flags).
+# hybrid-bootstrap-check: the two phaseC standalones must be BYTE-IDENTICAL --
+# ~40k lines of Pyret executed as bytecode-plus-JS producing exactly what the
+# all-JS build produces. Each builder needs its own js/ dir (pyret.arr reads
+# amd_loader.js/handalone.js next to itself).
+PHASEBTSP = build/phaseB-tsp
+PHASEBTSH = build/phaseB-tsh
+PHASECTSP = build/phaseC-tsp
+PHASECTSH = build/phaseC-tsh
+
+# $(1) = out dir; $(2) = extra flags
+define TS_COMPILER_BUILD
+	@$(call MKDIR,$(1)/compiled)
+	$(call RMDIR,$(1)/js)
+	cp -r $(PHASEA)/js $(1)/
+	$(TS_PYRET) --outfile $(1)/pyret.jarr \
+                      --build-runnable src/arr/compiler/pyret.arr \
+                      --builtin-js-dir src/js/trove/ \
+                      --builtin-arr-dir src/arr/trove/ \
+                      --compiled-dir $(1)/compiled/ \
+                      --deps-file $(PHASEA)/bundled-node-compile-deps.js \
+                      --stack-backend promise $(2) \
+                      -no-check-mode \
+                      --require-config src/scripts/standalone-configA-async.json
+endef
+
+$(PHASEBTSP)/pyret.jarr: ts-compiler $(PHASEA)/js/runtime-async.js $(COMPILER_FILES) $(PHASEA)/bundled-node-compile-deps.js
+	$(call TS_COMPILER_BUILD,$(PHASEBTSP),)
+$(PHASEBTSH)/pyret.jarr: ts-compiler $(PHASEA)/js/runtime-async.js $(COMPILER_FILES) $(PHASEA)/bundled-node-compile-deps.js
+	$(call TS_COMPILER_BUILD,$(PHASEBTSH),--vm-tiers $(VM_TIERS))
+$(PHASECTSP)/pyret.jarr: $(PHASEBTSP)/pyret.jarr
+	$(call PROMISE_SELFBUILD,$(PHASEBTSP)/pyret.jarr,$(PHASECTSP))
+$(PHASECTSH)/pyret.jarr: $(PHASEBTSH)/pyret.jarr
+	$(call PROMISE_SELFBUILD,$(PHASEBTSH)/pyret.jarr,$(PHASECTSH))
+
+.PHONY : phaseB-tsp phaseB-tsh phaseC-tsp phaseC-tsh hybrid-bootstrap-check
+phaseB-tsp: $(PHASEBTSP)/pyret.jarr
+phaseB-tsh: $(PHASEBTSH)/pyret.jarr
+phaseC-tsp: $(PHASECTSP)/pyret.jarr
+phaseC-tsh: $(PHASECTSH)/pyret.jarr
+hybrid-bootstrap-check: $(PHASECTSP)/pyret.jarr $(PHASECTSH)/pyret.jarr
+	cmp $(PHASECTSP)/pyret.jarr $(PHASECTSH)/pyret.jarr && echo "HYBRID BOOTSTRAP: byte-identical"
+
 # Cross-backend run parity (within the TS compiler): TS-cont vs TS-promise on
 # tests/pyret/main2.arr (the independent semantic check for Promise-leak / flatness
 # bugs the byte oracle is blind to).

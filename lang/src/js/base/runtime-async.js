@@ -3044,6 +3044,13 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
 
 
     function _checkAnn(compilerLoc, ann, val) {
+      // Fast path: a passing check against a runtime-native flat annotation
+      // (PPrimAnn: the primitive types AND data-type branders, both of
+      // which are the overwhelmingly common `:: T`) is exactly
+      // `pred(val)` truthy -> return val (PPrimAnn.check + checkOrFail +
+      // ffi.isOk say the same thing in five calls). Failures and every
+      // other annotation class take the full path below unchanged.
+      if (ann instanceof PPrimAnn && ann.pred(val)) { return val; }
       if (isCheapAnnotation(ann)) {
         var result = ann.check(compilerLoc, val);
         if(thisRuntime.ffi.isOk(result)) { return val; }
@@ -6322,6 +6329,33 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     var IC_EMPTY = {};
     var vmHasOwn = Object.prototype.hasOwnProperty;
 
+    // Dynamic opcode profile (node only): PYRET_VM_PROFILE=1 counts every
+    // executed instruction and prints the histogram at exit. Counting
+    // executed instructions -- not emitted ones -- is what says where the
+    // machine spends its dispatch.
+    var VM_PROFILE = (typeof process !== "undefined" && process.env && process.env.PYRET_VM_PROFILE === "1");
+    var vmCounts = [];
+    var vmEntries = 0, vmSuspends = 0, vmPauses = 0, vmJsCalls = 0;
+    if (VM_PROFILE) {
+      for (var vpi = 0; vpi < 64; vpi++) { vmCounts.push(0); }
+      process.on("exit", function() {
+        var total = 0;
+        for (var i = 0; i < vmCounts.length; i++) { total += vmCounts[i]; }
+        var rows = [];
+        for (var i = 0; i < VM_OPCODE_NAMES.length; i++) {
+          if (vmCounts[i] > 0) { rows.push([VM_OPCODE_NAMES[i], vmCounts[i]]); }
+        }
+        rows.sort(function(a, b) { return b[1] - a[1]; });
+        var out = "[vm-profile] " + total + " instructions, " + vmEntries + " JS->bytecode entries, "
+          + vmJsCalls + " bytecode->JS calls, " + vmSuspends + " suspensions, " + vmPauses + " pauses\n";
+        for (var i = 0; i < rows.length; i++) {
+          out += "[vm-profile] " + (rows[i][0] + "           ").slice(0, 11) + String(rows[i][1]).padStart(12)
+            + "  " + (100 * rows[i][1] / total).toFixed(1) + "%\n";
+        }
+        process.stderr.write(out);
+      });
+    }
+
     // Whether `obj.dict[name]` is a property of the VARIANT rather than of
     // this one instance -- the condition for memoizing it against the shape
     // ($constructor). A variant's dict is create(base): fields are own
@@ -6505,6 +6539,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     // A JS callee handed back a thenable: park the machine on it. `dest` is
     // the slot in the top frame the value belongs in, or -1 to discard it.
     function vmSuspendOn(st, f, fp, thenable, dest, resumePc) {
+      if (VM_PROFILE) { vmSuspends++; }
       f.pc = resumePc;
       st.fp = fp;
       st.resumeDest = dest;
@@ -6521,6 +6556,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     // The fuel ran out at an instruction boundary: yield, then re-execute
     // the instruction (only pure operand reads have happened).
     function vmPause(st, f, fp, retryPc) {
+      if (VM_PROFILE) { vmPauses++; }
       f.pc = retryPc;
       st.fp = fp;
       st.resumeDest = -1;
@@ -6557,6 +6593,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       try {
         for (;;) {
           var op = code[pc++];
+          if (VM_PROFILE) { vmCounts[op]++; }
           switch (op) {
 
             case OP_MOVE: {
@@ -7095,7 +7132,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
               // A passing check against a runtime-native flat annotation
               // (PPrimAnn: primitives AND data-type branders) needs none of
               // _checkAnn's machinery.
-              if (annVal instanceof PPrimAnn && annVal.pred(v) === true) { continue; }
+              if (annVal instanceof PPrimAnn && annVal.pred(v)) { continue; }
               f.locK = lk;
               ans = _checkAnn(locs[lk], annVal, v);
               if (step === 1 && vmIsThenable(ans)) { return vmSuspendOn(st, f, fp, ans, -1, pc); }
@@ -7138,6 +7175,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     // ---- calling out ---------------------------------------------------------
 
     function vmApplyJS(fnv, code, pc, n, f) {
+      if (VM_PROFILE) { vmJsCalls++; }
       switch (n) {
         case 0: return fnv.app();
         case 1: return fnv.app(rd(code[pc], f));
@@ -7233,6 +7271,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     // exactly like a compiled non-flat function's entry does -- that is what
     // bounds the JS stack across bytecode<->JS alternation.
     function vmStart(pvm, locals) {
+      if (VM_PROFILE) { vmEntries++; }
       var st = vmNewState();
       vmSetFrame(st.frames[0], pvm.f, pvm.m, pvm.u, locals, -1);
       if (needsPause()) {
