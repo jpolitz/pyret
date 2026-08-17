@@ -6325,6 +6325,21 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     // needsPause().
     var VM_FUEL_QUANTUM = 64;
     var vmFuel = VM_FUEL_QUANTUM;
+    // Bytecode->bytecode CALLs run the callee's fast form (native) while the
+    // machine's frame stack is shallower than this; deeper calls interpret.
+    // MEASURED and left at 0 (never): a fast-form call from bytecode puts
+    // the recursion back on the JS stack, where every 500 levels the fuel
+    // unwinds it into one machine state per level -- so the machine's frame
+    // stack never gets deep and the threshold never bites. gdeep 2M levels:
+    // 2.2s/818MB interpreting bytecode->bytecode calls vs 4.2s/1.5GB with
+    // fast calls at any depth (the all-JS backend: 3.4-4.4s/1.6GB); the
+    // curated benches gained nothing from fast remainders (post-bailout
+    // interpretation is ~1% of their instructions). PYRET_VM_FAST_CALL_DEPTH
+    // overrides, for measurement.
+    var VM_FAST_CALL_DEPTH = 0;
+    if (typeof process !== "undefined" && process.env && process.env.PYRET_VM_FAST_CALL_DEPTH !== undefined) {
+      VM_FAST_CALL_DEPTH = Number(process.env.PYRET_VM_FAST_CALL_DEPTH);
+    }
 
     var IC_EMPTY = {};
     var vmHasOwn = Object.prototype.hasOwnProperty;
@@ -6756,6 +6771,33 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
                 if (--vmFuel <= 0) {
                   vmFuel = VM_FUEL_QUANTUM;
                   if (needsPause()) { return vmPause(st, f, fp, ipc); }
+                }
+                if (pvm.fast !== null && fp < VM_FAST_CALL_DEPTH) {
+                  // Shallow in the machine (the usual post-bailout remainder
+                  // of an activation): run the callee's fast form natively
+                  // rather than interpreting its whole subtree. Deeper, calls
+                  // interpret so that deep recursion stays on heap frames
+                  // instead of paying a JS-stack pause storm every 500 levels.
+                  var fargs = new Array(n);
+                  for (var i = 0; i < n; i++) { fargs[i] = rd(code[pc + i], f); }
+                  pc += n;
+                  ans = pvm.fast.apply(null, fargs);
+                  if (ans === VM_BAIL) {
+                    var fbd = vmBailData;
+                    f.pc = pc;
+                    fp++;
+                    f = vmFrameAt(frames, fp);
+                    vmMaterialize(f, pvm, fbd);
+                    f.dest = d;
+                    if (mod !== f.mod) {
+                      mod = f.mod;
+                      names = mod.names; locs = mod.locs; cache = mod.ic;
+                    }
+                    return vmSuspendOn(st, f, fp, fbd.thenable, fbd.dest, f.pc);
+                  }
+                  if (vmIsThenable(ans)) { return vmSuspendOn(st, f, fp, ans, d, pc); }
+                  locals[d] = ans;
+                  continue;
                 }
                 var nlocals = [];
                 for (var i = 0; i < n; i++) { nlocals.push(rd(code[pc++], f)); }
