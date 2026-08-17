@@ -85,3 +85,6 @@ compiled-ts/
 tests/ts-compiled-promise/
 compiled-ts-promise/
 *.ts.p.jarr
+tests/ts-compiled-hybrid/
+compiled-ts-hybrid/
+compiled-tsp/
