@@ -27,7 +27,7 @@ run to run on this box; the bootstrap is the number to trust.
 
 Every Gen-verdict function is bytecode; calls from JS enter the machine.
 
-Curated benches, N=3 (`scratchpad/table-stage1.txt`):
+Curated benches, N=3 (`results/table-stage1.txt`):
 
 benchmark                |    p_med    p_min |    h_med    h_min |    h/p  min_r | parity
 bench-spell              |    2.130    2.084 |    1.995    1.945 |  0.937  0.933 | OK
@@ -71,7 +71,7 @@ machine runs the remainder of an activation after a real suspension and
 hands back to native code at the next bottom-frame tail call;
 bytecode->bytecode calls interpret (deep recursion stays on heap frames).
 
-Curated benches, N=3 (`table-stage2.txt`):
+Curated benches, N=3 (`results/table-stage2.txt`):
 
 benchmark                |    p_med    p_min |    h_med    h_min |    h/p  min_r | parity
 bench-spell              |    2.117    2.092 |    1.743    1.660 |  0.823  0.793 | OK

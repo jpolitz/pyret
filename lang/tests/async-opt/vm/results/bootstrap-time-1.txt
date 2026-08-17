@@ -1,0 +1,5 @@
+rep 1: promise 39.9s  hybrid 36.9s
+rep 2: promise 38.0s  hybrid 37.0s
+rep 3: promise 37.0s  hybrid 37.2s
+bootstrap medians: promise 38.0s hybrid 37.0s  h/p 0.974
+DONE

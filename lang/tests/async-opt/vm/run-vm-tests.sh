@@ -7,7 +7,7 @@
 # each hybrid module actually contains bytecode (grep $vm.load), verifies
 # the bytecode structurally, and runs the deep/mutual programs under a heap
 # cap so a frame leak fails loudly.
-# Self-locating; exits non-zero on any failure. Overridable: NODE, VM_TIERS.
+# Self-locating; exits non-zero on any failure. Overridable: NODE, VM_TIERS, VM_FAST.
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LANG_DIR="$(cd "$HERE/../../.." && pwd)"
@@ -15,6 +15,7 @@ cd "$LANG_DIR"
 export NODE_PATH="$LANG_DIR/node_modules"
 NODE="${NODE:-node}"
 VM_TIERS="${VM_TIERS:-gen}"
+VM_FAST="${VM_FAST:-all}"
 PYRET="build/ts-compiler/pyret.js"
 [ -f "$PYRET" ] || { echo "ERROR: $PYRET not found (make ts-compiler)"; exit 2; }
 WORK="${WORK:-$(mktemp -d)}"
@@ -39,7 +40,7 @@ for src in $PROGS; do
   if ! $PY --compiled-dir "$WORK/p" --outfile "$pj" --build-runnable "$src" >"$pj.build" 2>&1; then
     bad "$base" "promise build failed"; tail -3 "$pj.build" | sed 's/^/    /'; continue
   fi
-  if ! $PY --compiled-dir "$WORK/h" --vm-tiers "$VM_TIERS" --outfile "$hj" --build-runnable "$src" >"$hj.build" 2>&1; then
+  if ! $PY --compiled-dir "$WORK/h" --vm-tiers "$VM_TIERS" --vm-fast "$VM_FAST" --outfile "$hj" --build-runnable "$src" >"$hj.build" 2>&1; then
     bad "$base" "hybrid build failed"; tail -3 "$hj.build" | sed 's/^/    /'; continue
   fi
   if ! grep -q 'R\.\$vm\.load(' "$hj"; then bad "$base" "hybrid jarr has no bytecode"; continue; fi
