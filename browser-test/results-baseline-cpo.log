@@ -1,0 +1,2232 @@
+ln -sfn ../lang /home/exedev/work/drydock/code.pyret.org/pyret
+cd /home/exedev/work/drydock/code.pyret.org && npm ci --ignore-scripts
+npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm warn deprecated lodash.isequal@4.5.0: This package is deprecated. Use require('node:util').isDeepStrictEqual instead.
+npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+npm warn deprecated q@1.4.1: You or someone you depend on is using Q, the JavaScript Promise library that gave JavaScript developers strong feelings about promises. They can almost certainly migrate to the native JavaScript promise now. Thank you literally everyone for joining me in this bet against the odds. Be excellent to each other.
+npm warn deprecated
+npm warn deprecated (For a CapTP with native promises, see @endo/eventual-send and @endo/captp)
+npm warn deprecated prebuild-install@7.1.3: No longer maintained. Please contact the author of the relevant native addon; alternatives are available.
+npm warn deprecated strip-eof@2.0.0: Renamed to `strip-final-newline` to better represent its functionality.
+npm warn deprecated rimraf@2.6.3: Rimraf versions prior to v4 are no longer supported
+npm warn deprecated osenv@0.1.5: This package is no longer supported.
+npm warn deprecated lodash.template@4.18.1: This package is deprecated. Use https://socket.dev/npm/package/eta instead.
+npm warn deprecated har-validator@5.1.5: this library is no longer supported
+npm warn deprecated node-uuid@1.4.8: Use uuid module instead
+npm warn deprecated csurf@1.11.0: Please use another csrf package
+npm warn deprecated google-p12-pem@2.0.5: Package is no longer maintained
+npm warn deprecated request@2.88.2: request has been deprecated, see https://github.com/request/request/issues/3142
+npm warn deprecated @oclif/screen@1.0.4: Deprecated in favor of @oclif/core
+npm warn gitignore-fallback No .npmignore file found, using .gitignore for file exclusion. Consider creating a .npmignore file to explicitly control published files.
+npm warn deprecated @oclif/color@0.0.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated heroku-cli-util@8.0.12: This package has been deprecated. Install the new supported version at https://www.npmjs.com/package/@heroku/heroku-cli-util
+npm warn deprecated @oclif/command@1.8.16: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @oclif/help@1.0.15: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @heroku-cli/plugin-ps-exec@2.7.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @oclif/errors@1.2.2: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @heroku-cli/plugin-status@7.68.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @heroku-cli/plugin-certs@7.68.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @heroku-cli/heroku-exec-util@0.9.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @oclif/parser@3.8.17: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @heroku-cli/plugin-git@7.68.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @oclif/config@1.13.2: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @heroku-cli/plugin-ps@7.68.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @heroku-cli/plugin-local@7.69.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated cli-ux@4.9.3: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @heroku-cli/plugin-config@7.68.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated debug@4.1.1: Debug versions >=3.2.0 <3.2.7 || >=4 <4.3.1 have a low-severity ReDos regression when used in a Node.js environment. It is recommended you upgrade to 3.2.7 or 4.3.1. (https://github.com/visionmedia/debug/issues/797)
+npm warn deprecated @oclif/color@0.1.2: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated uuid@3.4.0: Please upgrade  to version 7 or higher.  Older versions may use Math.random() in certain circumstances, which is known to be problematic.  See https://v8.dev/blog/math-random for details.
+npm warn deprecated uuid@3.3.2: Please upgrade  to version 7 or higher.  Older versions may use Math.random() in certain circumstances, which is known to be problematic.  See https://v8.dev/blog/math-random for details.
+npm warn deprecated @heroku-cli/plugin-run@7.68.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @oclif/errors@1.3.6: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @heroku-cli/plugin-ci@7.68.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @heroku-cli/plugin-auth@7.68.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @oclif/errors@1.3.6: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @oclif/errors@1.3.6: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @oclif/errors@1.3.6: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @oclif/errors@1.3.6: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @oclif/errors@1.3.6: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @heroku-cli/plugin-webhooks@7.68.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @heroku-cli/plugin-apps@7.68.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @oclif/errors@1.3.6: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @oclif/errors@1.3.6: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @oclif/errors@1.3.6: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @heroku-cli/plugin-autocomplete@7.68.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @oclif/config@1.18.17: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @oclif/config@1.18.17: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @oclif/config@1.18.16: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @heroku-cli/plugin-buildpacks@7.68.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @oclif/errors@1.3.6: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated cli-ux@5.6.7: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated cli-ux@5.6.7: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated cli-ux@5.6.7: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated cli-ux@5.6.7: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated cli-ux@5.6.7: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated cli-ux@5.6.7: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated cli-ux@5.6.7: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated @heroku-cli/plugin-pipelines@7.68.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated popper.js@1.16.1: You can find the new Popper v2 at @popperjs/core, this package is dedicated to the legacy v1
+npm warn deprecated core-js@1.2.7: core-js@<3.23.3 is no longer maintained and not recommended for usage due to the number of issues. Because of the V8 engine whims, feature detection in old core-js versions could cause a slowdown up to 100x even if nothing is polyfilled. Some versions have web compatibility issues. Please, upgrade your dependencies to the actual version of core-js.
+npm warn gitignore-fallback No .npmignore file found, using .gitignore for file exclusion. Consider creating a .npmignore file to explicitly control published files.
+
+added 1714 packages, and audited 1715 packages in 29s
+
+146 packages are looking for funding
+  run `npm fund` for details
+
+73 vulnerabilities (12 low, 53 moderate, 8 high)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues possible (including breaking changes), run:
+  npm audit fix --force
+
+Some issues need review, and may require choosing
+a different dependency.
+
+Run `npm audit` for details.
+cd /home/exedev/work/drydock/lang && make phaseA-deps
+make[1]: Entering directory '/home/exedev/work/drydock/lang'
+make[1]: Nothing to be done for 'phaseA-deps'.
+make[1]: Leaving directory '/home/exedev/work/drydock/lang'
+cd /home/exedev/work/drydock/code.pyret.org && make web-local
+make[1]: Entering directory '/home/exedev/work/drydock/code.pyret.org'
+node make-template.js src/web/share.template.html > build/web/views/share.html
+cp src/web/blocks.html build/web/views/blocks.html
+cp src/web/close.html build/web/views/close.html
+cp src/web/editor.html build/web/views/editor.html
+cp src/web/faq.html build/web/views/faq.html
+cp src/web/ide.html build/web/views/ide.html
+cp src/web/index.html build/web/views/index.html
+cp src/web/share.template.html build/web/views/share.template.html
+cp src/web/css/editor.css build/web/css/editor.css
+cp src/web/css/font-awesome.min.path-fixed.css build/web/css/font-awesome.min.path-fixed.css
+cp src/web/css/my-programs.css build/web/css/my-programs.css
+cp src/web/css/reset.css build/web/css/reset.css
+cp src/web/css/share.css build/web/css/share.css
+cp src/web/css/shared.css build/web/css/shared.css
+cp lib/css/fira-mono.css build/web/css/fira-mono.css
+cp lib/css/smoothness-jquery-ui.css build/web/css/smoothness-jquery-ui.css
+cp src/web/css/themes/base16.css build/web/css/themes/base16.css
+cp src/web/css/themes/default.css build/web/css/themes/default.css
+cp src/web/css/themes/high-contrast-dark.css build/web/css/themes/high-contrast-dark.css
+cp src/web/css/themes/high-contrast-light.css build/web/css/themes/high-contrast-light.css
+cp src/web/css/themes/material-darker.css build/web/css/themes/material-darker.css
+cp src/web/css/themes/monokai.css build/web/css/themes/monokai.css
+cp src/web/css/themes/panda-syntax.css build/web/css/themes/panda-syntax.css
+cp src/web/css/themes/pink.css build/web/css/themes/pink.css
+cp src/web/css/fonts/FontAwesome.otf build/web/css/fonts/FontAwesome.otf
+cp src/web/css/fonts/fontawesome-webfont.eot build/web/css/fonts/fontawesome-webfont.eot
+cp src/web/css/fonts/fontawesome-webfont.svg build/web/css/fonts/fontawesome-webfont.svg
+cp src/web/css/fonts/fontawesome-webfont.ttf build/web/css/fonts/fontawesome-webfont.ttf
+cp src/web/css/fonts/fontawesome-webfont.woff build/web/css/fonts/fontawesome-webfont.woff
+cp src/web/css/fonts/fontawesome-webfont.woff2 build/web/css/fonts/fontawesome-webfont.woff2
+cp src/web/js/authenticate-storage.js build/web/js/authenticate-storage.js
+npx webpack
+asset js/dashboard/index.js 1.99 MiB [emitted] (name: js/dashboard/index)
+asset js/beforePyret.js 462 KiB [emitted] (name: js/beforePyret)
+asset js/beforeBlocks.js 420 KiB [emitted] (name: js/beforeBlocks)
+runtime modules 937 bytes 4 modules
+modules by path ./node_modules/react-dom/ 524 KiB 127 modules
+modules by path ./node_modules/react/ 79.5 KiB 26 modules
+modules by path ./node_modules/fbjs/lib/*.js 27.6 KiB 23 modules
+modules by path ./src/web/ 156 KiB
+  modules by path ./src/web/js/ 151 KiB 8 modules
+  modules by path ./src/web/css/dashboard/*.css 5.27 KiB 2 modules
+modules by path ./node_modules/prop-types/ 27.1 KiB
+  modules by path ./node_modules/prop-types/*.js 26.7 KiB 3 modules
+  modules by path ./node_modules/prop-types/lib/*.js 384 bytes 2 modules
+modules by path ./node_modules/react-is/ 7.01 KiB
+  ./node_modules/react-is/index.js 196 bytes [built] [code generated]
+  ./node_modules/react-is/cjs/react-is.development.js 6.82 KiB [built] [code generated]
++ 6 modules
+
+WARNING in DefinePlugin
+Conflicting values for 'process.env.NODE_ENV'
+
+1 warning has detailed information that is not shown.
+Use 'stats.errorDetails: true' resp. '--stats-error-details' to show it.
+
+webpack 5.107.2 compiled with 1 warning in 1511 ms
+cp src/web/js/check-ui.js build/web/js/check-ui.js
+cp src/web/js/cpo-builtin-modules.js build/web/js/cpo-builtin-modules.js
+cp src/web/js/cpo-ide-hooks.js build/web/js/cpo-ide-hooks.js
+cp src/web/js/cpo-main.js build/web/js/cpo-main.js
+cp src/web/js/cpo-main-ts.js build/web/js/cpo-main-ts.js
+cp src/web/js/error-ui.js build/web/js/error-ui.js
+cp src/web/js/events.js build/web/js/events.js
+cp src/web/js/file-locator.js build/web/js/file-locator.js
+cp src/web/js/fsstub.js build/web/js/fsstub.js
+cp src/web/js/gdrive-locators.js build/web/js/gdrive-locators.js
+cp src/web/js/guess-gas.js build/web/js/guess-gas.js
+cp src/web/js/http-imports.js build/web/js/http-imports.js
+cp src/web/js/ide.js build/web/js/ide.js
+cp src/web/js/loader.js build/web/js/loader.js
+cp src/web/js/localSettings.js build/web/js/localSettings.js
+cp src/web/js/log.js build/web/js/log.js
+cp src/web/js/modal-prompt.js build/web/js/modal-prompt.js
+cp src/web/js/output-ui.js build/web/js/output-ui.js
+cp src/web/js/pathstub.js build/web/js/pathstub.js
+cp src/web/js/repl-history.js build/web/js/repl-history.js
+cp src/web/js/repl-ui.js build/web/js/repl-ui.js
+cp src/web/js/share.js build/web/js/share.js
+cp src/web/js/text-handlers.js build/web/js/text-handlers.js
+cp src/web/js/ts-compiler-lib.js build/web/js/ts-compiler-lib.js
+cp lib/js/jquery.min.js build/web/js/jquery.min.js
+cp lib/js/jquery-ui.min.js build/web/js/jquery-ui.min.js
+cp lib/js/vega-tooltip.min.js build/web/js/vega-tooltip.min.js
+cp lib/css/images/ui-bg_glass_55_fbf9ee_1x400.png build/web/css/images/ui-bg_glass_55_fbf9ee_1x400.png
+cp lib/css/images/ui-bg_glass_65_ffffff_1x400.png build/web/css/images/ui-bg_glass_65_ffffff_1x400.png
+cp lib/css/images/ui-bg_glass_75_dadada_1x400.png build/web/css/images/ui-bg_glass_75_dadada_1x400.png
+cp lib/css/images/ui-bg_glass_75_e6e6e6_1x400.png build/web/css/images/ui-bg_glass_75_e6e6e6_1x400.png
+cp lib/css/images/ui-bg_glass_95_fef1ec_1x400.png build/web/css/images/ui-bg_glass_95_fef1ec_1x400.png
+cp lib/css/images/ui-bg_highlight-soft_75_cccccc_1x100.png build/web/css/images/ui-bg_highlight-soft_75_cccccc_1x100.png
+cp lib/css/images/ui-icons_222222_256x240.png build/web/css/images/ui-icons_222222_256x240.png
+cp lib/css/images/ui-icons_2e83ff_256x240.png build/web/css/images/ui-icons_2e83ff_256x240.png
+cp lib/css/images/ui-icons_454545_256x240.png build/web/css/images/ui-icons_454545_256x240.png
+cp lib/css/images/ui-icons_888888_256x240.png build/web/css/images/ui-icons_888888_256x240.png
+cp lib/css/images/ui-icons_cd0a0a_256x240.png build/web/css/images/ui-icons_cd0a0a_256x240.png
+cp src/web/img/magnifier.gif build/web/img/magnifier.gif
+cp src/web/img/pyret-spin.gif build/web/img/pyret-spin.gif
+cp src/web/img/spreddit1.gif build/web/img/spreddit1.gif
+cp src/web/img/spyglass.gif build/web/img/spyglass.gif
+cp src/web/img/warning.gif build/web/img/warning.gif
+cp src/web/img/brush.svg build/web/img/brush.svg
+cp src/web/img/checkers.svg build/web/img/checkers.svg
+cp src/web/img/paint.svg build/web/img/paint.svg
+cp src/web/img/down-arrow.png build/web/img/down-arrow.png
+cp src/web/img/pyret-icon.png build/web/img/pyret-icon.png
+cp src/web/img/pyret-logo.png build/web/img/pyret-logo.png
+cp src/web/img/question.png build/web/img/question.png
+cp src/web/img/up-arrow.png build/web/img/up-arrow.png
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/q/q.js build/web/js/q.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/url.js/url.js build/web/js/url.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/requirejs/bin/r.js build/web/js/require.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/codemirror/lib/../lib/codemirror.js build/web/js/codemirror.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/codemirror/lib/../addon/display/rulers.js build/web/js/rulers.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/codemirror/lib/../addon/selection/mark-selection.js build/web/js/mark-selection.js
+ln -s ../codemirror-mode mode
+cp mode/mode/pyret.js build/web/js/pyret-mode.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/s-expression/index.js build/web/js/s-expression-lib.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/seedrandom/seedrandom.js build/web/js/seedrandom.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/source-map/dist/source-map.js build/web/js/source-map.js
+cp mode/addon/pyret-fold.js build/web/js/pyret-fold.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/codemirror/lib/../addon/scroll/scrollpastend.js build/web/js/scrollpastend.js
+cp mode/addon/matchkw.js build/web/js/matchkw.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/codemirror/lib/../addon/fold/foldcode.js build/web/js/foldcode.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/codemirror/lib/../addon/fold/foldgutter.js build/web/js/foldgutter.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/codemirror/lib/../addon/comment/comment.js build/web/js/comment.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/codemirror/lib/../addon/dialog/dialog.js build/web/js/dialog.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/codemirror/lib/../addon/search/search.js build/web/js/search.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/codemirror/lib/../addon/search/searchcursor.js build/web/js/searchcursor.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/codemirror/lib/../addon/scroll/annotatescrollbar.js build/web/js/annotatescrollbar.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/codemirror/lib/../addon/search/matchesonscrollbar.js build/web/js/matchesonscrollbar.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/codemirror/lib/../addon/search/jump-to-line.js build/web/js/jump-to-line.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/colorspaces/colorspaces.js build/web/js/colorspaces.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/es6-shim/es6-shim.min.js build/web/js/es6-shim.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/codemirror/lib/../addon/runmode/runmode.js build/web/js/runmode.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/mousetrap/mousetrap.min.js build/web/js/mousetrap.min.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/mousetrap/plugins/global-bind/mousetrap-global-bind.min.js build/web/js/mousetrap-global-bind.min.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/vega/build/vega.min.js build/web/js/vega.min.js
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/codemirror/lib/../lib/codemirror.css build/web/css/codemirror.css
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/codemirror/lib/../addon/fold/foldgutter.css build/web/css/foldgutter.css
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/codemirror/lib/../addon/dialog/dialog.css build/web/css/dialog.css
+cp /home/exedev/work/drydock/code.pyret.org/node_modules/codemirror/lib/../addon/search/matchesonscrollbar.css build/web/css/matchesonscrollbar.css
+cp src/web/js/google-apis/api-wrapper.js build/web/js/google-apis/api-wrapper.js
+cp src/web/js/google-apis/drive.js build/web/js/google-apis/drive.js
+cp src/web/js/google-apis/picker.js build/web/js/google-apis/picker.js
+cp src/web/js/google-apis/sheets.js build/web/js/google-apis/sheets.js
+# Explicitly exclude crypto, buffer, and stylus, nested npm dependencies that aren't needed
+npx browserify src/scripts/npm-dependencies.js -x crypto -x stylus -o build/web/js/bundled-npm-deps.js
+make phaseA -C pyret/
+make[2]: Entering directory '/home/exedev/work/drydock/lang'
+make[2]: Nothing to be done for 'phaseA'.
+make[2]: Leaving directory '/home/exedev/work/drydock/lang'
+mkdir -p compiled/;
+#cp pyret/build/phaseA/compiled/*.js ./compiled/
+node pyret/build/phaseA/pyret.jarr \
+    --builtin-js-dir src/web/js/trove/ \
+    --builtin-js-dir pyret/src/js/trove/ \
+    -allow-builtin-overrides \
+    --builtin-arr-dir src/web/arr/trove/ \
+    --builtin-arr-dir pyret/src/arr/trove/ \
+    --require-config cpo-config.json \
+    --build-runnable src/web/arr/cpo-main.arr \
+    --standalone-file cpo-standalone.js \
+    --compiled-dir ./compiled \
+    --deps-file build/web/js/bundled-npm-deps.js \
+    --outfile build/web/js/cpo-main.jarr -no-check-mode
+Gathering dependencies...                         Compiling worklist...                     Loading existing compiled modules...                                    Compiling 1/119: global                       1/119 modules compiled (global)                               Compiling 2/119: either                       2/119 modules compiled (either)                               Compiling 3/119: valueskeleton                              3/119 modules compiled (valueskeleton)                                      Compiling 4/119: srcloc                       4/119 modules compiled (srcloc)                               Compiling 5/119: option                       5/119 modules compiled (option)                               Compiling 6/119: error-display                              6/119 modules compiled (error-display)                                      Compiling 7/119: error                      7/119 modules compiled (error)                              Compiling 8/119: equality                         8/119 modules compiled (equality)                                 Compiling 9/119: lists                      9/119 modules compiled (lists)                              Compiling 10/119: arrays                        10/119 modules compiled (arrays)                                Compiling 11/119: pick                      11/119 modules compiled (pick)                              Compiling 12/119: sets                      12/119 modules compiled (sets)                              Compiling 13/119: contracts                           13/119 modules compiled (contracts)                                   Compiling 14/119: string-dict                             14/119 modules compiled (string-dict)                                     Compiling 15/119: render-error-display                                      15/119 modules compiled (render-error-display)                                              Compiling 16/119: json-structs                              16/119 modules compiled (json-structs)                                      Compiling 17/119: json                      17/119 modules compiled (json)                              Compiling 18/119: ffi                     18/119 modules compiled (ffi)                             Compiling 19/119: checker                         19/119 modules compiled (checker)                                 Compiling 20/119: table                       20/119 modules compiled (table)                               Compiling 21/119: tables                        21/119 modules compiled (tables)                                Compiling 22/119: reactor-events                                22/119 modules compiled (reactor-events)                                        Compiling 23/119: reactors                          23/119 modules compiled (reactors)                                  Compiling 24/119: data-source                             24/119 modules compiled (data-source)                                     Compiling 25/119: constants                           25/119 modules compiled (constants)                                   Compiling 26/119: s-exp-structs                               26/119 modules compiled (s-exp-structs)                                       Compiling 27/119: s-exp                       27/119 modules compiled (s-exp)                               Compiling 28/119: timing                        28/119 modules compiled (timing)                                Compiling 29/119: base                      29/119 modules compiled (base)                              Compiling 30/119: pprint                        30/119 modules compiled (pprint)                                Compiling 31/119: ast                     31/119 modules compiled (ast)                             Compiling 32/119: parse-pyret                             32/119 modules compiled (parse-pyret)                                     Compiling 33/119: runtime-lib                             33/119 modules compiled (runtime-lib)                                     Compiling 34/119: load-lib                          34/119 modules compiled (load-lib)                                  Compiling 35/119: sha                     35/119 modules compiled (sha)                             Compiling 36/119: pathlib                         36/119 modules compiled (pathlib)                                 Compiling 37/119: concat-lists.arr                                  37/119 modules compiled (concat-lists.arr)                                          Compiling 38/119: type-structs.arr                                  38/119 modules compiled (type-structs.arr)                                          Compiling 39/119: format                        39/119 modules compiled (format)                                Compiling 40/119: source-map-lib                                40/119 modules compiled (source-map-lib)                                        Compiling 41/119: js-ast.arr                            41/119 modules compiled (js-ast.arr)                                    Compiling 42/119: compile-structs.arr                                     42/119 modules compiled (compile-structs.arr)                                             Compiling 43/119: gensym.arr                            43/119 modules compiled (gensym.arr)                                    Compiling 44/119: filelib                         44/119 modules compiled (filelib)                                 Compiling 45/119: file                      45/119 modules compiled (file)                              Compiling 46/119: ast-anf.arr                             46/119 modules compiled (ast-anf.arr)                                     Compiling 47/119: anf.arr                         47/119 modules compiled (anf.arr)                                 Compiling 48/119: type-logger                             48/119 modules compiled (type-logger)                                     Compiling 49/119: type-defaults.arr                                   49/119 modules compiled (type-defaults.arr)                                           Compiling 50/119: type-check-structs.arr                                        50/119 modules compiled (type-check-structs.arr)                                                Compiling 51/119: ast-util.arr                              51/119 modules compiled (ast-util.arr)                                      Compiling 52/119: flatness.arr                              52/119 modules compiled (flatness.arr)                                      Compiling 53/119: js-dag-utils.arr                                  53/119 modules compiled (js-dag-utils.arr)                                          Compiling 54/119: anf-loop-compiler.arr                                       54/119 modules compiled (anf-loop-compiler.arr)                                               Compiling 55/119: direct-codegen.arr                                    55/119 modules compiled (direct-codegen.arr)                                            Compiling 56/119: js-of-pyret.arr                                 56/119 modules compiled (js-of-pyret.arr)                                         Compiling 57/119: well-formed.arr                                 57/119 modules compiled (well-formed.arr)                                         Compiling 58/119: resolve-scope.arr                                   58/119 modules compiled (resolve-scope.arr)                                           Compiling 59/119: desugar.arr                             59/119 modules compiled (desugar.arr)                                     Compiling 60/119: desugar-post-tc.arr                                     60/119 modules compiled (desugar-post-tc.arr)                                             Compiling 61/119: type-check.arr                                61/119 modules compiled (type-check.arr)                                        Compiling 62/119: desugar-check.arr                                   62/119 modules compiled (desugar-check.arr)                                           Compiling 63/119: compile-lib.arr                                 63/119 modules compiled (compile-lib.arr)                                         Compiling 64/119: filesystem-internal                                     64/119 modules compiled (filesystem-internal)                                             Compiling 65/119: builtin-modules                                 65/119 modules compiled (builtin-modules)                                         Compiling 66/119: filesystem                            66/119 modules compiled (filesystem)                                    Compiling 67/119: builtin.arr                             67/119 modules compiled (builtin.arr)                                     Compiling 68/119: jsfile.arr                            68/119 modules compiled (jsfile.arr)                                    Compiling 69/119: repl.arr                          69/119 modules compiled (repl.arr)                                  Compiling 70/119: fetch                       70/119 modules compiled (fetch)                               Compiling 71/119: url.arr                         71/119 modules compiled (url.arr)                                 Compiling 72/119: cpo.arr                         72/119 modules compiled (cpo.arr)                                 Compiling 73/119: internal-image-shared                                       73/119 modules compiled (internal-image-shared)                                               Compiling 74/119: color                       74/119 modules compiled (color)                               Compiling 75/119: image-lib                           75/119 modules compiled (image-lib)                                   Compiling 76/119: output-ui                           76/119 modules compiled (output-ui)                                   Compiling 77/119: error-ui                          77/119 modules compiled (error-ui)                                  Compiling 78/119: check-ui                          78/119 modules compiled (check-ui)                                  Compiling 79/119: text-handlers                               79/119 modules compiled (text-handlers)                                       Compiling 80/119: repl-history                              80/119 modules compiled (repl-history)                                      Compiling 81/119: world-lib                           81/119 modules compiled (world-lib)                                   Compiling 82/119: repl-ui                         82/119 modules compiled (repl-ui)                                 Compiling 83/119: make-image                            83/119 modules compiled (make-image)                                    Compiling 84/119: internal-image-untyped                                        84/119 modules compiled (internal-image-untyped)                                                Compiling 85/119: image                       85/119 modules compiled (image)                               Compiling 86/119: internal-image-typed                                      86/119 modules compiled (internal-image-typed)                                              Compiling 87/119: image-typed                             87/119 modules compiled (image-typed)                                     Compiling 88/119: world                       88/119 modules compiled (world)                               Compiling 89/119: gdrive-sheets                               89/119 modules compiled (gdrive-sheets)                                       Compiling 90/119: image-structs                               90/119 modules compiled (image-structs)                                       Compiling 91/119: d3-lib                        91/119 modules compiled (d3-lib)                                Compiling 92/119: plot-lib                          92/119 modules compiled (plot-lib)                                  Compiling 93/119: plot                      93/119 modules compiled (plot)                              Compiling 94/119: d3-lib-list                             94/119 modules compiled (d3-lib-list)                                     Compiling 95/119: plot-lib-list                               95/119 modules compiled (plot-lib-list)                                       Compiling 96/119: plot-list                           96/119 modules compiled (plot-list)                                   Compiling 97/119: chart-lib                           97/119 modules compiled (chart-lib)                                   Compiling 98/119: math                      98/119 modules compiled (math)                              Compiling 99/119: vector-util                             99/119 modules compiled (vector-util)                                     Compiling 100/119: matrix-util                              100/119 modules compiled (matrix-util)                                      Compiling 101/119: matrices                           101/119 modules compiled (matrices)                                   Compiling 102/119: multiple-regression                                      102/119 modules compiled (multiple-regression)                                              Compiling 103/119: statistics                             103/119 modules compiled (statistics)                                     Compiling 104/119: chart                        104/119 modules compiled (chart)                                Compiling 105/119: charts-util                              105/119 modules compiled (charts-util)                                      Compiling 106/119: charts-lib                             106/119 modules compiled (charts-lib)                                     Compiling 107/119: charts                         107/119 modules compiled (charts)                                 Compiling 108/119: str-dict                           108/119 modules compiled (str-dict)                                   Compiling 109/119: csv-lib                          109/119 modules compiled (csv-lib)                                  Compiling 110/119: csv                      110/119 modules compiled (csv)                              Compiling 111/119: empty-context                                111/119 modules compiled (empty-context)                                        Compiling 112/119: essentials2020                                 112/119 modules compiled (essentials2020)                                         Compiling 113/119: essentials2021                                 113/119 modules compiled (essentials2021)                                         Compiling 114/119: essentials2024                                 114/119 modules compiled (essentials2024)                                         Compiling 115/119: starter2024                              115/119 modules compiled (starter2024)                                      Compiling 116/119: dcic2024                           116/119 modules compiled (dcic2024)                                   Compiling 117/119: cpo-builtins                               117/119 modules compiled (cpo-builtins)                                       Compiling 118/119: cpo-main                           118/119 modules compiled (cpo-main)                                   Compiling 119/119: cpo-main.arr                               119/119 modules compiled (cpo-main.arr)
+Cleaning up and generating standalone...
+cp build/web/js/cpo-main.jarr build/web/js/cpo-main.jarr.js
+npx uglifyjs --compress -o build/web/js/cpo-main.jarr.min -- build/web/js/cpo-main.jarr
+gzip -c -f build/web/js/cpo-main.jarr.min > build/web/js/cpo-main.jarr.gz.js
+npx uglifyjs --compress -o build/web/js/editor-misc.min.js -- build/web/js/q.js build/web/js/loader.js build/web/js/codemirror.js build/web/js/rulers.js build/web/js/scrollpastend.js build/web/js/foldcode.js build/web/js/foldgutter.js build/web/js/comment.js build/web/js/dialog.js build/web/js/search.js build/web/js/searchcursor.js build/web/js/annotatescrollbar.js build/web/js/matchesonscrollbar.js build/web/js/jump-to-line.js build/web/js/mark-selection.js build/web/js/runmode.js build/web/js/pyret-mode.js build/web/js/pyret-fold.js build/web/js/matchkw.js build/web/js/mousetrap.min.js build/web/js/mousetrap-global-bind.min.js build/web/js/log.js build/web/js/share.js build/web/js/google-apis/api-wrapper.js build/web/js/google-apis/drive.js build/web/js/google-apis/picker.js build/web/js/google-apis/sheets.js build/web/js/authenticate-storage.js
+mkdir -p build/web/js/snap
+cp -r /home/exedev/work/drydock/code.pyret.org/node_modules/snap/src build/web/js/snap
+cp -r /home/exedev/work/drydock/code.pyret.org/node_modules/snap/pyret build/web/js/snap
+cp -r /home/exedev/work/drydock/code.pyret.org/node_modules/snap/libraries build/web/js/snap
+cp -r src/web/js/transpile.xml build/web/js/transpile.xml
+cp src/web/editor.html build/web/editor.html
+node make-template.js src/web/editor.html .env.embed > build/web/editor.embed.html
+node src/scripts/inline-selfcontained.js build/web/views/editor.html build/web build/web/views/editor.selfcontained.html
+wrote self-contained editor template: build/web/views/editor.selfcontained.html
+make[1]: Leaving directory '/home/exedev/work/drydock/code.pyret.org'
+mkdir -p results
+starting CPO server on port 4999...
+CPO server up at http://localhost:4999
+cd /home/exedev/work/drydock/browser-test && npx playwright install --with-deps chromium
+Installing dependencies...
+Switching to root user to install dependencies...
+Hit:1 https://deb.nodesource.com/node_24.x nodistro InRelease
+Get:2 https://pkgs.tailscale.com/stable/ubuntu noble InRelease
+Hit:3 http://archive.ubuntu.com/ubuntu noble InRelease
+Get:4 http://security.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+Get:5 http://archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+Get:6 http://security.ubuntu.com/ubuntu noble-security/main amd64 Packages [1,153 kB]
+Get:7 http://archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+Get:8 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1,478 kB]
+Get:9 http://security.ubuntu.com/ubuntu noble-security/main amd64 Components [59.3 kB]
+Get:10 http://security.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1,524 kB]
+Get:11 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 Components [241 kB]
+Get:12 http://archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [2,141 kB]
+Get:13 http://security.ubuntu.com/ubuntu noble-security/universe amd64 Components [97.5 kB]
+Get:14 http://security.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [1,655 kB]
+Get:15 http://archive.ubuntu.com/ubuntu noble-updates/universe amd64 Components [537 kB]
+Get:16 http://archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Components [888 B]
+Get:17 http://archive.ubuntu.com/ubuntu noble-backports/main amd64 Components [6,357 B]
+Get:18 http://archive.ubuntu.com/ubuntu noble-backports/universe amd64 Components [13.6 kB]
+Fetched 9,292 kB in 2s (3,774 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+libasound2t64 is already the newest version (1.2.11-1ubuntu0.3).
+libasound2t64 set to manually installed.
+libatk-bridge2.0-0t64 is already the newest version (2.52.0-1build1).
+libatk-bridge2.0-0t64 set to manually installed.
+libatk1.0-0t64 is already the newest version (2.52.0-1build1).
+libatk1.0-0t64 set to manually installed.
+libatspi2.0-0t64 is already the newest version (2.52.0-1build1).
+libatspi2.0-0t64 set to manually installed.
+libcairo2 is already the newest version (1.18.0-3build1).
+libcairo2 set to manually installed.
+libcups2t64 is already the newest version (2.4.7-1.2ubuntu7.14).
+libcups2t64 set to manually installed.
+libdbus-1-3 is already the newest version (1.14.10-4ubuntu4.1).
+libdbus-1-3 set to manually installed.
+libdrm2 is already the newest version (2.4.125-1ubuntu0.1~24.04.2).
+libdrm2 set to manually installed.
+libgbm1 is already the newest version (25.2.8-0ubuntu0.24.04.2).
+libglib2.0-0t64 is already the newest version (2.80.0-6ubuntu3.8).
+libnspr4 is already the newest version (2:4.35-1.1build1).
+libnspr4 set to manually installed.
+libnss3 is already the newest version (2:3.98-1ubuntu0.2).
+libpango-1.0-0 is already the newest version (1.52.1+ds-1build1).
+libpango-1.0-0 set to manually installed.
+libx11-6 is already the newest version (2:1.8.7-1build1).
+libxcb1 is already the newest version (1.15-1ubuntu2).
+libxcb1 set to manually installed.
+libxcomposite1 is already the newest version (1:0.4.5-1build3).
+libxdamage1 is already the newest version (1:1.1.6-1build1).
+libxext6 is already the newest version (2:1.3.4-1build2).
+libxfixes3 is already the newest version (1:6.0.0-2build1).
+libxfixes3 set to manually installed.
+libxkbcommon0 is already the newest version (1.6.0-1build1).
+libxkbcommon0 set to manually installed.
+libxrandr2 is already the newest version (2:1.5.2-2build1).
+fonts-noto-color-emoji is already the newest version (2.047-0ubuntu0.24.04.1).
+libfontconfig1 is already the newest version (2.15.0-1.1ubuntu2).
+libfontconfig1 set to manually installed.
+libfreetype6 is already the newest version (2.13.2+dfsg-1ubuntu0.1).
+libfreetype6 set to manually installed.
+The following packages were automatically installed and are no longer required:
+  bridge-utils dns-root-data dnsmasq-base
+Use 'sudo apt autoremove' to remove them.
+The following additional packages will be installed:
+  libxaw7 libxfont2 libxkbfile1 x11-xkb-utils xserver-common
+Recommended packages:
+  fonts-ipafont-mincho fonts-liberation-sans-narrow fonts-tlwg-loma
+  xfonts-base
+The following NEW packages will be installed:
+  fonts-freefont-ttf fonts-ipafont-gothic fonts-liberation fonts-tlwg-loma-otf
+  fonts-unifont fonts-wqy-zenhei libxaw7 libxfont2 libxkbfile1 x11-xkb-utils
+  xfonts-cyrillic xfonts-scalable xserver-common xvfb
+0 upgraded, 14 newly installed, 0 to remove and 5 not upgraded.
+Need to get 23.5 MB of archives.
+After this operation, 86.6 MB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu noble/universe amd64 fonts-ipafont-gothic all 00303-21ubuntu1 [3,513 kB]
+Get:2 http://archive.ubuntu.com/ubuntu noble/main amd64 fonts-freefont-ttf all 20211204+svn4273-2 [5,641 kB]
+Get:3 http://archive.ubuntu.com/ubuntu noble/main amd64 fonts-liberation all 1:2.1.5-3 [1,603 kB]
+Get:4 http://archive.ubuntu.com/ubuntu noble/universe amd64 fonts-tlwg-loma-otf all 1:0.7.3-1 [107 kB]
+Get:5 http://archive.ubuntu.com/ubuntu noble/universe amd64 fonts-unifont all 1:15.1.01-1build1 [2,993 kB]
+Get:6 http://archive.ubuntu.com/ubuntu noble/universe amd64 fonts-wqy-zenhei all 0.9.45-8 [7,472 kB]
+Get:7 http://archive.ubuntu.com/ubuntu noble/main amd64 libxaw7 amd64 2:1.0.14-1build2 [187 kB]
+Get:8 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libxfont2 amd64 1:2.0.6-1+deb13u1build0.24.04.2 [94.0 kB]
+Get:9 http://archive.ubuntu.com/ubuntu noble/main amd64 libxkbfile1 amd64 1:1.1.0-1build4 [70.0 kB]
+Get:10 http://archive.ubuntu.com/ubuntu noble/main amd64 x11-xkb-utils amd64 7.7+8build2 [170 kB]
+Get:11 http://archive.ubuntu.com/ubuntu noble/universe amd64 xfonts-cyrillic all 1:1.0.5+nmu1 [384 kB]
+Get:12 http://archive.ubuntu.com/ubuntu noble/main amd64 xfonts-scalable all 1:1.0.3-1.3 [304 kB]
+Get:13 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 xserver-common all 2:21.1.12-1ubuntu1.6 [34.7 kB]
+Get:14 http://archive.ubuntu.com/ubuntu noble-updates/universe amd64 xvfb amd64 2:21.1.12-1ubuntu1.6 [877 kB]
+debconf: delaying package configuration, since apt-utils is not installed
+Fetched 23.5 MB in 1s (20.3 MB/s)
+Selecting previously unselected package fonts-ipafont-gothic.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 85768 files and directories currently installed.)
+Preparing to unpack .../00-fonts-ipafont-gothic_00303-21ubuntu1_all.deb ...
+Unpacking fonts-ipafont-gothic (00303-21ubuntu1) ...
+Selecting previously unselected package fonts-freefont-ttf.
+Preparing to unpack .../01-fonts-freefont-ttf_20211204+svn4273-2_all.deb ...
+Unpacking fonts-freefont-ttf (20211204+svn4273-2) ...
+Selecting previously unselected package fonts-liberation.
+Preparing to unpack .../02-fonts-liberation_1%3a2.1.5-3_all.deb ...
+Unpacking fonts-liberation (1:2.1.5-3) ...
+Selecting previously unselected package fonts-tlwg-loma-otf.
+Preparing to unpack .../03-fonts-tlwg-loma-otf_1%3a0.7.3-1_all.deb ...
+Unpacking fonts-tlwg-loma-otf (1:0.7.3-1) ...
+Selecting previously unselected package fonts-unifont.
+Preparing to unpack .../04-fonts-unifont_1%3a15.1.01-1build1_all.deb ...
+Unpacking fonts-unifont (1:15.1.01-1build1) ...
+Selecting previously unselected package fonts-wqy-zenhei.
+Preparing to unpack .../05-fonts-wqy-zenhei_0.9.45-8_all.deb ...
+Unpacking fonts-wqy-zenhei (0.9.45-8) ...
+Selecting previously unselected package libxaw7:amd64.
+Preparing to unpack .../06-libxaw7_2%3a1.0.14-1build2_amd64.deb ...
+Unpacking libxaw7:amd64 (2:1.0.14-1build2) ...
+Selecting previously unselected package libxfont2:amd64.
+Preparing to unpack .../07-libxfont2_1%3a2.0.6-1+deb13u1build0.24.04.2_amd64.deb ...
+Unpacking libxfont2:amd64 (1:2.0.6-1+deb13u1build0.24.04.2) ...
+Selecting previously unselected package libxkbfile1:amd64.
+Preparing to unpack .../08-libxkbfile1_1%3a1.1.0-1build4_amd64.deb ...
+Unpacking libxkbfile1:amd64 (1:1.1.0-1build4) ...
+Selecting previously unselected package x11-xkb-utils.
+Preparing to unpack .../09-x11-xkb-utils_7.7+8build2_amd64.deb ...
+Unpacking x11-xkb-utils (7.7+8build2) ...
+Selecting previously unselected package xfonts-cyrillic.
+Preparing to unpack .../10-xfonts-cyrillic_1%3a1.0.5+nmu1_all.deb ...
+Unpacking xfonts-cyrillic (1:1.0.5+nmu1) ...
+Selecting previously unselected package xfonts-scalable.
+Preparing to unpack .../11-xfonts-scalable_1%3a1.0.3-1.3_all.deb ...
+Unpacking xfonts-scalable (1:1.0.3-1.3) ...
+Selecting previously unselected package xserver-common.
+Preparing to unpack .../12-xserver-common_2%3a21.1.12-1ubuntu1.6_all.deb ...
+Unpacking xserver-common (2:21.1.12-1ubuntu1.6) ...
+Selecting previously unselected package xvfb.
+Preparing to unpack .../13-xvfb_2%3a21.1.12-1ubuntu1.6_amd64.deb ...
+Unpacking xvfb (2:21.1.12-1ubuntu1.6) ...
+Setting up fonts-wqy-zenhei (0.9.45-8) ...
+Setting up fonts-freefont-ttf (20211204+svn4273-2) ...
+Setting up libxaw7:amd64 (2:1.0.14-1build2) ...
+Setting up fonts-tlwg-loma-otf (1:0.7.3-1) ...
+Setting up fonts-ipafont-gothic (00303-21ubuntu1) ...
+update-alternatives: using /usr/share/fonts/opentype/ipafont-gothic/ipag.ttf to provide /usr/share/fonts/truetype/fonts-japanese-gothic.ttf (fonts-japanese-gothic.ttf) in auto mode
+Setting up xfonts-cyrillic (1:1.0.5+nmu1) ...
+Setting up fonts-liberation (1:2.1.5-3) ...
+Setting up libxkbfile1:amd64 (1:1.1.0-1build4) ...
+Setting up libxfont2:amd64 (1:2.0.6-1+deb13u1build0.24.04.2) ...
+Setting up xfonts-scalable (1:1.0.3-1.3) ...
+Setting up fonts-unifont (1:15.1.01-1build1) ...
+Setting up x11-xkb-utils (7.7+8build2) ...
+Setting up xserver-common (2:21.1.12-1ubuntu1.6) ...
+Setting up xvfb (2:21.1.12-1ubuntu1.6) ...
+Processing triggers for man-db (2.12.0-4build2) ...
+Processing triggers for fontconfig (2.15.0-1.1ubuntu2) ...
+Processing triggers for libc-bin (2.39-0ubuntu8.8) ...
+
+Failed to retrieve available kernel versions.
+
+No services need to be restarted.
+
+No containers need to be restarted.
+
+No user sessions are running outdated binaries.
+
+No VM guests are running outdated hypervisor (qemu) binaries on this host.
+touch .chromium.stamp
+cd /home/exedev/work/drydock/browser-test && BASE_URL=http://localhost:4999 node run.js --env=cpo --suites=all
+environment: code.pyret.org /editor (reference, pyret compiler)
+[browser log] Theme info default default {: true} null
+[browser log] Not logged in; proceeding without login info
+[browser log] 347.20000000298023
+[browser log] originalPageLoad:  1786652373120
+[browser log] Using keymap:  {Ctrl-A: selectAll, Ctrl-D: deleteLine, Ctrl-Z: undo, Shift-Ctrl-Z: redo, Ctrl-Y: redo} macDefault:  {Cmd-A: selectAll, Cmd-D: deleteLine, Cmd-Z: undo, Shift-Cmd-Z: redo, Cmd-Y: redo} mac:  false
+[browser log] About to load Pyret:  1786652373120 1786652373161
+[browser log] http://localhost:4999/js/cpo-main.jarr
+[browser error] storageAPI failed to load, proceeding without saving programs:  no gapi.client
+[browser warning] Page was loaded without SES, so evals will be unguarded. Does this page load https://caja.appspot.com/caja.js?
+[browser error] No MESSAGES object found. filesystem-internal on the web requires an embedding context to provide RPC calls.
+[browser log] Using keymap:  {Ctrl-A: selectAll, Ctrl-D: deleteLine, Ctrl-Z: undo, Shift-Ctrl-Z: redo, Ctrl-Y: redo} macDefault:  {Cmd-A: selectAll, Cmd-D: deleteLine, Cmd-Z: undo, Shift-Cmd-Z: redo, Cmd-Y: redo} mac:  false
+[browser log] 1752.5
+[browser log] REPL ready.
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":109}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.8999999910593033}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":64.40000000596046}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.6000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+▶ check-blocks
+  ✔ simple (177.717674ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":86.40000000596046}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 2
+TESTS FAILED. check-block-1. 0 out of 2 tests passed in this block.. 
+  ✔ simple2 (186.867369ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":76.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 2
+TESTS FAILED. check-block-1. The test in this block failed.. check-block-2. The test in this block failed.. 
+  ✔ simple3 (141.508388ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":45}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 1
+TEST PASSED, 1
+TEST FAILED. check-block-1. 1 out of 2 tests passed in this block.. 
+  ✔ pass-then-fail (129.876549ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":76.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ satisfies0 (284.544391ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":64.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.199999988079071}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ doesNotRaise0 (154.097879ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":46}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.0999999940395355}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-pass (172.788006ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":78.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.6000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-fail (142.624457ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":55}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not-fail (175.29009ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":54}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-not-pass (166.499491ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":95}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-op-fail (154.613033ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":50.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-op-pass (142.158742ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":60.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":5}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-not-op-pass (164.220374ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":68.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not-op-fail (175.718185ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ satisfies-pass (136.856806ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":46}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ satisfies-fail (153.862311ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":50.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ violates-fail (170.323121ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":51.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ violates-pass (150.482545ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":62}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ raises-pass (163.076136ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":50.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-fail (145.642966ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":57.6000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-other-than-fail (151.94756ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":66.3999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.6000000089406967}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ raises-other-than-pass (166.704398ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":71.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":7}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ does-not-raise-fail (146.15992ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":63}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.6000000089406967}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ does-not-raise-pass (149.610295ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":70.90000000596046}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.0999999940395355}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ raises-satisfies-pass (124.703493ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":71.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.1000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-satisfies-fail (167.384351ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":54.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.9000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-violates-fail (154.752772ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":54.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ raises-violates-pass (168.064265ms)
+[browser log] Full time including compile/load: {"bounces":16,"tos":16,"time":119.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 3
+TESTS FAILED. check-block-1. 0 out of 3 tests passed in this block.. 
+  ✔ deep-recursion-in-first-test (265.975423ms)
+✔ check-blocks (7152.530917ms)
+[browser log] Full time including compile/load: {"bounces":12,"tos":12,"time":41.5}
+[browser log] Time to run compiled program: undefined
+[browser log] doing sayAndForget definitions resulted in an error.  Evaluating this field lookup expression errored: The left side was an object that did not have a field named x:
+▶ errors
+  ✔ field-not-found (179.994771ms)
+[browser log] Full time including compile/load: {"bounces":12,"tos":12,"time":55.20000000298023}
+[browser log] Time to run compiled program: undefined
+[browser log] doing sayAndForget definitions resulted in an error.  Evaluating this field lookup expression errored: The left side was not an object:
+  ✔ lookup-non-object (143.018273ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":83.5}
+[browser log] Time to run compiled program: undefined
+[browser log] doing sayAndForget definitions resulted in an error.  Evaluating this field lookup expression errored: The left side was a constructor, not an object.
+  ✔ lookup-constructor-not-object (156.008899ms)
+[browser log] Full time including compile/load: {"bounces":12,"tos":12,"time":29}
+[browser log] Time to run compiled program: undefined
+[browser log] doing sayAndForget definitions resulted in an error.  Evaluating this reference update expression errored: The left side is expected to evaluate to an object, but its value was:
+  ✔ update-non-obj (132.317474ms)
+[browser log] Full time including compile/load: {"bounces":12,"tos":12,"time":44.8999999910593}
+[browser log] Time to run compiled program: undefined
+[browser log] doing sayAndForget definitions resulted in an error.  Evaluating this reference update expression errored: This field is not a mutable reference in the object:
+  ✔ update-non-ref (186.735111ms)
+[browser log] Full time including compile/load: {"bounces":12,"tos":12,"time":40.400000005960464}
+[browser log] Time to run compiled program: undefined
+[browser log] doing sayAndForget definitions produced output: . Evaluating this reference update expression errored:
+
+definitions://:0:0-0:14
+1
+{x:5}!{y : 10}
+
+The field does not exist in the object:
+
+{x: 5}
+(Show program evaluation trace...). Gathering results...
+  ✔ update-non-existent-field (145.084201ms)
+[browser log] Full time including compile/load: {"bounces":12,"tos":12,"time":90.09999999403954}
+[browser log] Time to run compiled program: undefined
+[browser log] doing sayAndForget definitions produced output: . list of 1 items: , 1. Gathering results...
+  ✔ no-cases-matched (159.913707ms)
+[browser log] Full time including compile/load: {"bounces":12,"tos":12,"time":40.20000000298023}
+[browser log] Time to run compiled program: undefined
+[browser log] doing sayAndForget definitions resulted in an error.  Evaluating this if expression errored: It expected that the condition of at least one branch be satisfied. No branch conditions were satisfied, so no branch could be entered.
+  ✔ no-branches-matched (154.136078ms)
+[browser log] Full time including compile/load: {"bounces":12,"tos":12,"time":48.30000001192093}
+[browser log] Time to run compiled program: undefined
+[browser log] doing sayAndForget definitions resulted in an error.  Evaluating this unfinished template expression errored: Template expressions cannot be evaluated.
+  ✔ template-not-finished (152.788642ms)
+[browser log] Full time including compile/load: {"bounces":12,"tos":12,"time":62}
+[browser log] Time to run compiled program: undefined
+[browser log] doing sayAndForget definitions resulted in an error.  Evaluating this unfinished template expression errored: Template expressions cannot be evaluated.
+  ✔ template-not-finished (155.703342ms)
+[browser log] Full time including compile/load: {"bounces":12,"tos":12,"time":55}
+[browser log] Time to run compiled program: undefined
+[browser log] doing sayAndForget definitions resulted in an error.  Evaluating this tuple lookup expression errored: The left side was not a tuple value:
+  ✔ lookup-non-tuple (152.820422ms)
+[browser log] Full time including compile/load: {"bounces":12,"tos":12,"time":32.900000005960464}
+[browser log] Time to run compiled program: undefined
+[browser log] doing sayAndForget definitions resulted in an error.  Evaluating this tuple lookup expression errored: The left side was a tuple of 2 components, smaller than the given position (3):
+  ✔ lookup-large-index (128.333824ms)
+[browser log] Full time including compile/load: {"bounces":10,"tos":10,"time":24.900000005960464}
+[browser log] doing sayAndForget definitions resulted in an error.  This name is being used as a value: But it is defined as a type:
+  ✔ type-id-used-as-value (50.714376ms)
+[browser log] Full time including compile/load: {"bounces":15,"tos":15,"time":46.099999994039536}
+[browser log] Time to run compiled program: undefined
+[browser log] doing sayAndForget definitions resulted in an error.  The function application failed because the 1ˢᵗ argument evaluated to an unexpected value. An annotation, Image, in <builtin image-untyped> was not satisfied by the value
+  ✔ images-equal-preds (131.902967ms)
+[browser log] Full time including compile/load: {"bounces":15,"tos":15,"time":44.6000000089407}
+[browser log] Time to run compiled program: undefined
+[browser log] doing sayAndForget definitions resulted in an error.  The function application failed because the 2ⁿᵈ argument evaluated to an unexpected value. An annotation, Number between 0 and 255, in <builtin image-untyped> was not satisfied by the value
+  ✔ text-preds (130.298675ms)
+[browser log] Full time including compile/load: {"bounces":19,"tos":19,"time":53.20000000298023}
+[browser log] Time to run compiled program: undefined
+[browser log] doing sayAndForget definitions resulted in an error.  The function application failed because the 5ᵗʰ argument evaluated to an unexpected value. An annotation, Font Family, in <builtin image-untyped> was not satisfied by the value
+  ✔ text-font-preds (128.609961ms)
+[browser log] Full time including compile/load: {"bounces":15,"tos":15,"time":62.099999994039536}
+[browser log] Time to run compiled program: undefined
+[browser log] doing sayAndForget definitions resulted in an error.  The function application failed because the 2ⁿᵈ argument evaluated to an unexpected value. An annotation, Side Count, in <builtin image-untyped> was not satisfied by the value
+  ✔ regular-polygon (142.813565ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":51.8999999910593}
+[browser log] Time to run compiled program: undefined
+[browser log] doing sayAndForget definitions resulted in an error.  Evaluating this field lookup expression errored: The left side was an object that did not have a field named x:
+  ✔ deeply-recursive-field-not-found (136.424211ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":48.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-pass1 (124.629693ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":57.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-pass2 (141.403489ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":68.8999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":4.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-fail1 (152.870012ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":44.8999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-fail2 (143.866644ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":64.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-fail3 (159.6953ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":60.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.9000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-fail4 (147.063932ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":78.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.3999999910593033}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-fail5 (150.379307ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":50.3999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-because-fail1 (156.895979ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":55.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-because-fail2 (170.936014ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":48.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-because-fail3 (138.652338ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":42.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-because-fail4 (145.905003ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-because-fail5 (158.832358ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":46.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-because-fail6 (133.224835ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":53.3999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.6000000089406967}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is==-pass1 (163.487462ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":70}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is==-pass2 (163.837798ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":69.30000001192093}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is==-fail1 (152.421695ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":53.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is==-fail2 (149.559526ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":52.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.3999999910593033}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is==-fail3 (128.170315ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":48.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is==-fail4 (137.977924ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":48.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.9000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is==-fail5 (137.652358ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":45}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is==-because-fail1 (131.391944ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":69.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is==-because-fail2 (158.061177ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":69}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":6}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is==-because-fail3 (168.934035ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":79.40000000596046}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is==-because-fail4 (173.689387ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.1000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is==-because-fail5 (139.34302ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":54.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is==-because-fail6 (137.904736ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":40.599999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is=~-pass1 (142.020483ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":63.599999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5999999940395355}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is=~-pass2 (136.104954ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":38.8999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.6000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is=~-fail1 (139.567458ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":50.599999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.699999988079071}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is=~-fail2 (154.824841ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":48.69999998807907}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is=~-fail3 (121.234088ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is=~-fail4 (157.362744ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":40.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is=~-fail5 (140.558578ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":43.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.0999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is=~-because-fail1 (138.46132ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":39.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is=~-because-fail2 (127.059408ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":56.80000001192093}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is=~-because-fail3 (140.232391ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":62.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is=~-because-fail4 (153.414485ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":43.69999998807907}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is=~-because-fail5 (148.334688ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":55.900000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is=~-because-fail6 (135.4794ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":51.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.300000011920929}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is<=>-pass1 (161.433563ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":64.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.3999999910593033}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is<=>-pass2 (146.382099ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":57.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is<=>-fail1 (165.055085ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":62.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.3999999910593033}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is<=>-fail2 (146.068882ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":35.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is<=>-fail3 (121.502055ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":50.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is<=>-fail4 (147.498717ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":81.30000001192093}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.5999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is<=>-fail5 (150.224528ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":73.90000000596046}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":7.799999997019768}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is<=>-because-fail1 (166.907966ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":59.900000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.699999988079071}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is<=>-because-fail2 (169.648818ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":64.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.1000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is<=>-because-fail3 (168.556669ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":55.6000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.699999988079071}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is<=>-because-fail4 (163.430682ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":55.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is<=>-because-fail5 (137.136693ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":82.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is<=>-because-fail6 (173.586308ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":52.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.5999999940395355}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-roughly-pass1 (148.862072ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.3999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.1000000089406967}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-roughly-pass2 (158.199146ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":76.90000000596046}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.5}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-roughly-pass3 (176.968181ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":53.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.8999999910593033}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-roughly-pass4 (137.331661ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":52.400000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-roughly-fail1 (139.724306ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":61.400000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-roughly-fail2 (150.311767ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":54.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-roughly-fail3 (147.217719ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.8999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-roughly-because-fail1 (152.251437ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":66}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-roughly-because-fail2 (175.042621ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":48.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.3999999910593033}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-roughly-because-fail3 (143.463929ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":55.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.0999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-roughly-because-fail4 (145.061301ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-roughly-because-fail5 (142.28678ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":48.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-not-pass1 (146.790703ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.400000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.8999999910593033}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-not-pass2 (136.49347ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":72.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-not-pass3 (157.104077ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":63.900000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.300000011920929}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-not-pass4 (156.406094ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":47.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not-fail1 (135.050095ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":53.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not-fail2 (154.236737ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":54}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.300000011920929}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not-because-fail1 (136.117093ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":54.19999998807907}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-not==-pass (142.604247ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":47.8999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not==-fail1 (157.100837ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":69.8999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not==-fail2 (155.293646ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not==-fail3 (145.986141ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":61.1000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.199999988079071}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not==-fail4 (149.476556ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not==-fail5 (155.662412ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":55.400000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":6.0999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not==-because-fail1 (137.850367ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":46.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not==-because-fail2 (142.744545ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":62.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not==-because-fail3 (152.847041ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":54.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not==-because-fail4 (172.438269ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":57.599999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5999999940395355}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-not=~-pass1 (158.436183ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":57.400000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.3999999910593033}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-not=~-pass2 (160.810379ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":48.1000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not=~-fail1 (152.249867ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":76.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.1000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not=~-fail2 (198.058654ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":52.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not=~-fail3 (144.29044ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":65.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not=~-fail4 (146.043102ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":55.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.9000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not=~-fail5 (144.609086ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":46.8999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not=~-because-fail1 (145.14062ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":65.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not=~-because-fail2 (147.969042ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":45.3999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not=~-because-fail3 (153.797011ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":52}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not=~-because-fail4 (158.604792ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":59.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-not<=>-pass1 (155.037348ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":49.30000001192093}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.3999999910593033}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ is-not<=>-pass2 (134.745858ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":45.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not<=>-fail1 (141.852455ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":51.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not<=>-fail2 (145.513967ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":54}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not<=>-fail3 (160.471223ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":57.1000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not<=>-fail4 (138.284921ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":57.900000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.6000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not<=>-fail5 (163.788568ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":50.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not<=>-because-fail1 (151.432176ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":49}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not<=>-because-fail2 (157.290675ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":39}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not<=>-because-fail3 (135.259562ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":52.6000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ is-not<=>-because-fail4 (155.494504ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":55.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ satisfies-pass1 (137.950346ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":47}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ satisfies-pass2 (131.827819ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":59.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ satisfies-fail1 (158.241476ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":62.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ satisfies-fail2 (137.362871ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":59.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.800000011920929}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ satisfies-fail3 (152.158638ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":54.6000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.6000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ satisfies-fail4 (152.353386ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":57.80000001192093}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ satisfies-fail5 (160.060666ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":40.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.8999999910593033}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ satisfies-fail6 (137.923275ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":57.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ satisfies-because-fail1 (139.889915ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":50.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ satisfies-because-fail2 (140.753337ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":38.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.800000011920929}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ satisfies-because-fail3 (125.554503ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":38.69999998807907}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ satisfies-because-fail4 (139.464989ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":59.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ violates-pass1 (143.008862ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":50.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.800000011920929}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ violates-pass2 (135.48893ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":62.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.800000011920929}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ violates-fail1 (130.255765ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":55.1000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.800000011920929}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ violates-fail2 (157.320725ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":72.90000000596046}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.9000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ violates-fail3 (150.123869ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":68.90000000596046}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.1000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ violates-fail4 (151.329976ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":53.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ violates-fail5 (132.111415ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":59.80000001192093}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ violates-fail6 (160.126336ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":54.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ violates-because-fail1 (146.083181ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":61.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ violates-because-fail2 (141.819824ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":43.400000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ violates-because-fail3 (133.808468ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":43.6000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.1000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ violates-because-fail4 (142.086452ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":48}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ raises-pass1 (159.243805ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":56.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.0999999940395355}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ raises-pass2 (147.017111ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":54.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-fail1 (137.261092ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":56.69999998807907}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.0999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-fail2 (139.671077ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":55.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-fail3 (150.012421ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":67.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-fail4 (143.362908ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":40.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ does-not-raise-pass1 (152.92707ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":57.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ does-not-raise-pass2 (154.372635ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":50.599999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.6000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ does-not-raise-fail1 (146.049932ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":66.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ does-not-raise-fail2 (167.43102ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":46.6000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ raises-other-than-pass1 (140.36969ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":57}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ raises-other-than-pass2 (158.638892ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":59.69999998807907}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-other-than-fail1 (169.351331ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":77.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.8999999910593033}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-other-than-fail2 (175.447388ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":46.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.6000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-other-than-fail3 (135.486631ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":50.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-other-than-fail4 (152.580933ms)
+[browser log] Full time including compile/load: {"bounces":16,"tos":16,"time":54.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.3999999910593033}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ raises-satisfies-pass1 (156.619802ms)
+[browser log] Full time including compile/load: {"bounces":17,"tos":17,"time":61.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.3999999910593033}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ raises-satisfies-pass2 (153.578794ms)
+[browser log] true
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":54}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.9000000059604645}
+[browser log] doing sayAndForget definitions produced output: . true. Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ raises-satisfies-pass3 (142.1344ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.599999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-satisfies-fail1 (136.708169ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":61}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.699999988079071}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-satisfies-fail2 (144.053821ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":51.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-satisfies-fail3 (147.456187ms)
+[browser log] hi
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":58.8999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . hi. 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-satisfies-fail4 (169.911665ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":53.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-satisfies-fail5 (159.826699ms)
+[browser log] false
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":51.80000001192093}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.8999999910593033}
+[browser log] doing sayAndForget definitions produced output: . false. 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-satisfies-fail6 (141.763806ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":58.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-satisfies-because-fail1 (134.102504ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":43.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.3999999910593033}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-satisfies-because-fail2 (137.076494ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":55.1000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.699999988079071}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-satisfies-because-fail3 (136.874716ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":45}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.0999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-satisfies-because-fail4 (140.839255ms)
+[browser log] hi
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":50.400000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.800000011920929}
+[browser log] doing sayAndForget definitions produced output: . hi. 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-satisfies-because-fail5 (148.273189ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":55.599999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.3999999910593033}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-satisfies-because-fail6 (164.628919ms)
+[browser log] false
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":52.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.5999999940395355}
+[browser log] doing sayAndForget definitions produced output: . false. 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-satisfies-because-fail7 (138.486109ms)
+[browser log] Full time including compile/load: {"bounces":16,"tos":16,"time":84.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.9000000059604645}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ raises-violates-pass1 (166.273002ms)
+[browser log] Full time including compile/load: {"bounces":17,"tos":17,"time":63.599999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.5}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ raises-violates-pass2 (150.147819ms)
+[browser log] false
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":48}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.5}
+[browser log] doing sayAndForget definitions produced output: . false. Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ raises-violates-pass3 (137.806627ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":67.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.6000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-violates-fail1 (159.362874ms)
+[browser log] Full time including compile/load: {"bounces":16,"tos":16,"time":56.30000001192093}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-violates-fail2 (140.943634ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":45.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-violates-fail3 (145.24646ms)
+[browser log] hi
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":59.900000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . hi. 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-violates-fail4 (137.548049ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":48.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-violates-fail5 (149.337967ms)
+[browser log] true
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":53.30000001192093}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.699999988079071}
+[browser log] doing sayAndForget definitions produced output: . true. 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-violates-fail6 (131.860648ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":37.8999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-violates-because-fail1 (150.240347ms)
+[browser log] Full time including compile/load: {"bounces":17,"tos":17,"time":76.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-violates-because-fail2 (156.486284ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":52.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-violates-because-fail3 (147.900672ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":37.3999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-violates-because-fail4 (133.888937ms)
+[browser log] hi
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":50.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.800000011920929}
+[browser log] doing sayAndForget definitions produced output: . hi. 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-violates-because-fail5 (149.673614ms)
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":65.40000000596046}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-violates-because-fail6 (165.981116ms)
+[browser log] true
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":54.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . true. 0
+TESTS PASSED, 1
+TEST FAILED. check-block-1. The test in this block failed.. 
+  ✔ raises-violates-because-fail7 (140.586967ms)
+[browser log] Full time including compile/load: {"bounces":8,"tos":8,"time":9.700000002980232}
+[browser log] doing sayAndForget definitions resulted in an error.  The column h1 is already sanitized by the sanitizer sanitize h1 using s1.
+  ✔ load-table-dup-sanitizer (67.629082ms)
+[browser log] Full time including compile/load: {"bounces":12,"tos":12,"time":103.70000000298023}
+[browser log] doing sayAndForget definitions resulted in an error.  The type checker expects that the pattern in the cases branch has the same number of field bindings as the data variant d has fields (defined at <builtin dummy location>). However, the branch pattern binds 1 field and the variant is declared as having 2 fields (defined at <builtin dummy location>)
+  ✔ incorrect-number-of-bindings (168.529679ms)
+✔ errors (28825.569863ms)
+[browser log] Full time including compile/load: {"bounces":403,"tos":405,"time":10189.29999999702}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":6639.29999999702}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, all 362 tests passed, mate!. Rendering: Single Bars. All 8 tests in this block passed.. Rendering: Grouped Bars. All 12 tests in this block passed.. Rendering: Stacked Bars. All 12 tests in this block passed.. Color Methods: Single Bars. All 15 tests in this block passed.. Color Methods: Grouped Bars. All 11 tests in this block pas ...[clipped]
+▶ charts
+  ✔ bar-chart-test.arr (10509.322777ms)
+[browser log] Full time including compile/load: {"bounces":25,"tos":25,"time":178.90000000596046}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":63.6000000089407}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, both tests passed, mate!. check-block-1. All 2 tests in this block passed.. 
+  ✔ box-plot-test.arr (268.876643ms)
+[browser log] Full time including compile/load: {"bounces":31,"tos":31,"time":306.1000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":156.80000001192093}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, all 10 tests passed, mate!. Dot chart, categorical data. All 10 tests in this block passed.. 
+  ✔ dot-chart-test.arr (398.945648ms)
+[browser log] Full time including compile/load: {"bounces":23,"tos":23,"time":116.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":33.900000005960464}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, both tests passed, mate!. check-block-1. All 2 tests in this block passed.. 
+  ✔ image-bar-chart-test.arr (141.275ms)
+[browser log] Full time including compile/load: {"bounces":23,"tos":23,"time":138.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":44}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, both tests passed, mate!. check-block-1. All 2 tests in this block passed.. 
+  ✔ image-histogram-test.arr (181.881001ms)
+[browser log] Full time including compile/load: {"bounces":24,"tos":24,"time":400.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":107.79999999701977}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, all 5 tests passed, mate!. Checking image-pie-chart. All 5 tests in this block passed.. 
+[browser log] drawing legend
+[browser log] drawing legend
+[browser log] drawing legend
+  ✔ image-pie-chart-test.arr (626.25314ms)
+[browser log] Full time including compile/load: {"bounces":36,"tos":36,"time":389.40000000596046}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":136.5}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, all 8 tests passed, mate!. check-block-1. All 2 tests in this block passed.. check-block-2. All 2 tests in this block passed.. check-block-3. All 2 tests in this block passed.. check-block-4. All 2 tests in this block passed.. 
+  ✔ image-scatter-and-line-test.arr (527.894326ms)
+[browser log] Full time including compile/load: {"bounces":57,"tos":57,"time":1890.300000011921}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1498}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, all 44 tests passed, mate!. Different kinds of numbers. All 7 tests in this block passed.. Colors. All 7 tests in this block passed.. Different point sizes. All 7 tests in this block passed.. Different line widths. All 7 tests in this block passed.. Mix and match. All 7 tests in this block passed.. Exceptions. All 3 tests in this b ...[clipped]
+  ✔ interval-chart-test.arr (2030.194624ms)
+[browser log] Full time including compile/load: {"bounces":22,"tos":22,"time":116.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":28.099999994039536}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ labeled-num-dot-chart-test.arr (172.2969ms)
+[browser log] Full time including compile/load: {"bounces":27,"tos":27,"time":183.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":53.3999999910593}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, both tests passed, mate!. Dot chart, numerical data. All 2 tests in this block passed.. 
+  ✔ num-dot-chart-test.arr (277.108097ms)
+✔ charts (15135.069555ms)
+[browser log] Full time including compile/load: {"bounces":16,"tos":16,"time":89.90000000596046}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.3999999910593033}
+[browser log] doing sayAndForget definitions produced no output.
+[browser log] Full time including compile/load: {"bounces":6,"tos":6,"time":88.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget x = SD.make-mutable-string-dict() produced no output.
+[browser log] Full time including compile/load: {"bounces":6,"tos":6,"time":101.80000001192093}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.3999999910593033}
+[browser log] doing sayAndForget x.set-now('a', 5) produced no output.
+[browser log] Full time including compile/load: {"bounces":6,"tos":6,"time":133.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.699999988079071}
+[browser log] doing sayAndForget x evaluates to mutable-string-dict of 2 items: , a, a string, 5
+▶ type-check
+  ✔ string-dict-import (12796.433552ms)
+[browser log] Full time including compile/load: {"bounces":16,"tos":16,"time":123.6000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2999999970197678}
+[browser log] doing sayAndForget definitions produced no output.
+[browser log] Full time including compile/load: {"bounces":6,"tos":6,"time":79.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.5}
+[browser log] doing sayAndForget x = make-mutable-string-dict() produced no output.
+[browser log] Full time including compile/load: {"bounces":6,"tos":6,"time":101.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.0999999940395355}
+[browser log] doing sayAndForget x.set-now('a', 12) produced no output.
+[browser log] Full time including compile/load: {"bounces":6,"tos":6,"time":122}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":4}
+[browser log] doing sayAndForget x evaluates to mutable-string-dict of 2 items: , a, a string, 12
+  ✔ string-dict-include (12747.702149ms)
+[browser log] Full time including compile/load: {"bounces":18,"tos":18,"time":113.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.2000000029802322}
+[browser log] doing sayAndForget definitions produced no output.
+[browser log] Full time including compile/load: {"bounces":9,"tos":9,"time":306.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget a = beside-list([list: circle(50, 'solid', 'red')]) produced no output.
+[browser log] Full time including compile/load: {"bounces":8,"tos":8,"time":97.6000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.3999999910593033}
+[browser log] doing sayAndForget image-width(a) evaluates to 100
+  ✔ beside-list (6647.159152ms)
+✔ type-check (32191.885807ms)
+[browser log] [{"table": "t-complex", "row": 1, "col": 2, "val": "pixels-1"},{"table": "t-complex", "row": 2, "col": 2, "val": "pixels-2"}]
+[browser log] Full time including compile/load: {"bounces":20,"tos":20,"time":138.59999999403954}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":10.200000002980232}
+[browser log] doing sayAndForget definitions produced output: . [{"table": "t-complex", "row": 1, "col": 2, "val": "pixels-1"},{"table": "t-complex", "row": 2, "col": 2, "val": "pixels-2"}]. [{"table": "t-complex", "row": 1, "col": 2, "val": "pixels-1"},{"table": "t-complex", "row": 2, "col": 2, "val": "pixels-2"}], a string. "a"	1	"b"	2
+[browser log] Full time including compile/load: {"bounces":4,"tos":4,"time":33.19999998807907}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":6.0999999940395355}
+[browser log] doing sayAndForget t-complex evaluates to table with 2 columns and 2 rows: header row: file, pixels. row 0. foo.png, a string, list of 3 items: , list of 4 items: , 1, 0, 1, 0, list of 4 items: , 1, 0, 0, 1, list of 4 items: , 1, 1, 0, 0. row 1. bar.gif, a string, list of 3 items: , list of 4 items: , 0, 0, 0, 0, list of 4 items: , 1, 1, 1, 1, list of 4 items: , 0, 0, 0, 1.  end table.
+[browser log] Full time including compile/load: {"bounces":4,"tos":4,"time":90.59999999403954}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":8.400000005960464}
+[browser log] doing sayAndForget pixels-1 evaluates to list of 3 items: , list of 4 items: , 1, 0, 1, 0, list of 4 items: , 1, 0, 0, 1, list of 4 items: , 1, 1, 0, 0
+[browser log] Full time including compile/load: {"bounces":4,"tos":4,"time":73}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":21.399999991059303}
+[browser log] doing sayAndForget t-complex evaluates to table with 2 columns and 2 rows: header row: file, pixels. row 0. foo.png, a string, list of 3 items: , list of 4 items: , 1, 0, 1, 0, list of 4 items: , 1, 0, 0, 1, list of 4 items: , 1, 1, 0, 0. row 1. bar.gif, a string, list of 3 items: , list of 4 items: , 0, 0, 0, 0, list of 4 items: , 1, 1, 1, 1, list of 4 items: , 0, 0, 0, 1.  end table.
+[browser log] Full time including compile/load: {"bounces":4,"tos":4,"time":70.6000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":8.199999988079071}
+[browser log] doing sayAndForget pixels-2 evaluates to list of 3 items: , list of 4 items: , 0, 0, 0, 0, list of 4 items: , 1, 1, 1, 1, list of 4 items: , 0, 0, 0, 1
+▶ tables
+  ✔ tables-test.arr (1254.797073ms)
+✔ tables (1255.197079ms)
+[browser requestfailed] GET http://localhost:4999/load-shareurl?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbootstrapworld%2Fstarter-files%2F82d723874fa2a63c19ea6daee069e13e0c1a1b36%2Flibraries%2Fcore.arr -- net::ERR_ABORTED
+[browser log] Full time including compile/load: {"bounces":464,"tos":464,"time":4630.20000000298}
+[browser log] Time to run compiled program: {"bounces":2,"tos":2,"time":78.29999999701977}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+▶ url-imports
+  ✔ url import of a pinned raw file (4765.341294ms)
+[browser log] Full time including compile/load: {"bounces":462,"tos":462,"time":3999.9000000059605}
+[browser log] Time to run compiled program: {"bounces":2,"tos":2,"time":29.899999991059303}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ import url-file relative to the base URL (4072.674901ms)
+[browser log] Full time including compile/load: {"bounces":462,"tos":462,"time":3718.7999999970198}
+[browser log] Time to run compiled program: {"bounces":2,"tos":2,"time":30.69999998807907}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ import url-file with ../ traversal above the base URL (3751.926685ms)
+[browser log] Full time including compile/load: {"bounces":471,"tos":471,"time":3518}
+[browser log] Time to run compiled program: {"bounces":2,"tos":2,"time":32}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, both tests passed, mate!. check-block-1. All 2 tests in this block passed.. 
+  ✔ use context url-file (3558.73185ms)
+[browser log] Full time including compile/load: {"bounces":988,"tos":989,"time":8112.5999999940395}
+[browser log] Time to run compiled program: {"bounces":4,"tos":4,"time":69.79999999701977}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, both tests passed, mate!. check-block-1. All 2 tests in this block passed.. 
+  ✔ starter-file shape: use context and include, both via ../ (8202.773611ms)
+[browser log] Full time including compile/load: {"bounces":28,"tos":28,"time":134.79999999701977}
+[browser log] Time to run compiled program: {"bounces":2,"tos":2,"time":2.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ local url-file with ../ traversal (no external network) (254.808797ms)
+[browser log] Full time including compile/load: {"bounces":57,"tos":57,"time":253}
+[browser log] Time to run compiled program: {"bounces":2,"tos":2,"time":4.799999997019768}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, your test passed, mate!. check-block-1. The test in this block passed.. 
+  ✔ local use context url-file (no external network) (364.355583ms)
+✔ url-imports (24971.75762ms)
+[browser log] Full time including compile/load: {"bounces":1612,"tos":1617,"time":7591.100000008941}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":48.400000005960464}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, both tests passed, mate!. check-block-1. All 2 tests in this block passed.. 
+▶ big-programs
+  ✔ many-top-level-funs-1000 (7955.485153ms)
+[browser log] Full time including compile/load: {"bounces":182,"tos":186,"time":1409.1000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":17.100000008940697}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, all 3 tests passed, mate!. check-block-1. All 3 tests in this block passed.. 
+  ✔ many-ask-arms-800 (1627.106602ms)
+[browser log] Full time including compile/load: {"bounces":762,"tos":769,"time":3678.3999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":28.400000005960464}
+[browser log] doing sayAndForget definitions produced output: . Looks shipshape, all 3 tests passed, mate!. check-block-1. All 3 tests in this block passed.. 
+  ✔ many-data-variants-400 (3873.322733ms)
+✔ big-programs (13456.540301ms)
+[browser log] Full time including compile/load: undefined
+[browser log] doing sayAndForget definitions produced no output.
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":58.6000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 2
+▶ stop-during-load
+  ✔ Stop pressed while an import is still loading ends the run during the load and leaves the editor usable (14428.39048ms)
+✔ stop-during-load (14428.717577ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":56.599999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 2
+[browser log] Full time including compile/load: undefined
+[browser log] doing sayAndForget definitions produced no output.
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":70}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":4}
+[browser log] doing sayAndForget definitions produced output: . 42
+▶ rapid-rerun
+  ✔ a run begun immediately after another is not affected by the first run's leftovers (1198.481952ms)
+✔ rapid-rerun (1198.981626ms)
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":44.1000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.5999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 2
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":52.3999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 3
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":58}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 4
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.599999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.0999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 5
+[browser pageerror] Error: Failed to resume; thread has been killed
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":54.599999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.9000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 6
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 7
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":56.80000001192093}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 8
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":39.80000001192093}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 9
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":58.6000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 10
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":46.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 11
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":73.80000001192093}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 12
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":41}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 13
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":51.400000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.5}
+[browser log] doing sayAndForget definitions produced output: . 14
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":47.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.5}
+[browser log] doing sayAndForget definitions produced output: . 15
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":57.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.6000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 16
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":53.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.3999999910593033}
+[browser log] doing sayAndForget definitions produced output: . 17
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":53}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.6000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 18
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":55.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.9000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 19
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":48.8999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 20
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":53.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 21
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":44.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 22
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":43.400000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.5999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 23
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":47.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 24
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":45.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.5}
+[browser log] doing sayAndForget definitions produced output: . 25
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":67}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":7.299999997019768}
+[browser log] doing sayAndForget definitions produced output: . 26
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":201}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.5999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 27
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":41.400000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.3999999910593033}
+[browser log] doing sayAndForget definitions produced output: . 28
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":51.30000001192093}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 29
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":53.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.199999988079071}
+[browser log] doing sayAndForget definitions produced output: . 30
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":55.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 31
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":36.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.5}
+[browser log] doing sayAndForget definitions produced output: . 32
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.800000011920929}
+[browser log] doing sayAndForget definitions produced output: . 33
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 34
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":39}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":5.100000008940697}
+[browser log] doing sayAndForget definitions produced output: . 35
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":36.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 36
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":87.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.0999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 37
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":40.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 38
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":61.900000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 39
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":54.400000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 40
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":42.400000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.800000011920929}
+[browser log] doing sayAndForget definitions produced output: . 41
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":51.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.199999988079071}
+[browser log] doing sayAndForget definitions produced output: . 42
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":47.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 43
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":50.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.8999999910593033}
+[browser log] doing sayAndForget definitions produced output: . 44
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":42.900000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.3999999910593033}
+[browser log] doing sayAndForget definitions produced output: . 45
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":58}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 46
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":31.299999997019768}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.9000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 47
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":81.40000000596046}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":4.5}
+[browser log] doing sayAndForget definitions produced output: . 48
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":48.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.6000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 49
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":50.8999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.300000011920929}
+[browser log] doing sayAndForget definitions produced output: . 50
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":57.599999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 51
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":51.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 52
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.80000001192093}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.0999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 53
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.400000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 54
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":48.599999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 55
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":58.30000001192093}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 56
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.699999988079071}
+[browser log] doing sayAndForget definitions produced output: . 57
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 58
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":47}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.9000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 59
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":50.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 60
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":52.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 61
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":51.900000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 62
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":50.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 63
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":52.900000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.0999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 64
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":46.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.0999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 65
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":48.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 66
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":56.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.0999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 67
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":45.8999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 68
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":51.8999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 69
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":51.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 70
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":53.3999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 71
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":51.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 72
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":55.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.1000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 73
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":49.599999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 74
+[browser log] Full time including compile/load: {"bounces":13,"tos":13,"time":51.80000001192093}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 75
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":57.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 76
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":43.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 77
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":49.599999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.3999999910593033}
+[browser log] doing sayAndForget definitions produced output: . 78
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":47.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 79
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":44.1000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 80
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":51.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 81
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":44.69999998807907}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 82
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":49.900000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 83
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":56}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.6000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 84
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":46.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.3999999910593033}
+[browser log] doing sayAndForget definitions produced output: . 85
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":49.19999998807907}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 86
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":64.09999999403954}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.1000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 87
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":55}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.0999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 88
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":50.599999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.800000011920929}
+[browser log] doing sayAndForget definitions produced output: . 89
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":77.3999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":4.4000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 90
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":61.400000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.300000011920929}
+[browser log] doing sayAndForget definitions produced output: . 91
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":42.69999998807907}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.8999999910593033}
+[browser log] doing sayAndForget definitions produced output: . 92
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":55.1000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 93
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":50}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.6000000089406967}
+[browser log] doing sayAndForget definitions produced output: . 94
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":48.1000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.199999988079071}
+[browser log] doing sayAndForget definitions produced output: . 95
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":46.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 96
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":48.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 97
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":46.69999998807907}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 98
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":46.69999998807907}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.5}
+[browser log] doing sayAndForget definitions produced output: . 99
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":50.400000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 100
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":51.5}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2}
+[browser log] doing sayAndForget definitions produced output: . 101
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":46.099999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.800000011920929}
+[browser log] doing sayAndForget definitions produced output: . 102
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":43.3999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.800000011920929}
+[browser log] doing sayAndForget definitions produced output: . 103
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":42.70000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 104
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":50.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3}
+[browser log] doing sayAndForget definitions produced output: . 105
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":52.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.199999988079071}
+[browser log] doing sayAndForget definitions produced output: . 106
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":50.8999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 107
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":47}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":5.200000002980232}
+[browser log] doing sayAndForget definitions produced output: . 108
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":43}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3}
+[browser log] doing sayAndForget definitions produced output: . 109
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":55.8999999910593}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 110
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":38.400000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 111
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":43.599999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 112
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":43.900000005960464}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.300000011920929}
+[browser log] doing sayAndForget definitions produced output: . 113
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":65.69999998807907}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 114
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":42.599999994039536}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.9000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 115
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":49.20000000298023}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.7999999970197678}
+[browser log] doing sayAndForget definitions produced output: . 116
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":61}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.2000000029802322}
+[browser log] doing sayAndForget definitions produced output: . 117
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":32.29999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":2.0999999940395355}
+[browser log] doing sayAndForget definitions produced output: . 118
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":49.6000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.9000000059604645}
+[browser log] doing sayAndForget definitions produced output: . 119
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":82.79999999701977}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":3.8999999910593033}
+[browser log] doing sayAndForget definitions produced output: . 120
+[browser log] Full time including compile/load: {"bounces":14,"tos":14,"time":36.1000000089407}
+[browser log] Time to run compiled program: {"bounces":1,"tos":1,"time":1.8999999910593033}
+[browser log] doing sayAndForget definitions produced output: . 121
+▶ effective-ids
+  ✔ an editor that has compiled many programs still compiles the next one (14499.026654ms)
+✔ effective-ids (14499.430459ms)
+ℹ tests 251
+ℹ suites 10
+ℹ pass 251
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 153558.335124

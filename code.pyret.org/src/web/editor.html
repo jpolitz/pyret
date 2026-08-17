@@ -14,6 +14,7 @@
   // in-browser compiler to emit async code. Default behavior is unchanged.
   window.PYRET_TS = "{{&PYRET_TS}}";
   window.PYRET_TS_PROMISE = "{{&PYRET_TS_PROMISE}}";
+  window.PYRET_TS_HYBRID = "{{&PYRET_TS_HYBRID}}";
   window.PYRET_TS_COMPILER = "{{&PYRET_TS_COMPILER}}";
   window.CPO_COMPILER = "{{&CPO_COMPILER}}" || "pyret";
   (function() {
@@ -25,6 +26,10 @@
     }
     else if(window.CPO_COMPILER === "ts-promise" && window.PYRET_TS_PROMISE) {
       window.PYRET = window.PYRET_TS_PROMISE;
+      document.write('<script src="' + window.PYRET_TS_COMPILER + '"><\/script>');
+    }
+    else if(window.CPO_COMPILER === "ts-hybrid" && window.PYRET_TS_HYBRID) {
+      window.PYRET = window.PYRET_TS_HYBRID;
       document.write('<script src="' + window.PYRET_TS_COMPILER + '"><\/script>');
     }
   })();

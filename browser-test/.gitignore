@@ -1,0 +1,7 @@
+node_modules/
+.vscode-test-web/
+results/
+# Marker for "Playwright's Chromium has been installed at least once"; see the
+# .chromium.stamp target in the Makefile.
+.chromium.stamp
+node_modules

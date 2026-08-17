@@ -206,8 +206,10 @@
     // compiler must emit async code for the user's program too. The "ts"
     // flavor leaves stackBackend at its default (cont). Selected by the
     // page (window.CPO_COMPILER, set from ?compiler= / CPO_COMPILER env).
+    var useHybrid =
+      (typeof window !== "undefined" && window.CPO_COMPILER === "ts-hybrid");
     var usePromiseBackend =
-      (typeof window !== "undefined" && window.CPO_COMPILER === "ts-promise");
+      (typeof window !== "undefined" && window.CPO_COMPILER === "ts-promise") || useHybrid;
 
     function tsOptions(options) {
       var o = Object.assign({}, T.compileStructs.defaultCompileOptions);
@@ -220,6 +222,10 @@
       o.logError = function(s) { console.error(s); };
       o.onCompile = function(_locator, loadable, _trace) { return loadable; };
       if(usePromiseBackend) { o.stackBackend = T.compileStructs.promise; }
+      // ts-hybrid: the user's Gen-tier functions become bytecode + fast
+      // forms for the machine in runtime-async.js (the jarr's builtins were
+      // built the same way).
+      if(useHybrid) { o.vmTiers = ["gen"]; o.vmFast = "all"; }
       return o;
     }
 

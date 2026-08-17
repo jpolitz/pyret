@@ -30,6 +30,9 @@ function start(config, onServerReady) {
       // ts-promise flavor: TS compiler + Promise/async backend jarr.
       PYRET_TS_PROMISE: process.env.PYRET_TS_PROMISE ||
         (process.env.PYRET ? process.env.PYRET.replace("cpo-main.jarr", "cpo-main-ts-promise.jarr") : ""),
+      // ts-hybrid flavor: TS compiler + Promise backend + bytecode machine jarr.
+      PYRET_TS_HYBRID: process.env.PYRET_TS_HYBRID ||
+        (process.env.PYRET ? process.env.PYRET.replace("cpo-main.jarr", "cpo-main-ts-hybrid.jarr") : ""),
       PYRET_TS_COMPILER: process.env.PYRET_TS_COMPILER || (config.baseUrl + "/js/ts-compiler.js"),
       CPO_COMPILER: process.env.CPO_COMPILER || "pyret",
       BASE_URL: config.baseUrl,
@@ -620,6 +623,9 @@ function start(config, onServerReady) {
     }
     else if(compiler === "ts-promise" && defaultOpts.PYRET_TS_PROMISE) {
       compilerOpts = { PYRET: defaultOpts.PYRET_TS_PROMISE, CPO_COMPILER: "ts-promise" };
+    }
+    else if(compiler === "ts-hybrid" && defaultOpts.PYRET_TS_HYBRID) {
+      compilerOpts = { PYRET: defaultOpts.PYRET_TS_HYBRID, CPO_COMPILER: "ts-hybrid" };
     }
     res.render("editor.html", { ...defaultOpts,
       ...compilerOpts,

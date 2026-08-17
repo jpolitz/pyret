@@ -1,0 +1,37 @@
+<!doctype html>
+<!--
+  Host page for the embed-static env: embeds the BUILT editor.embed.html
+  artifact through the real pyret-embed library (embed/dist/pyret.js), the way
+  an actual embedding host does -- makeEmbedConfig with a src URL pointing at
+  the statically served artifact. Compare embed/src/basic.html (the package's
+  own examples), which this mirrors.
+
+  Served by envs/embed-static.js alongside code.pyret.org/build/web (the
+  artifact) and embed/dist (the library), all same-origin.
+-->
+<html>
+<head>
+<style>
+  html, body { height: 100%; margin: 0; }
+  #container { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="container"></div>
+<script type="module">
+  import { makeEmbedConfig } from "/pyret.js";
+  makeEmbedConfig({
+    container: document.getElementById("container"),
+    src: "/editor.embed.html",
+    // Same initial state the embed env resets to (envs/embed.js).
+    state: {
+      definitionsAtLastRun: false,
+      editorContents: "use context starter2024\n\n",
+      replContents: "",
+      interactionsSinceLastRun: [],
+    },
+    options: {},
+  }).then((api) => { window.embedAPI = api; });
+</script>
+</body>
+</html>

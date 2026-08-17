@@ -496,6 +496,47 @@ $(TS_PROMISE_CPOGZ): $(TS_PROMISE_CPOMAIN)
 .PHONY: web-ts-promise
 web-ts-promise: $(TS_COMPILER_JS) $(TS_PROMISE_CPOMAIN) $(TS_PROMISE_CPOGZ)
 
+# ============================================================
+# TypeScript compiler + Promise backend + hybrid bytecode machine flavor
+# (ts-hybrid). The bundle is built by the TS COMPILER ITSELF (not phaseA):
+# its builtins are compiled `--stack-backend promise --vm-tiers gen`, so
+# the trove's Gen-tier functions ship as bytecode + fast forms and run on
+# the machine embedded in runtime-async.js, and the in-browser compiler is
+# told to do the same for the user's program (cpo-main-ts.js). Same
+# ts-compiler.js bundle as the other TS flavors. SEPARATE compiled-hybrid/
+# cache. Selected via ?compiler=ts-hybrid or CPO_COMPILER=ts-hybrid.
+# ============================================================
+
+TS_HYBRID_CPOMAIN=build/web/js/cpo-main-ts-hybrid.jarr
+TS_HYBRID_CPOGZ=build/web/js/cpo-main-ts-hybrid.jarr.gz.js
+VM_TIERS ?= gen
+VM_FAST ?= all
+
+$(TS_HYBRID_CPOMAIN): $(BUNDLED_DEPS) $(TROVE_JS) $(TROVE_ARR) $(WEBJS) src/web/js/*.js src/web/arr/*.arr cpo-standalone.js cpo-config-promise.json src/web/arr/cpo-main-ts.arr ts-libpyret
+	mkdir -p compiled-hybrid/;
+	node --max-old-space-size=8192 pyret/build/ts-compiler/pyret.js \
+    --builtin-js-dir src/web/js/trove/ \
+    --builtin-js-dir pyret/src/js/trove/ \
+    -allow-builtin-overrides \
+    --builtin-arr-dir src/web/arr/trove/ \
+    --builtin-arr-dir pyret/src/arr/trove/ \
+    --require-config cpo-config-promise.json \
+    --build-runnable src/web/arr/cpo-main-ts.arr \
+    --standalone-file cpo-standalone.js \
+    --compiled-dir ./compiled-hybrid \
+    --stack-backend promise \
+    --vm-tiers $(VM_TIERS) --vm-fast $(VM_FAST) \
+    --deps-file $(BUNDLED_DEPS) \
+    --outfile $(TS_HYBRID_CPOMAIN) -no-check-mode
+
+$(TS_HYBRID_CPOGZ): $(TS_HYBRID_CPOMAIN)
+	cp $(TS_HYBRID_CPOMAIN) $(TS_HYBRID_CPOMAIN).js
+	npx uglifyjs --compress -o $(TS_HYBRID_CPOMAIN).min -- $(TS_HYBRID_CPOMAIN)
+	gzip -c -f $(TS_HYBRID_CPOMAIN).min > $(TS_HYBRID_CPOGZ)
+
+.PHONY: web-ts-hybrid
+web-ts-hybrid: $(TS_COMPILER_JS) $(TS_HYBRID_CPOMAIN) $(TS_HYBRID_CPOGZ)
+
 clean:
 	rm -rf build/
 	rm -rf compiled/

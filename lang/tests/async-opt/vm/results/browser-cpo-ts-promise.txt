@@ -1,0 +1,18 @@
+✖ an editor that has compiled many programs still compiles the next one (113.835445ms)
+✖ a run begun immediately after another is not affected by the first run's leftovers (22.822325ms)
+✖ big-programs (483303.391829ms)
+✖ effective-ids (114.507478ms)
+✖ failing tests:
+ℹ cancelled 0
+ℹ duration_ms 557591.458248
+ℹ fail 5
+ℹ pass 237
+ℹ skipped 0
+ℹ suites 10
+ℹ tests 242
+ℹ todo 0
+✖ many-ask-arms-800 (240979.358377ms)
+✖ many-top-level-funs-1000 (241450.870869ms)
+✖ rapid-rerun (23.140021ms)
+✖ stop-during-load (32.338427ms)
+✖ url-imports (0.093369ms)

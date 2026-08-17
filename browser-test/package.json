@@ -1,0 +1,17 @@
+{
+  "name": "pyret-browser-test",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Run code.pyret.org's editor assertions (node:test + node:assert) against the embed API's embedded instances and the vscode extension's webviews, via one Playwright runner.",
+  "scripts": {
+    "cpo": "node run.js --env=cpo",
+    "embed": "node run.js --env=embed",
+    "vscode": "node run.js --env=vscode",
+    "all": "./run-all.sh"
+  },
+  "//": "Filter with --grep (regex over suite + test names), e.g. `npm run embed -- --grep tables`.",
+  "devDependencies": {
+    "@vscode/test-web": "^0.0.81",
+    "playwright": "^1.49.1"
+  }
+}
