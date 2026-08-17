@@ -139,6 +139,22 @@ for that case. Landed after the stage-0 baseline; every table above has it
 on both sides (it moved vec-methods p from ~1.5s to ~1.0s and spell p from
 2.37s to 2.13s).
 
+## Endpoint (all of the above landed; format v3, step hook, site table), N=3
+
+results/table-endpoint.txt: geomean h/p **0.975**, parity 16/16.
+Same shape as stage 2 except bench-spell, which read 0.82 in the stage-2
+session and 1.02 here -- the PROMISE side of spell moved from ~2.1s to
+~1.6s between sessions with byte-identical compiled modules (only the
+shared runtime file changed, in places the promise flavor never executes),
+so treat spell as noisy at the +-20% level on this box and the geomean as
+"0.95-0.98". Every other bench reproduced within a few percent
+(orbital-compute 0.78, boids-compute 0.85, boids-raster 0.94, matrix 0.96,
+lander 0.96, car-compute 0.97; orbital-ems 1.06 and plagiarism 1.06 on the
+other side, both image/dict-library dominated). Final oracle pass at this
+endpoint: `make vm-test` 22/22 (also under `VM_FAST=none` and
+`VM_TIERS=nonflat`), main2-exec 13202 pass, type-check suite 210/210 (both
+flavors), `make vm-unit-test` ok.
+
 ## Engine portability (JSC): the same table under bun 1.3.14
 
 \`NODE=bun tests/async-opt/run-hybrid-table.sh 2\` (results/table-stage2-bun.txt):
