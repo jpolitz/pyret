@@ -73,7 +73,7 @@ is byte-identical to the all-JS build.
 | `vm-compile.ts` | ANF function -> bytecode; suspend-site table + liveness for the fast form's bailouts; JS thunks for what is better emitted as JS |
 | `disasm.ts` | decoder, disassembler, structural verifier, liveness |
 | `../anf-loop-compiler-async.ts` | `vmRootExpr` (the seam), `compileGenFastFun` / `fastSite` (the 'gen-fast' emission), the tier-boundary boxing rule |
-| `../../../js/base/runtime-async.js` | the machine (section "The hybrid bytecode machine"), `R.$vm = {load, mkFun, mkMeth, bail}` |
+| `../../../js/base/runtime-async.js` | the machine (section "The hybrid bytecode machine"), `R.$vm = {load, mkFun, mkMeth, bail, setHook}` |
 | `../../tests/vm-tools.js` | `disasm` / `verify` / `stats` over compiled modules |
 | `../../tests/vm-unit-test.js` | opcode-table & format parity, verifier over caches (`make vm-unit-test`) |
 | `../../../../tests/async-opt/vm/` | differential harness (`make vm-test`), tier-boundary programs, bootstrap timing |
@@ -146,6 +146,19 @@ it keeps the machine a *control* machine with a small, verifiable surface.
 `PYRET_VM_PROFILE=1` prints the executed-instruction histogram, entries,
 suspensions and pauses at exit; `node src/ts-compiler/tests/vm-tools.js
 disasm|verify|stats <compiled-dir|module.js>` reads what was emitted.
+
+**Stepping.** `R.$vm.setHook(fn)` (or a global `PYRET_VM_HOOK` before the
+runtime loads) is called before every interpreted instruction with the top
+frame (function name, source loc, pc, opcode, call-site loc, live slots),
+the depth, and a lazy `frames()`; a thenable return parks the whole
+bytecode stack and resumes at that instruction. Under `--vm-fast none`
+every Gen-tier function is steppable from its first instruction; under the
+default, everything after a suspension is. `tests/async-opt/vm/step-hook-test.js`.
+
+**Configurations.** `--vm-fast all` (default: fast forms + bytecode; the
+speed point), `--vm-fast none` (bytecode only; half the trove, stage-1
+speed), `--vm-fast loops` (fast forms only for self-loop functions);
+`--vm-tiers gen` (default) or `nonflat` (measured worse; see the results).
 
 ## What is pinned, and how
 
