@@ -189,3 +189,29 @@ out 89%/96%). The bytecode-only configuration is the size play (about half),
 at stage-1 speed. Note the TS-compiler-built bundles are larger than the
 phaseA-built one because of the TS optimizer's inliner, independent of the
 machine.
+
+## Capabilities demonstrated
+
+- Unbounded bytecode recursion on heap frames (gdeep 2M levels, 818 MB vs
+  1.6 GB); proper tail calls between bytecode functions (vm-02, 165 MB vs
+  513 MB); compiled<->bytecode alternation to any depth with suspension
+  crossing both ways (vm-01, tier-08, the compiler bootstrap).
+- **Pause/inspect at any interpreted instruction from outside the program**:
+  `R.$vm.setHook(fn)` / global `PYRET_VM_HOOK` -- the hook sees the top
+  frame (name, source loc, pc, opcode, call-site loc, live slots), the depth,
+  and can materialize the whole stack lazily; returning a thenable parks
+  the entire bytecode stack and resumes at the same instruction.
+  `tests/async-opt/vm/step-hook-test.js` (in `make vm-test`) pauses a
+  200k-deep Gen recursion 14 times at depths up to 200001, sees 2.8M
+  instructions, and the program's output is unchanged (0.8s total). Under
+  `--vm-fast none` every Gen-tier function is steppable from its first
+  instruction; under the default, everything after a suspension is.
+
+## Found along the way (runtime fixes, both flavors)
+
+- `_checkAnn`'s PPrimAnn fast path (above).
+- The spy renderer concatenated the srcloc `format` method's result without
+  `safeCall`, printing `(at [object Promise])` whenever that method was
+  compiled async (the promise build; the hybrid printed the location because
+  its fast form returns synchronously) -- fixed in the runtime; pinned by
+  vm-07-spy.

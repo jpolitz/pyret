@@ -25,6 +25,11 @@ Pyret-hosted compiler's.
   `src/interop/amd.ts`), plus the npm `source-map` and `ws` packages.
 - `CONVENTIONS.md` — the porting rules (data representation, visitors,
   Option/List/StringDict mappings, fidelity requirements).
+- `src/vm/` — the hybrid bytecode machine's compiler half (promise backend
+  only, `--vm-tiers gen`): Gen-tier functions become bytecode for the
+  machine embedded in `runtime-async.js` plus a native fast form that
+  bails into it on suspension. See `src/vm/README.md` and
+  `../../tests/async-opt/vm/HYBRID-RESULTS.md`.
 - `tests/` — unit tests, the parity harness, and its test programs.
 
 ## Building and testing (from `lang/`)
