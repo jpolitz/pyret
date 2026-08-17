@@ -15,7 +15,7 @@ import { VMProgram, VMFunc } from './opcodes';
 // Operand shape per opcode. Letters: d=dest slot, v=value source, k=name idx,
 // l=loc idx, t=jump target, i=plain int, T=thunk idx, F=func idx,
 // D=dispatch idx, C=cache base, then a variadic tail described separately.
-const SHAPES: Record<number, string> = {};
+export const SHAPES: Record<number, string> = {};
 SHAPES[OP.OP_MOVE] = 'dv';
 SHAPES[OP.OP_BOX] = 'dv';
 SHAPES[OP.OP_UNBOX] = 'dv';
@@ -58,6 +58,101 @@ export interface Insn {
   /** Positions in `operands` that are jump targets. */
   targets: number[];
   end: number;
+}
+
+/** Local slots READ and WRITTEN by a decoded instruction (for liveness).
+    CLOSURE/METHOD read the parent slots their function's upvalue
+    descriptors name -- hidden operands, which is why `funcs` is needed. */
+export function slotUses(insn: Insn, funcs: VMFunc[]): { reads: number[]; writes: number[] } {
+  const reads: number[] = [];
+  const writes: number[] = [];
+  const shape = SHAPES[insn.op];
+  if (insn.op === OP.OP_CLOSURE || insn.op === OP.OP_METHOD) {
+    const fdef = funcs[insn.operands[1]];
+    for (const dsc of fdef.u) { if ((dsc & 3) === 0) { reads.push(dsc >> 2); } }
+  }
+  const rdv = (vs: number): void => { if ((vs & 3) === OP.VS_LOCAL) { reads.push(vs >> 2); } };
+  let oi = 0;
+  for (let i = 0; i < shape.length; i++) {
+    switch (shape[i]) {
+      case 'd': writes.push(insn.operands[oi++]); break;
+      case 'v': rdv(insn.operands[oi++]); break;
+      case '*': { const n = insn.operands[oi++]; for (let j = 0; j < n; j++) { rdv(insn.operands[oi++]); } break; }
+      case '#': { const n = insn.operands[oi++]; oi++; for (let j = 0; j < n; j++) { writes.push(insn.operands[oi]); oi += 2; } i++; break; }
+      case '%': { const n = insn.operands[oi++]; for (let j = 0; j < n; j++) { writes.push(insn.operands[oi]); oi += 3; } break; }
+      default: oi++;
+    }
+  }
+  // DOTC's cache cell is read and (possibly) written: 'dvkliv' -- the last v
+  // is the cell; treat as read (already) and write.
+  if (insn.op === OP.OP_DOTC) {
+    const cvs = insn.operands[5];
+    if ((cvs & 3) === OP.VS_LOCAL) { writes.push(cvs >> 2); }
+  }
+  // SETVAR 'vvd': the box read, value read, dest written -- covered.
+  return { reads, writes };
+}
+
+/** Successor pcs of an instruction. */
+export function successors(insn: Insn, code: number[], dispatches: Array<Record<string, number>>): number[] {
+  switch (insn.op) {
+    case OP.OP_RET: return [];
+    case OP.OP_TAILCALL: return [];
+    case OP.OP_JMP: return [insn.operands[0]];
+    case OP.OP_IF: return [insn.end, insn.operands[1]];
+    case OP.OP_CASES: {
+      const out = [insn.operands[3]];
+      const table = dispatches[insn.operands[1]];
+      for (const k of Object.keys(table)) { out.push(table[k]); }
+      return out;
+    }
+    default: return insn.end < code.length ? [insn.end] : [];
+  }
+}
+
+/**
+ * Backward liveness over one function's bytecode: returns, for each
+ * instruction start pc, the set of local slots live BEFORE it (live-in).
+ * A suspend site records the pc of the instruction AFTER it, so liveIn(pc)
+ * is exactly what a bailout must materialize (minus the site's own
+ * destination, written by the resume value).
+ */
+export function liveInSets(code: number[], dispatches: Array<Record<string, number>>, funcs: VMFunc[]): Map<number, Set<number>> {
+  const insns: Insn[] = [];
+  const byPc = new Map<number, number>();
+  let pc = 0;
+  while (pc < code.length) {
+    const insn = decode(code, pc);
+    byPc.set(pc, insns.length);
+    insns.push(insn);
+    pc = insn.end;
+  }
+  const n = insns.length;
+  const uses = insns.map((insn) => slotUses(insn, funcs));
+  const succ = insns.map((insn) => successors(insn, code, dispatches).map((t) => byPc.get(t)!));
+  const liveIn: Array<Set<number>> = insns.map(() => new Set<number>());
+  const liveOut: Array<Set<number>> = insns.map(() => new Set<number>());
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let i = n - 1; i >= 0; i--) {
+      const out = new Set<number>();
+      for (const s of succ[i]) { for (const x of liveIn[s]) { out.add(x); } }
+      const inn = new Set<number>(out);
+      for (const w of uses[i].writes) { inn.delete(w); }
+      for (const r of uses[i].reads) { inn.add(r); }
+      if (out.size !== liveOut[i].size || inn.size !== liveIn[i].size) {
+        changed = true;
+      } else {
+        for (const x of inn) { if (!liveIn[i].has(x)) { changed = true; break; } }
+      }
+      liveOut[i] = out;
+      liveIn[i] = inn;
+    }
+  }
+  const result = new Map<number, Set<number>>();
+  for (let i = 0; i < n; i++) { result.set(insns[i].pc, liveIn[i]); }
+  return result;
 }
 
 /** Decode the instruction at pc. */

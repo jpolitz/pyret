@@ -52,6 +52,7 @@ import { INLINE_MARKER_BASE } from '../optimize-anf';
 import { InternalCompilerError } from '../shared';
 import * as OP from './opcodes';
 import { VMProgram, VMFunc } from './opcodes';
+import { liveInSets, disassembleFunc } from './disasm';
 
 type Loc = SL.Loc;
 
@@ -105,10 +106,20 @@ class FuncCtx {
   upvalMap: Map<string, number> = new Map();
   /** For a ROOT (created from JS): the names of the upvalues, in order. */
   upvalNames: A.Name[] = [];
+  /** The ANF name whose JS variable holds each slot's value (primary
+      binder of the slot, or the alias name for a temp an alias points at).
+      What a bailout from the fast JS form materializes a live slot from. */
+  slotNames: Map<number, A.Name> = new Map();
+  /** Suspend sites, keyed by ANF node (a-app / a-method-app / a-prim-app /
+      a-update lettable, or the ABind of a suspend-class annotation check):
+      the pc AFTER the instruction (where the machine resumes) and the slot
+      the resumed value belongs in (-1 to discard). `live` is filled after
+      the function is complete: the slots the fast form must hand over. */
+  sites: Map<any, SiteInfo> = new Map();
   private freeTemps: number[] = [];
 
   constructor(public parent: FuncCtx | undefined, public name: string, public loc: number,
-    public args: N.ABind[]) {}
+    public args: N.ABind[], public allowTco: boolean) {}
 
   allocSlot(): number { return this.nslots++; }
 
@@ -118,8 +129,14 @@ class FuncCtx {
     if (s === undefined) {
       s = this.allocSlot();
       this.slots.set(k, s);
+      this.slotNames.set(s, id);
     }
     return s;
+  }
+
+  /** Record a suspend site: the instruction just emitted ends at code.length. */
+  site(key: any, dest: number): void {
+    this.sites.set(key, { pc: this.code.length, dest, live: [] });
   }
 
   newTemp(): number {
@@ -131,9 +148,19 @@ class FuncCtx {
   freeTemp(t: number): void { this.freeTemps.push(t); }
 }
 
+export interface SiteInfo {
+  pc: number;
+  dest: number;
+  live: number[];
+}
+
 export interface RootResult {
   idx: number;
   captures: A.Name[];
+  /** Suspend-site table and slot->name map, for the fast JS form's bailouts. */
+  sites: Map<any, SiteInfo>;
+  slotNames: Map<number, A.Name>;
+  arity: number;
 }
 
 export class VMModuleCompiler {
@@ -145,6 +172,15 @@ export class VMModuleCompiler {
       module-field reads); index into the same globals array, after names. */
   globalExprs: Array<{ id: A.Name; name: string; isVar: boolean }> = [];
   thunks: J.JExprT[] = [];
+  /** Every compiled function by its ANF node: a function nested in a
+      bytecode parent is compiled once (via CLOSURE) and found here again
+      when the parent's FAST form reaches the same node (see vmRootExpr). */
+  compiledByNode: Map<N.ALam | N.AMethod, RootResult> = new Map();
+  /** JS-tier lambdas/methods nested in bytecode, by node: the thunk that
+      builds them and its parameter names. The fast form of the enclosing
+      bytecode function reuses the thunk instead of emitting the lambda a
+      second time. */
+  jsThunkByNode: Map<N.ALam | N.AMethod, { idx: number; params: A.Name[] }> = new Map();
   private nameIdx: Map<string, number> = new Map();
   private constIdx: Map<string, number> = new Map();
   private globalIdx: Map<string, number> = new Map();
@@ -249,12 +285,19 @@ export class VMModuleCompiler {
     switch (inParent & 3) {
       case OP.VS_LOCAL: desc = OP.uvLocal(inParent >> 2); break;
       case OP.VS_UPVAL: desc = OP.uvUpval(inParent >> 2); break;
+      case OP.VS_CONST:
+        // A name the parent aliased to a constant: captured anyway, as a
+        // constant upvalue, so this function's fast form (a factory over
+        // exactly the upvalues) sees it as a parameter.
+        desc = OP.uvConst(inParent >> 2); break;
       default:
+        // A global: module-scope JS variable, visible to every fast form.
         ctx.aliases.set(key, inParent);
         return inParent;
     }
     const idx = ctx.upvals.length;
     ctx.upvals.push(desc);
+    ctx.upvalNames.push(id);
     ctx.upvalMap.set(key, idx);
     return OP.vsUpval(idx);
   }
@@ -396,6 +439,7 @@ export class VMModuleCompiler {
     const direct = this.annValueSource(ctx, b.ann);
     if (direct !== undefined) {
       emit(ctx, OP.OP_ANNCHECKV, direct, vs, this.locK(annLoc(b.ann)), step ? 1 : 0);
+      if (step) { ctx.site(b, -1); }
       return;
     }
     // A structural annotation (record/tuple/refinement/dot): the JS emitter
@@ -406,6 +450,7 @@ export class VMModuleCompiler {
     const srcs = [vs, ...params.map((n) => this.idSource(ctx, n))];
     const t = ctx.newTemp();
     emit(ctx, OP.OP_THUNK, t, th, this.locK(annLoc(b.ann)), step ? 1 : 0, srcs.length, ...srcs);
+    if (step) { ctx.site(b, -1); }
     ctx.freeTemp(t);
   }
 
@@ -415,9 +460,21 @@ export class VMModuleCompiler {
       function is JS. Returns the function index and the captures the JS
       side must pass (in order). */
   compileRootFunction(node: N.ALam | N.AMethod): RootResult {
+    const have = this.compiledByNode.get(node);
+    if (have !== undefined) { return have; }
     const isMethod = N.isAMethod(node);
-    const ctx = this.compileFunc(undefined, node.name, node.l, node.args, isMethod, node.body);
-    return { idx: ctx.idx, captures: ctx.ctx.upvalNames };
+    const r = this.compileFunc(undefined, node.name, node.l, node.args, isMethod, node.body);
+    const res: RootResult = { idx: r.idx, captures: r.ctx.upvalNames, sites: r.ctx.sites,
+      slotNames: r.ctx.slotNames, arity: node.args.length };
+    this.compiledByNode.set(node, res);
+    return res;
+  }
+
+  hasFastForm(idx: number): boolean { return this.prog.funcs[idx].ff >= 0; }
+
+  /** Attach a fast JS form (a factory thunk index) to a compiled function. */
+  setFastForm(funcIdx: number, thunk: J.JExprT): void {
+    this.prog.funcs[funcIdx].ff = this.thunkK(thunk);
   }
 
   private compileFunc(
@@ -428,7 +485,10 @@ export class VMModuleCompiler {
     isMethod: boolean,
     body: N.AExpr
   ): { idx: number; ctx: FuncCtx } {
-    const ctx = new FuncCtx(parent, name, this.locK(l), args);
+    // The JS emitter's TCO gate (a formal captured by a nested lambda
+    // forbids the explicit loop) -- mirrored so both forms agree on which
+    // self calls are tail-call-eliminated.
+    const ctx = new FuncCtx(parent, name, this.locK(l), args, !TIER.argUsedInNestedLambda(args, body));
     for (const a of args) { ctx.slotFor(a.id); }
     // Argument annotation contracts, checked left to right at entry.
     this.compileAnnChecks(ctx, args);
@@ -442,7 +502,36 @@ export class VMModuleCompiler {
       u: ctx.upvals,
       c: ctx.code,
       l: ctx.loc,
+      ff: -1,
     };
+    // Liveness for the fast form's bailouts: at each site, the slots live
+    // at the resume pc (minus the site's destination, which the resumed
+    // value fills). Every live slot must have a name (a JS variable holds
+    // it); a nameless live slot is a compiler bug, reported loudly.
+    if (ctx.sites.size > 0) {
+      const live = liveInSets(ctx.code, this.prog.dispatches, this.prog.funcs);
+      for (const [key, info] of ctx.sites) {
+        const set = live.get(info.pc);
+        // pc === code.length only if a site is the very last thing (cannot
+        // be: RET follows); treat a missing entry as empty.
+        const slots: number[] = [];
+        if (set !== undefined) {
+          for (const sl of set) {
+            if (sl === info.dest) { continue; }
+            if (!ctx.slotNames.has(sl)) {
+              const dbg = process.env.PYRET_VM_DEBUG ? '\n' + disassembleFunc(
+                { ...this.prog, funcs: [...this.prog.funcs, fn] }, this.prog.funcs.length) : '';
+              throw new InternalCompilerError('vm-compile: live slot r' + sl + ' at a suspend site in "'
+                + name + '" has no binder name (pc ' + info.pc + ')' + dbg);
+            }
+            slots.push(sl);
+          }
+        }
+        slots.sort((a, b) => a - b);
+        info.live = slots;
+        void key;
+      }
+    }
     const idx = this.prog.funcs.length;
     this.prog.funcs.push(fn);
     return { idx, ctx };
@@ -517,6 +606,11 @@ export class VMModuleCompiler {
             }
             const src = this.valSource(ctx, v);
             ctx.aliases.set(b.id.key(), src);
+            // An alias to a fresh temp (UNBOX/MODREF of a safe-letrec or
+            // module ref): the temp is now known by this name too.
+            if ((src & 3) === OP.VS_LOCAL && !ctx.slotNames.has(src >> 2)) {
+              ctx.slotNames.set(src >> 2, b.id);
+            }
             this.compileAnnCheckAt(ctx, b, src);
             expr = expr.body;
             continue;
@@ -725,18 +819,22 @@ export class VMModuleCompiler {
           emit(ctx, OP.OP_TAILCALL, fsrc, lk, args.length, ...args);
           return false;
         }
-        if (ptc && e.appInfo.isTail && e.appInfo.isRecursive) {
+        // (arityForTco: a zero-arg lambda's compiled arity is 1 -- the
+        // synthetic resumer -- so a zero-arg self call never TCOs; tier.ts.)
+        if (TIER.isTcoSelfApp(e.appInfo, e.args.length, ctx.args.length > 0 ? ctx.args.length : 1, ctx.allowTco, ptc)) {
           // A source-tail SELF call whose continuation is not RETURN: the
           // only thing ANF puts after it is the return-annotation check,
-          // and the reused frame's own epilogue performs that identical
-          // check once at final exit -- matching the JS backend's TCO
-          // `continue`, which skips the per-iteration check. Without this
-          // an annotated tail-recursive loop accumulates a frame per
-          // iteration.
+          // which the base case's exit through the (reused) frame performs
+          // -- matching the JS backend's TCO `continue`, which skips the
+          // per-iteration check. EXACTLY the JS emitter's TCO predicate
+          // (TIER.isTcoSelfApp, incl. allowTco): when JS emits a real call
+          // here, so does the machine, and the site below exists for the
+          // fast form's bailout.
           emit(ctx, OP.OP_TAILCALL, fsrc, lk, args.length, ...args);
           return true;
         }
         emit(ctx, OP.OP_CALL, dest, fsrc, lk, args.length, ...args);
+        ctx.site(e, dest);
         break;
       }
       case 'a-method-app': {
@@ -750,21 +848,26 @@ export class VMModuleCompiler {
           emit(ctx, OP.OP_METHCALL, dest, o, this.nameK(e.meth), this.locK(e.l),
             isFlatMeth ? 1 : 0, this.newCache(OP.IC_WIDTH_METHCALL), args.length, ...args);
         }
+        if (!isFlatMeth) { ctx.site(e, dest); }
         break;
       }
       case 'a-prim-app': {
         const args = this.valSources(ctx, e.args);
         emit(ctx, OP.OP_PRIMAPP, dest, this.nameK(e.f), this.locK(e.l),
           e.appInfo.needsStep ? 1 : 0, args.length, ...args);
+        if (e.appInfo.needsStep) { ctx.site(e, dest); }
         break;
       }
       case 'a-lam': {
         if (this.isVmTier(this.tierOf(e))) {
           const r = this.compileFunc(ctx, e.name, e.l, e.args, false, e.body);
+          this.compiledByNode.set(e, { idx: r.idx, captures: r.ctx.upvalNames, sites: r.ctx.sites,
+            slotNames: r.ctx.slotNames, arity: e.args.length });
           emit(ctx, OP.OP_CLOSURE, dest, r.idx);
         } else {
           const params = this.thunkParams(new Map(N.freevarsL(e) as any));
           const th = this.thunkK(h.thunkForLam(e, letBind, params));
+          this.jsThunkByNode.set(e, { idx: th, params });
           this.emitThunkCall(ctx, dest, th, e.l, false, params);
         }
         break;
@@ -772,10 +875,13 @@ export class VMModuleCompiler {
       case 'a-method': {
         if (this.isVmTier(this.tierOf(e))) {
           const r = this.compileFunc(ctx, e.name, e.l, e.args, true, e.body);
+          this.compiledByNode.set(e, { idx: r.idx, captures: r.ctx.upvalNames, sites: r.ctx.sites,
+            slotNames: r.ctx.slotNames, arity: e.args.length });
           emit(ctx, OP.OP_METHOD, dest, r.idx);
         } else {
           const params = this.thunkParams(new Map(N.freevarsL(e) as any));
           const th = this.thunkK(h.thunkForMethod(e, params));
+          this.jsThunkByNode.set(e, { idx: th, params });
           this.emitThunkCall(ctx, dest, th, e.l, false, params);
         }
         break;
@@ -785,6 +891,7 @@ export class VMModuleCompiler {
         const th = this.thunkK(h.thunkForUpdate(e, params));
         // checkRefAnns may run a user refinement: maybe-thenable.
         this.emitThunkCall(ctx, dest, th, e.l, true, params);
+        ctx.site(e, dest);
         break;
       }
       case 'a-dot': {

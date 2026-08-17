@@ -6576,6 +6576,66 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       return x !== null && typeof x === "object" && typeof x.then === "function";
     }
 
+    // ---- fast forms and bailouts ---------------------------------------------
+    //
+    // A bytecode function may also carry a FAST FORM: the same body as a
+    // plain synchronous JS function (built by a factory thunk over the
+    // closure's upvalues), which is what a call from JS runs. Its suspend
+    // sites -- every place the body could receive a thenable, plus the
+    // fuel check -- do not await; they hand the live values back to the
+    // machine ("bail out"): the machine rebuilds the frame at that site's
+    // pc from the live slots, parks it on the thenable, and interprets the
+    // rest of the activation when it resumes. In the common case nothing
+    // suspends and the fast form runs to completion natively with no
+    // promise, no generator, no state machine anywhere. So the machine is
+    // where suspension lives; native code is where the speed lives; and
+    // the tier verdict is only the STARTING point of the partition, not the
+    // last word.
+    //
+    // A bailout is signalled by returning the VM_BAIL sentinel with the
+    // data parked in vmBailData: unwinding is strictly nested and
+    // synchronous (the innermost bailout is created and immediately returned
+    // to its wrapper), so one global cell suffices and the wrapper's test is
+    // a single pointer compare per return.
+    var VM_BAIL = { $vmBail: true };
+    var vmBailData = null;
+
+    // Called by generated fast forms: R.$vm.bail(mod, idx, pc, dest, thenable, slots, vals).
+    function vmBail(mod, idx, pc, dest, thenable, slots, vals) {
+      vmBailData = { mod: mod, idx: idx, pc: pc, dest: dest, thenable: thenable, slots: slots, vals: vals };
+      return VM_BAIL;
+    }
+
+    // Build the resumption frame from a bailout into frame `f`.
+    function vmMaterialize(f, pvm, d) {
+      var fdef = pvm.f;
+      var locals = [];
+      for (var i = 0; i < fdef.s; i++) { locals.push(undefined); }
+      var slots = d.slots, vals = d.vals;
+      for (var j = 0; j < slots.length; j++) { locals[slots[j]] = vals[j]; }
+      vmSetFrame(f, fdef, pvm.m, pvm.u, locals, -1);
+      f.pc = d.pc;
+    }
+
+    // The wrapper's path when its fast form bailed: a fresh machine state
+    // holding the one materialized frame, parked on the thenable.
+    function vmResumeBailout(pvm, d) {
+      var st = vmNewState();
+      var f = st.frames[0];
+      vmMaterialize(f, pvm, d);
+      st.fp = 0;
+      st.resumeDest = d.dest;
+      if (VM_PROFILE) { vmSuspends++; }
+      return d.thenable.then(function(v) {
+        st.resumeVal = v;
+        return runMachine(st);
+      }, function(e) {
+        vmPushFrames(e, st, 0);
+        vmReleaseState(st);
+        throw e;
+      });
+    }
+
     // ---- the interpreter ----------------------------------------------------
 
     function runMachine(st) {
@@ -6752,6 +6812,29 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
                 if (--vmFuel <= 0) {
                   vmFuel = VM_FUEL_QUANTUM;
                   if (needsPause()) { return vmPause(st, f, fp, ipc); }
+                }
+                if (fp === 0 && pvm.fast !== null) {
+                  // Bottom frame tail-calling a function with a fast form:
+                  // hand off to native code -- this frame is dead (proper
+                  // tail call), and its caller is a JS wrapper that accepts
+                  // a value or a thenable. This is how a loop that bailed
+                  // out mid-iteration gets back to native speed at the next
+                  // iteration. A bailout from the handoff is materialized
+                  // right here into frame 0.
+                  var hargs = new Array(n);
+                  for (var i = 0; i < n; i++) { hargs[i] = rd(code[pc + i], f); }
+                  ans = pvm.fast.apply(null, hargs);
+                  if (ans === VM_BAIL) {
+                    var bd = vmBailData;
+                    vmMaterialize(f, pvm, bd);
+                    if (mod !== f.mod) {
+                      mod = f.mod;
+                      names = mod.names; locs = mod.locs; cache = mod.ic;
+                    }
+                    return vmSuspendOn(st, f, fp, bd.thenable, bd.dest, f.pc);
+                  }
+                  st.fp = -1; vmReleaseState(st);
+                  return ans;
                 }
                 // Frame reuse is safe because ANF bindings are
                 // single-assignment and closures captured their upvalues by
@@ -7255,13 +7338,17 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
 
     var VM_EMPTY_UPVALS = [];
 
-    function vmCaptureUpvals(fdef, locals, upvals) {
+    function vmCaptureUpvals(mod, fdef, locals, upvals) {
       var descs = fdef.u, n = descs.length;
       if (n === 0) { return VM_EMPTY_UPVALS; }
       var out = [];
       for (var i = 0; i < n; i++) {
         var dsc = descs[i];
-        out.push((dsc & 1) ? upvals[dsc >> 1] : locals[dsc >> 1]);
+        switch (dsc & 3) {
+          case 0: out.push(locals[dsc >> 2]); break;
+          case 1: out.push(upvals[dsc >> 2]); break;
+          default: out.push(mod.consts[dsc >> 2]); break;
+        }
       }
       return out;
     }
@@ -7287,10 +7374,58 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     }
 
     // One entry function per arity, so the common cases build the slot
-    // array without an intermediate argument array.
+    // array without an intermediate argument array. With a fast form, the
+    // entry runs it and only enters the machine on a bailout.
     function vmMakeEntry(pvm) {
       var fdef = pvm.f;
       var nslots = fdef.s;
+      var fast = pvm.fast;
+      if (fast !== null) {
+        switch (fdef.a) {
+          case 0: return function() {
+            if (arguments.length !== 0) { return vmEntryArityFail(pvm, arguments); }
+            var r = fast();
+            if (r === VM_BAIL) { return vmResumeBailout(pvm, vmBailData); }
+            return r;
+          };
+          case 1: return function(a0) {
+            if (arguments.length !== 1) { return vmEntryArityFail(pvm, arguments); }
+            var r = fast(a0);
+            if (r === VM_BAIL) { return vmResumeBailout(pvm, vmBailData); }
+            return r;
+          };
+          case 2: return function(a0, a1) {
+            if (arguments.length !== 2) { return vmEntryArityFail(pvm, arguments); }
+            var r = fast(a0, a1);
+            if (r === VM_BAIL) { return vmResumeBailout(pvm, vmBailData); }
+            return r;
+          };
+          case 3: return function(a0, a1, a2) {
+            if (arguments.length !== 3) { return vmEntryArityFail(pvm, arguments); }
+            var r = fast(a0, a1, a2);
+            if (r === VM_BAIL) { return vmResumeBailout(pvm, vmBailData); }
+            return r;
+          };
+          case 4: return function(a0, a1, a2, a3) {
+            if (arguments.length !== 4) { return vmEntryArityFail(pvm, arguments); }
+            var r = fast(a0, a1, a2, a3);
+            if (r === VM_BAIL) { return vmResumeBailout(pvm, vmBailData); }
+            return r;
+          };
+          case 5: return function(a0, a1, a2, a3, a4) {
+            if (arguments.length !== 5) { return vmEntryArityFail(pvm, arguments); }
+            var r = fast(a0, a1, a2, a3, a4);
+            if (r === VM_BAIL) { return vmResumeBailout(pvm, vmBailData); }
+            return r;
+          };
+          default: return function() {
+            if (arguments.length !== fdef.a) { return vmEntryArityFail(pvm, arguments); }
+            var r = fast.apply(null, arguments);
+            if (r === VM_BAIL) { return vmResumeBailout(pvm, vmBailData); }
+            return r;
+          };
+        }
+      }
       switch (fdef.a) {
         case 0: return function() {
           if (arguments.length !== 0) { return vmEntryArityFail(pvm, arguments); }
@@ -7333,13 +7468,31 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       }
     }
 
+    // The closure record every bytecode function value carries: its code,
+    // its by-value upvalues, its module, and its fast form (built by the
+    // factory thunk over the same upvalues) or null.
+    function vmMakePvm(mod, fdef, upvals) {
+      var fast = null;
+      if (fdef.ff >= 0) {
+        var factory = mod.thunks[fdef.ff];
+        switch (upvals.length) {
+          case 0: fast = factory(); break;
+          case 1: fast = factory(upvals[0]); break;
+          case 2: fast = factory(upvals[0], upvals[1]); break;
+          case 3: fast = factory(upvals[0], upvals[1], upvals[2]); break;
+          default: fast = factory.apply(null, upvals);
+        }
+      }
+      return { f: fdef, u: upvals, m: mod, fast: fast };
+    }
+
     function vmMakeClosure(mod, fdef, locals, upvals) {
-      var pvm = { f: fdef, u: vmCaptureUpvals(fdef, locals, upvals), m: mod };
+      var pvm = vmMakePvm(mod, fdef, vmCaptureUpvals(mod, fdef, locals, upvals));
       return new PVMFunction(vmMakeEntry(pvm), fdef.n, pvm);
     }
 
     function vmMakeMethodClosure(mod, fdef, locals, upvals) {
-      var pvm = { f: fdef, u: vmCaptureUpvals(fdef, locals, upvals), m: mod };
+      var pvm = vmMakePvm(mod, fdef, vmCaptureUpvals(mod, fdef, locals, upvals));
       return new PVMMethod(vmMakeEntry(pvm), fdef.n, pvm);
     }
 
@@ -7347,13 +7500,13 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     // the captures array is in the order of the function's upvalue list.
     function vmMkFun(mod, idx, upvals) {
       var fdef = mod.funcs[idx];
-      var pvm = { f: fdef, u: upvals, m: mod };
+      var pvm = vmMakePvm(mod, fdef, upvals);
       return new PVMFunction(vmMakeEntry(pvm), fdef.n, pvm);
     }
 
     function vmMkMeth(mod, idx, upvals) {
       var fdef = mod.funcs[idx];
-      var pvm = { f: fdef, u: upvals, m: mod };
+      var pvm = vmMakePvm(mod, fdef, upvals);
       return new PVMMethod(vmMakeEntry(pvm), fdef.n, pvm);
     }
 
@@ -7361,6 +7514,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       'load': vmLoad,
       'mkFun': vmMkFun,
       'mkMeth': vmMkMeth,
+      'bail': vmBail,
       'FORMAT_VERSION': VM_FORMAT_VERSION,
       'OPCODE_NAMES': VM_OPCODE_NAMES,
     };

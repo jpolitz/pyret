@@ -108,6 +108,8 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Demote TailFlat tier verdicts to Gen (promise backend; disable the sync-with-direct-tail-returns tier, for A/B measurement)')],
     ['no-few-suspend',
       C.flag(C.once, 'Demote FewSuspend tier verdicts to Gen (promise backend; disable the guarded-suspend-site sync tier, for A/B measurement)')],
+    ['no-vm-fast',
+      C.flag(C.once, 'Hybrid machine: interpret every bytecode function from the start instead of running its fast JS form and bailing out to the machine on suspension (for A/B measurement)')],
     ['vm-tiers',
       C.nextValDefault(C.Str, 'none', undefined, C.once, 'Hybrid bytecode machine (promise backend): comma-separated tier verdicts to compile to bytecode instead of JS (gen, few-suspend, tail-flat; or none / nonflat = all three). Default none.')],
     ['collect-times',
@@ -166,6 +168,7 @@ export function main(args: string[]): number {
     const genResidue = r.has('gen-residue');
     const tailFlat = !r.has('no-tail-flat');
     const fewSuspend = !r.has('no-few-suspend');
+    const vmFast = !r.has('no-vm-fast');
     const vmTiersStr: string = r.get('vm-tiers');
     const vmTiers: string[] =
       (vmTiersStr === 'none' || vmTiersStr === '') ? []
@@ -266,6 +269,7 @@ export function main(args: string[]): number {
           tailFlat: tailFlat,
           fewSuspend: fewSuspend,
           vmTiers: vmTiers,
+          vmFast: vmFast,
           stackBackend: stackBackend,
           compiledCache: compiledDir,
           compiledReadOnly: r.has('compiled-read-only-dir') ? r.get('compiled-read-only-dir') : [],
@@ -316,6 +320,7 @@ export function main(args: string[]): number {
         tailFlat: tailFlat,
         fewSuspend: fewSuspend,
         vmTiers: vmTiers,
+        vmFast: vmFast,
         stackBackend: stackBackend,
         compileModule: false,
         displayProgress: displayProgress

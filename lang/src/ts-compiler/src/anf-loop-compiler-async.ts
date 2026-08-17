@@ -890,6 +890,50 @@ function fewSuspendSite(compiler: CompilerVisitor, t: A.Name, callBase: J.JExprT
   return clCons(jVar(t, callBase) as J.JStmt, clCons(guard as J.JStmt, completeStmts));
 }
 
+// --- Gen-fast tier: the fast JS form of a bytecode function -----------------
+//
+// A 'gen-fast' body is a PLAIN SYNC jFun -- the same statements the async
+// emission would produce -- in which every suspend site, instead of
+// awaiting, hands control to the machine when (and only when) a thenable
+// actually arrives:
+//
+//   var t = <call>;
+//   if (R.iT(t)) return R.$vm.bail($BC, idx, pc, dest, t, [slots], [live vals]);
+//   <complete(t)>
+//
+// The machine rebuilds this function's frame at `pc` (the bytecode
+// instruction after this same site) from the live slots, parks it on `t`,
+// and interprets the rest of the activation. Which slots are live, and
+// which JS variable holds each, the bytecode compiler already knows (see
+// vm-compile.ts sites/liveness/slotNames): both forms are compiled from the
+// SAME ANF, so a site's identity is the ANF node itself. A site the
+// bytecode did not record is an InternalCompilerError -- the two forms
+// disagreeing about where suspension can happen is a bug, never something
+// to fall back from.
+function vmBailExpr(compiler: CompilerVisitor, siteKey: any, t: J.JExprT, what: string): J.JExprT {
+  const vf = compiler.vmFast;
+  if (vf === undefined) {
+    throw new InternalCompilerError('gen-fast site outside a fast-form compile (' + what + ')');
+  }
+  const info = vf.sites.get(siteKey);
+  if (info === undefined) {
+    throw new InternalCompilerError('gen-fast: bytecode recorded no suspend site for ' + what);
+  }
+  const slots = jList(false, CL.from_list(info.live.map((sl) => jNum(sl) as J.JExprT)));
+  const vals = jList(false, CL.from_list(info.live.map((sl) => {
+    const n = vf.slotNames.get(sl);
+    if (n === undefined) { throw new InternalCompilerError('gen-fast: live slot r' + sl + ' has no name'); }
+    return jId(jsIdOf(n)) as J.JExprT;
+  })));
+  return jMethod(rtField('$vm'), 'bail', clist<J.JExprT>(
+    jId(VM_PROG_NAME), jNum(vf.idx), jNum(info.pc), jNum(info.dest), t, slots, vals));
+}
+
+function fastSite(compiler: CompilerVisitor, t: A.Name, callBase: J.JExprT, siteKey: any, what: string): CList<J.JStmt> {
+  const guard = jIf1(jIsThenable(t), jBlock1(jReturn(vmBailExpr(compiler, siteKey, jId(t), what))));
+  return clCons(jVar(t, callBase) as J.JStmt, clCons(guard as J.JStmt, compiler.complete(jId(t))));
+}
+
 // The function-exit continuation: nothing remains after the enclosing chain's
 // own statements (every path through a compiled body ends in `return`).
 // Installed (RESET) at EVERY compileFunBody entry -- see the CompilerVisitor
@@ -946,7 +990,7 @@ function fewSuspendAnnCheck(
 // SyntaxError; O7 catches it at compile time). Gen/'async' bodies keep the
 // (harmless) dead check so their output is unchanged.
 function rhsIsTcoContinue(compiler: CompilerVisitor, rhs: N.ALettable): boolean {
-  if ((compiler.fnTier !== 'tail-flat' && compiler.fnTier !== 'few-suspend')
+  if ((compiler.fnTier !== 'tail-flat' && compiler.fnTier !== 'few-suspend' && compiler.fnTier !== 'gen-fast')
     || rhs.$name !== 'a-app' || !compiler.inTcoLoop) {
     return false;
   }
@@ -1293,6 +1337,15 @@ export function annCheckStmts(compiler: CompilerVisitor, b: N.ABind): CList<J.JS
       const ca = compileAnn(b.ann, undefined, compiler);
       const checkCall = rtMethod('_checkAnn',
         clist(compiler.getLoc(annLoc(b.ann)), ca.exp, jId(jsIdOf(b.id))));
+      if (cls === 'suspend' && compiler.fnTier === 'gen-fast') {
+        // Fast form: a suspending check bails (the value is already bound
+        // to b.id; the machine discards the resumed result, dest -1).
+        const t = freshId(compilerName('chk'));
+        return clAppend(ca.otherStmts, clist<J.JStmt>(
+          jVar(t, checkCall),
+          jIf1(jIsThenable(t), jBlock1(jReturn(vmBailExpr(compiler, b, jId(t), 'ann check of ' + b.id.toname())))),
+          jExpr(jAssign(jsIdOf(b.id), jId(t)))));
+      }
       const checked = cls === 'flat' ? checkCall : jAwait(checkCall);
       return clSnoc(ca.otherStmts, jExpr(jAssign(jsIdOf(b.id), checked)));
     }
@@ -1360,7 +1413,7 @@ export function compileAppAsync(compiler: CompilerVisitor, l: Loc, f: N.AVal, ar
       compiler.tokenCell.set('minted', true);
       const token = rtMethod('tailCall', clist<J.JExprT>(fCe.exp, jList(false, compiledArgs)));
       return clAppend(pre, clAppend(fnCheck, clSing(jReturn(token))));
-    } else if (isFlat || ((compiler.fnTier === 'tail-flat' || compiler.fnTier === 'few-suspend') && compiler.tailPos)) {
+    } else if (isFlat || ((compiler.fnTier === 'tail-flat' || compiler.fnTier === 'few-suspend' || compiler.fnTier === 'gen-fast') && compiler.tailPos)) {
       // Flat callee: direct call, no await. Sync tier (TailFlat/FewSuspend),
       // tail position: the callee's result (flat value OR thenable) is
       // RETURNED DIRECTLY -- the Awaitable ABI permits both, the caller's
@@ -1382,6 +1435,12 @@ export function compileAppAsync(compiler: CompilerVisitor, l: Loc, f: N.AVal, ar
       const callBase = app(l, fCe.exp, compiledArgs);
       const t = freshId(compilerName('app'));
       return clAppend(pre, clAppend(fnCheck, fewSuspendSite(compiler, t, callBase)));
+    } else if (compiler.fnTier === 'gen-fast') {
+      // Fast form of a bytecode function: bail out to the machine on a
+      // thenable (see fastSite); the site is the a-app node itself.
+      const callBase = app(l, fCe.exp, compiledArgs);
+      const t = freshId(compilerName('app'));
+      return clAppend(pre, clAppend(fnCheck, fastSite(compiler, t, callBase, compiler.curSiteNode, 'app at ' + l.key())));
     } else {
       // Conditional await (see callAndMaybeAwait): skip the microtask when the
       // callee returned a flat value synchronously; still await real thenables.
@@ -1414,10 +1473,12 @@ export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.
   // direct-dispatch arm and the maybeMethodCall funnel arm below; a missed
   // arm would emit a residual await in a sync body, which the O7 assertion
   // turns into an InternalCompilerError at compile time.
-  const tailDirect = (compiler.fnTier === 'tail-flat' || compiler.fnTier === 'few-suspend') && compiler.tailPos;
+  const tailDirect = (compiler.fnTier === 'tail-flat' || compiler.fnTier === 'few-suspend' || compiler.fnTier === 'gen-fast') && compiler.tailPos;
   // FewSuspend, non-tail non-flat: every method-app shape below funnels into
   // ONE guarded suspend site (fewSuspendSite).
   const fewSusp = compiler.fnTier === 'few-suspend' && !tailDirect && !isFlatMeth;
+  // Gen-fast: likewise one bailout site per method app (fastSite).
+  const genFast = compiler.fnTier === 'gen-fast' && !tailDirect && !isFlatMeth;
   // Direct method dispatch (de-funnelled): `obj.dict["m"].full_meth(obj, args)`
   // instead of `maybeMethodCall(obj, "m", ...)`. Fires when type-flow proved the
   // receiver is a data value on which `m` is a genuine method (node.directMethod),
@@ -1442,6 +1503,9 @@ export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.
     if (fewSusp) {
       // FewSuspend capturing site (direct-dispatch shape).
       return clAppend(pre, clAppend(preDecls, fewSuspendSite(compiler, t, call)));
+    }
+    if (genFast) {
+      return clAppend(pre, clAppend(preDecls, fastSite(compiler, t, call, node, 'method app .' + methname + ' at ' + l.key())));
     }
     return clAppend(pre, clAppend(preDecls, clAppend(callAndMaybeAwait(t, call), compiler.complete(jId(t)))));
   }
@@ -1473,7 +1537,7 @@ export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.
       rtMethod('maybeMethodTail',
         clAppend(clist<J.JExprT>(compiledObj, jStr(methname), compiler.getLoc(l)), compiledArgs)));
     return clAppend(pre, clSing(jReturn(token)));
-  } else if (J.isJId(compiledObj) || fewSusp) {
+  } else if (J.isJId(compiledObj) || fewSusp || genFast) {
     // Funnel arm. FewSuspend NORMALIZES a non-JId receiver to a temp here
     // (the same preDecls pattern as the flat/tail-direct arm above), so the
     // two-armed raw-await fallback below is never reached from a sync tier:
@@ -1496,6 +1560,9 @@ export function compileMethodAppAsync(compiler: CompilerVisitor, l: Loc, obj: N.
     if (fewSusp) {
       // FewSuspend capturing site (funnel shape).
       return clAppend(pre, clAppend(preDecls, fewSuspendSite(compiler, t, call)));
+    }
+    if (genFast) {
+      return clAppend(pre, clAppend(preDecls, fastSite(compiler, t, call, node, 'method app .' + methname + ' at ' + l.key())));
     }
     return clAppend(pre, clAppend(callAndMaybeAwait(t, call), compiler.complete(jId(t))));
   } else {
@@ -1535,6 +1602,10 @@ export function compileUpdateAsync(compiler: CompilerVisitor, l: Loc, obj: N.AVa
     // (always a suspend site in the tier walk); same guarded form.
     const t = freshId(compilerName('upd'));
     return clAppend(pre, fewSuspendSite(compiler, t, call));
+  }
+  if (compiler.fnTier === 'gen-fast') {
+    const t = freshId(compilerName('upd'));
+    return clAppend(pre, fastSite(compiler, t, call, compiler.curSiteNode, 'update at ' + l.key()));
   }
   return clAppend(pre, compiler.complete(jAwait(call)));
 }
@@ -1683,10 +1754,12 @@ export function compileCasesAsync(compiler: CompilerVisitor, casesLoc: Loc, typ:
       theSwitch));
 }
 
-export function compileLettableAsync(compiler: CompilerVisitor, e: N.ALettable): CList<J.JStmt> {
+export function compileLettableAsync(compiler0: CompilerVisitor, e: N.ALettable): CList<J.JStmt> {
   // Compile a lettable in tail-with-completion style: the final value flows to
   // `compiler.complete`. Control-flow lettables push the completion into their
   // sub-expressions so no join point / trampoline case is needed.
+  // Gen-fast: the lettable node is the suspend-site key its emitter needs.
+  const compiler = compiler0.fnTier === 'gen-fast' ? ext(compiler0, { curSiteNode: e }) : compiler0;
   switch (e.$name) {
     case 'a-app':
       return compileAppAsync(compiler, e.l, e._fun, e.args, e.appInfo);
@@ -1705,6 +1778,9 @@ export function compileLettableAsync(compiler: CompilerVisitor, e: N.ALettable):
           // direct return covers only a-app/a-method-app; relaxing that must
           // land together with its emission, or verdict/emission drift).
           return clAppend(argsOtherStmts(argCes), fewSuspendSite(compiler, t, call));
+        }
+        if (compiler.fnTier === 'gen-fast') {
+          return clAppend(argsOtherStmts(argCes), fastSite(compiler, t, call, e, 'prim ' + e.f + ' at ' + e.l.key()));
         }
         return clAppend(argsOtherStmts(argCes), clAppend(callAndMaybeAwait(t, call), compiler.complete(jId(t))));
       }
@@ -1754,7 +1830,7 @@ export function compileFunBody(
   // the CALLERS key their emission on it: 'tail-flat' and 'few-suspend'
   // bodies are sync jFuns (see compileALam / aMethod), 'gen' takes the
   // generator+wrapper emission; the fuel form below keys on it too.
-  tier: TIER.Tier | 'async' = 'async',
+  tier: TIER.Tier | 'async' | 'gen-fast' = 'async',
   // Gen tier: when provided, the arity-check statements are NOT emitted into
   // the body but handed back to the caller, which places them in the sync
   // wrapper function (genFunStmts) -- the check reads `arguments.length`,
@@ -1790,7 +1866,7 @@ export function compileFunBody(
   // of the callee's (maybe-thenable) result IS the O(1) bounce -- tokens are
   // subsumed. Forcing it here (keyed on the verdict tier) leaves tokenCell
   // untouched, so the callers' maker selection stays makeFunction / makeMethod*.
-  const syncTier = tier === 'tail-flat' || tier === 'few-suspend';
+  const syncTier = tier === 'tail-flat' || tier === 'few-suspend' || tier === 'gen-fast';
   const mintsTokens = canMintTokens && !isFlat && !syncTier;
   const localCompiler: CompilerVisitor = ext(compiler, {
     curStep: step,
@@ -1856,8 +1932,25 @@ export function compileFunBody(
   const reEnterArgs: CList<J.JExprT> = noRealArgs
     ? CL.map_list((fa: N.ABind) => jId(fa.id) as J.JExprT, formalArgs)
     : CL.from_list(args.map((a) => jId(jsIdOf(a.id)) as J.JExprT));
+  // Gen-fast: on fuel exhaustion, bail to the machine at pc 0 (function
+  // entry: the arg contracts re-run there, exactly as the sync tiers'
+  // re-entry by name re-runs them) with the CURRENT argument values -- the
+  // explicit-loop TCO reassigns them, so a mid-loop pause resumes the loop's
+  // current iteration. Bytecode slots 0..n-1 are the args in order.
+  const genFastFuel = (): CList<J.JStmt> => {
+    const vf = localCompiler.vmFast;
+    if (vf === undefined) { throw new InternalCompilerError('gen-fast body outside a fast-form compile'); }
+    const slots = noRealArgs ? [] : args.map((_a, i) => jNum(i) as J.JExprT);
+    const vals = noRealArgs ? [] : args.map((a) => jId(jsIdOf(a.id)) as J.JExprT);
+    return clSing<J.JStmt>(jIf1(rtMethod('needsPause', clEmpty),
+      jBlock1(jReturn(jMethod(rtField('$vm'), 'bail', clist<J.JExprT>(
+        jId(VM_PROG_NAME), jNum(vf.idx), jNum(0), jNum(-1), rtMethod('checkPause', clEmpty),
+        jList(false, CL.from_list(slots)), jList(false, CL.from_list(vals))))))));
+  };
   const fuelCheck: CList<J.JStmt> =
     isFlat ? clEmpty
+      : tier === 'gen-fast'
+        ? genFastFuel()
       : syncTier
         ? clSing<J.JStmt>(jIf1(rtMethod('needsPause', clEmpty),
           jBlock1(jReturn(jMethod(rtMethod('checkPause', clEmpty), 'then',
@@ -2779,6 +2872,32 @@ function makeVmHost(compiler: CompilerVisitor): VM.VMHost {
   };
 }
 
+// The fast JS form of a bytecode function: a plain sync jFun over the same
+// ANF (compileFunBody with tier 'gen-fast'), returned by a factory thunk
+// whose parameters are the function's upvalue names -- the machine builds
+// it with the closure's captures (vmMakePvm), so the body's free variables
+// are ordinary JS closure variables. The arity check is the wrapper's
+// (arityOut discarded): the fast form is only ever called with exactly its
+// arity.
+function compileGenFastFun(compiler: CompilerVisitor, node: N.ALam | N.AMethod, isMethod: boolean, allowTco: boolean): J.JExprT {
+  const l = node.l;
+  const step = freshId(compilerName('step'));
+  const temp = freshId(compilerName('temp_fast'));
+  const args = node.args;
+  const len = args.length;
+  const effectiveArgs = (!isMethod && len === 0) ? [new N.ABind(l, compiler.resumer, A.aBlank)] : args;
+  const tokenCell: Map<string, boolean> = new Map();
+  const arityOut = { stmts: clEmpty as CList<J.JStmt> };
+  const body = compileFunBody(l, step, temp, ext(compiler, { allowTco: true, tokenCell: tokenCell }),
+    effectiveArgs, len, node.body, true, false, isMethod, false, 'gen-fast', arityOut, allowTco);
+  assertNoResidualAwaits(body, 'gen-fast', l);
+  if (tokenCell.has('minted')) {
+    throw new InternalCompilerError('gen-fast "' + node.name + '" at ' + l.key() + ' minted a tail token');
+  }
+  const funArgs = CL.map_list((arg: N.ABind) => formalShadowName(arg.id), effectiveArgs);
+  return jFun(J.nextJFunId(), makeFunName(compiler, l), funArgs, body);
+}
+
 function vmRootExpr(compiler: CompilerVisitor, node: N.ALam | N.AMethod, isMethod: boolean): DAG.CExp {
   const vm = compiler.vm as VM.VMModuleCompiler;
   const prevHost = vm.host;
@@ -2788,6 +2907,14 @@ function vmRootExpr(compiler: CompilerVisitor, node: N.ALam | N.AMethod, isMetho
     root = vm.compileRootFunction(node);
   } finally {
     vm.host = prevHost;
+  }
+  if ((compiler.options as any).vmFast && !vm.hasFastForm(root.idx)) {
+    const verdict = TIER.tierVerdictFor(compiler.tierMap as TIER.TierMap, node, node.l.key());
+    const fastThunk = vmThunkFun(compiler, root.captures, (c) => {
+      const cf = ext(c, { vmFast: { idx: root.idx, sites: root.sites, slotNames: root.slotNames } });
+      return clSing<J.JStmt>(jReturn(compileGenFastFun(cf, node, isMethod, verdict.allowTco)));
+    });
+    vm.setFastForm(root.idx, fastThunk);
   }
   const caps = jList(false, CL.from_list(root.captures.map((n) => jId(jsIdOf(n)) as J.JExprT)));
   return cExp(
@@ -2851,6 +2978,18 @@ export function compileALam(
   // captures (by value; see vm/vm-compile.ts).
   if (compiler.vm !== undefined && verdict !== undefined && compiler.vm.isVmTier(verdict.tier)) {
     return vmRootExpr(compiler, node, false);
+  }
+  // A JS-tier lambda nested in a bytecode function, met again while
+  // compiling that function's FAST form: the bytecode compile already
+  // emitted it as a thunk over its free variables -- build it from the
+  // thunk (by-value capture is what the tier-boundary boxing rule already
+  // guarantees sound) rather than emitting the whole lambda a second time.
+  if (compiler.vm !== undefined && compiler.fnTier === 'gen-fast') {
+    const th = compiler.vm.jsThunkByNode.get(node);
+    if (th !== undefined) {
+      return cExp(jApp(jBracket(jDot(jId(VM_PROG_NAME), 'thunks'), jNum(th.idx)),
+        CL.from_list(th.params.map((n) => jId(jsIdOf(n)) as J.JExprT))), clEmpty);
+    }
   }
   const newStep = freshId(compilerName('step'));
   const temp = freshId(compilerName('temp_lam'));
@@ -3185,6 +3324,14 @@ export class CompilerVisitor {
   // options.vmTiers is non-empty and a tier map exists; installed by
   // compile-module. compileALam / aMethod route VM-tier functions to it.
   vm: VM.VMModuleCompiler | undefined = undefined;
+  // While compiling the FAST JS FORM of a bytecode function ('gen-fast'
+  // emission): its bytecode index, suspend-site table and slot->name map,
+  // so each site can emit the bailout that hands its live values to the
+  // machine (see fastSite). Installed by vmRootExpr for that compile only.
+  vmFast: { idx: number; sites: Map<any, VM.SiteInfo>; slotNames: Map<number, A.Name> } | undefined = undefined;
+  // The lettable node whose site is being emitted (gen-fast only): the key
+  // into vmFast.sites. Installed by compileLettableAsync.
+  curSiteNode: any = undefined;
   bindings!: Map<string, CS.ValueBind>;
   typeBindings!: Map<string, CS.TypeBind>;
   moduleBindings!: Map<string, CS.ModuleBind>;
@@ -3223,7 +3370,7 @@ export class CompilerVisitor {
   // Readers: the sync-tier tail-direct-return arms (compileAppAsync /
   // compileMethodAppAsync) and the dead-ann-check elision after a TCO
   // `continue` (compileAexprAsync).
-  fnTier: TIER.Tier | 'async' = 'async';
+  fnTier: TIER.Tier | 'async' | 'gen-fast' = 'async';
   // FewSuspend tier: the memoized CONTINUATION THUNK -- returns the
   // statements from the current chain position to FUNCTION EXIT, maintained
   // by compileAexprAsync's continuation-thunk links and consumed by
@@ -3508,6 +3655,13 @@ export class CompilerVisitor {
     }
     if (this.vm !== undefined && verdict !== undefined && this.vm.isVmTier(verdict.tier)) {
       return vmRootExpr(this, node, true);
+    }
+    if (this.vm !== undefined && this.fnTier === 'gen-fast') {
+      const th = this.vm.jsThunkByNode.get(node);
+      if (th !== undefined) {
+        return cExp(jApp(jBracket(jDot(jId(VM_PROG_NAME), 'thunks'), jNum(th.idx)),
+          CL.from_list(th.params.map((n) => jId(jsIdOf(n)) as J.JExprT))), clEmpty);
+      }
     }
     const funArgs = CL.map_list((a: N.ABind) => formalShadowName(a.id), node.args);
     const tokenCell: Map<string, boolean> = new Map();

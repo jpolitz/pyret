@@ -68,11 +68,15 @@ export const vsConst = (i: number): number => (i << 2) | VS_CONST;
 export const vsGlobal = (i: number): number => (i << 2) | VS_GLOBAL;
 
 // ---------- upvalue descriptors (CLOSURE/METHOD inside bytecode) ----------
-// (index << 1) | 1 captures the enclosing frame's upvalue `index`;
-// (index << 1) | 0 captures the enclosing frame's local slot `index`.
+// (index << 2) | 0 captures the enclosing frame's local slot `index`;
+// (index << 2) | 1 captures the enclosing frame's upvalue `index`;
+// (index << 2) | 2 captures program constant `index` -- a name the parent
+// aliased to a constant, which the nested function's FAST form still needs
+// as a plain parameter (its factory receives the upvalues, nothing else).
 
-export const uvLocal = (i: number): number => i << 1;
-export const uvUpval = (i: number): number => (i << 1) | 1;
+export const uvLocal = (i: number): number => i << 2;
+export const uvUpval = (i: number): number => (i << 2) | 1;
+export const uvConst = (i: number): number => (i << 2) | 2;
 
 // ---------- constant-pool descriptors ----------
 
@@ -187,6 +191,10 @@ export interface VMFunc {
   c: number[];
   /** Loc index (into the module's L table) of the function itself. */
   l: number;
+  /** Fast JS form: index of the factory thunk (called with the upvalues
+      as arguments, returns the plain JS function), or -1 when the
+      function is interpreted from the start. */
+  ff: number;
 }
 
 export interface VMProgram {
