@@ -138,3 +138,54 @@ annotations) to `pred(val)` -- exactly what its five-call path computed
 for that case. Landed after the stage-0 baseline; every table above has it
 on both sides (it moved vec-methods p from ~1.5s to ~1.0s and spell p from
 2.37s to 2.13s).
+
+## Engine portability (JSC): the same table under bun 1.3.14
+
+\`NODE=bun tests/async-opt/run-hybrid-table.sh 2\` (results/table-stage2-bun.txt):
+geomean h/p **0.951**, parity 16/16 -- the same shape as under V8 (spell
+0.80, orbital-compute 0.74, boids-compute 0.72; car-compute 1.08, seam
+1.06). Both flavors run unmodified under bun.
+
+## Tier boundary experiment: `--vm-tiers nonflat` (TailFlat + FewSuspend on the machine too)
+
+results/table-nonflat-vs-gen.txt (N=2, both hybrid; p = gen, h = nonflat):
+geomean **1.021**, parity 16/16 -- worse. The sync tiers' own emissions
+(direct tail returns; guarded resume closures) are already at native
+speed, and putting them on the machine only adds per-call wrappers and
+bailout sites (plus bytecode to ship). Gen is the boundary; `nonflat`
+stays available as a knob. (`make vm-test` passes under `VM_TIERS=nonflat`.)
+
+## code.pyret.org: the ts-hybrid flavor and the browser suite
+
+`make web-ts-hybrid` in code.pyret.org builds `cpo-main-ts-hybrid.jarr` --
+the CPO trove compiled BY THE TS COMPILER with `--stack-backend promise
+--vm-tiers gen` (unlike ts-promise, whose bundle phaseA builds), plus the
+same in-browser compiler bundle; `?compiler=ts-hybrid` selects it and
+cpo-main-ts.js compiles the user's program the same way.
+
+Browser suite (`browser-test/`, the Playwright port of code.pyret.org's
+mocha assertions on the real /editor page; Chrome for Testing 149):
+
+| flavor | pass | fail | failing set |
+|---|---:|---:|---|
+| ts-promise | 237 | 5 | url-imports (spec file absent on this branch), big-programs x2 (240s timeouts), stop-during-load, rapid-rerun, effective-ids (editor contracts this branch's editor lacks) |
+| ts-hybrid | 237 | 5 | the SAME five |
+
+(results/browser-cpo-ts-*.txt.) The 237 mirrored upstream assertions --
+check blocks, errors, images, tables, charts, type-check, REPL -- pass on
+the machine-backed editor exactly as on the promise one.
+
+CPO bundle sizes (built by the same TS compiler; min = uglify --compress):
+
+| bundle | raw | gz | min+gz |
+|---|---:|---:|---:|
+| TS compiler, promise all-JS (`--vm-tiers none`) | 20.35 MB | 2.96 MB | 2.70 MB |
+| TS compiler, hybrid default (`--vm-tiers gen --vm-fast all`) | 20.39 MB | 3.10 MB | 2.84 MB |
+| (reference) phaseA-built ts-promise bundle shipped today | 15.85 MB | 2.50 MB | 2.28 MB |
+
+On the CPO trove the default hybrid is size-neutral raw and +5% gzipped
+(bytecode JSON gzips worse than the JS it sits next to; the CLI trove came
+out 89%/96%). The bytecode-only configuration is the size play (about half),
+at stage-1 speed. Note the TS-compiler-built bundles are larger than the
+phaseA-built one because of the TS optimizer's inliner, independent of the
+machine.

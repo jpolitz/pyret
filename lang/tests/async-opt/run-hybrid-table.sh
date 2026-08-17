@@ -3,11 +3,12 @@
 # every bench's .ts.p.jarr and .ts.h.jarr back to back (interleaved), so
 # box noise hits both sides equally; reports median/min LOOP-seconds per
 # side, the ratio h/p of medians, output parity, and the geomean of ratios.
-# Usage: tests/async-opt/run-hybrid-table.sh [N] [bench...]   (from lang/)
+# Usage: tests/async-opt/run-hybrid-table.sh [N] [bench...]   (from lang/; NODE=bun for JSC;
+#   P_JARR / H_JARR = jarr path patterns with %b for the bench name, to pair any two builds)
 set -u
 cd "$(dirname "$0")/../.."
 N="${1:-3}"; shift || true
-NODE="node --max-old-space-size=6144"
+NODE="${NODE:-node --max-old-space-size=6144}"
 if [ $# -gt 0 ]; then BENCHES="$*"; else
 BENCHES="bench-spell bench-car-compute bench-car-render bench-lander bench-orbital-compute bench-orbital-ems bench-orbital-render bench-boids-compute bench-boids-compute-data bench-boids-raster bench-vec-methods bench-matrix bench-dtree bench-kmeans bench-plagiarism bench-seam"
 fi
@@ -19,7 +20,8 @@ declare -A PT HT PO HO
 for b in $BENCHES; do PT[$b]=""; HT[$b]=""; done
 for i in $(seq 1 "$N"); do
   for b in $BENCHES; do
-    pj="tests/async-opt/$b.ts.p.jarr"; hj="tests/async-opt/$b.ts.h.jarr"
+    pj="${P_JARR:-tests/async-opt/%b.ts.p.jarr}"; pj="${pj//%b/$b}"
+    hj="${H_JARR:-tests/async-opt/%b.ts.h.jarr}"; hj="${hj//%b/$b}"
     if [ $((i % 2)) -eq 1 ]; then order="p h"; else order="h p"; fi
     for side in $order; do
       if [ $side = p ]; then out=$($NODE "$pj" 2>/dev/null); PO[$b]=$(printf '%s\n' "$out" | result_of); PT[$b]="${PT[$b]} $(printf '%s\n' "$out" | loopsec_of)";
