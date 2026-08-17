@@ -114,12 +114,13 @@ stack and consult the fuel once per `VM_FUEL_QUANTUM` calls (time-slicing
 for the Stop button / event loop).
 
 **Bailouts.** A fast form's suspend site is `t = <call>; if (R.iT(t))
-return R.$vm.bail($BC, idx, pc, dest, t, [slots], [vals])` where `pc` is
-the bytecode instruction after the *same* site (both forms are compiled
-from the same ANF; the site's identity is the ANF node), `dest` the slot the
-resumed value belongs in, and `[slots]/[vals]` the slots live at `pc`
-(bytecode liveness, `disasm.liveInSets`) with the JS variables that hold
-them (`FuncCtx.slotNames`). A site the bytecode did not record, or a live
+return R.$vm.bail($BC, site, t, [vals])` where the program's site table
+entry `sites[site] = [funcIdx, pc, dest, [slots]]` names the bytecode
+instruction after the *same* site (both forms are compiled from the same
+ANF; the site's identity is the ANF node), the slot the resumed value
+belongs in, and the slots live at `pc` (bytecode liveness,
+`disasm.liveInSets`); `[vals]` are the JS variables holding those slots
+(`FuncCtx.slotNames`). A site the bytecode did not record, or a live
 slot without a name, is an `InternalCompilerError` -- never a fallback. The
 fuel check bails at pc 0 with the current arguments (the explicit TCO loop
 reassigns them), which re-runs the argument contracts exactly as the sync

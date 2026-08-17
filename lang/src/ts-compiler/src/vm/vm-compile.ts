@@ -197,6 +197,7 @@ export class VMModuleCompiler {
       dispatches: [],
       ncaches: 0,
       nthunks: 0,
+      sites: [],
     };
     for (const n of externals) {
       const k = n.key();
@@ -477,6 +478,18 @@ export class VMModuleCompiler {
   }
 
   hasFastForm(idx: number): boolean { return this.prog.funcs[idx].ff >= 0; }
+
+  private siteIdx: Map<string, number> = new Map();
+  /** Intern a bailout site (function, resume pc, dest, live slots) -> index. */
+  siteK(funcIdx: number, pc: number, dest: number, live: number[]): number {
+    const key = funcIdx + ':' + pc + ':' + dest + ':' + live.join(',');
+    const have = this.siteIdx.get(key);
+    if (have !== undefined) { return have; }
+    const k = this.prog.sites.length;
+    this.prog.sites.push([funcIdx, pc, dest, live]);
+    this.siteIdx.set(key, k);
+    return k;
+  }
 
   /** Attach a fast JS form (a factory thunk index) to a compiled function. */
   setFastForm(funcIdx: number, thunk: J.JExprT): void {

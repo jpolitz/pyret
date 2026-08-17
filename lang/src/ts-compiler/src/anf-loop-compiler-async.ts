@@ -898,7 +898,7 @@ function fewSuspendSite(compiler: CompilerVisitor, t: A.Name, callBase: J.JExprT
 // actually arrives:
 //
 //   var t = <call>;
-//   if (R.iT(t)) return R.$vm.bail($BC, idx, pc, dest, t, [slots], [live vals]);
+//   if (R.iT(t)) return R.$vm.bail($BC, site, t, [live vals]);
 //   <complete(t)>
 //
 // The machine rebuilds this function's frame at `pc` (the bytecode
@@ -919,14 +919,13 @@ function vmBailExpr(compiler: CompilerVisitor, siteKey: any, t: J.JExprT, what: 
   if (info === undefined) {
     throw new InternalCompilerError('gen-fast: bytecode recorded no suspend site for ' + what);
   }
-  const slots = jList(false, CL.from_list(info.live.map((sl) => jNum(sl) as J.JExprT)));
   const vals = jList(false, CL.from_list(info.live.map((sl) => {
     const n = vf.slotNames.get(sl);
     if (n === undefined) { throw new InternalCompilerError('gen-fast: live slot r' + sl + ' has no name'); }
     return jId(jsIdOf(n)) as J.JExprT;
   })));
-  return jMethod(rtField('$vm'), 'bail', clist<J.JExprT>(
-    jId(VM_PROG_NAME), jNum(vf.idx), jNum(info.pc), jNum(info.dest), t, slots, vals));
+  const k = (compiler.vm as VM.VMModuleCompiler).siteK(vf.idx, info.pc, info.dest, info.live);
+  return jMethod(rtField('$vm'), 'bail', clist<J.JExprT>(jId(VM_PROG_NAME), jNum(k), t, vals));
 }
 
 function fastSite(compiler: CompilerVisitor, t: A.Name, callBase: J.JExprT, siteKey: any, what: string): CList<J.JStmt> {
@@ -1940,12 +1939,13 @@ export function compileFunBody(
   const genFastFuel = (): CList<J.JStmt> => {
     const vf = localCompiler.vmFast;
     if (vf === undefined) { throw new InternalCompilerError('gen-fast body outside a fast-form compile'); }
-    const slots = noRealArgs ? [] : args.map((_a, i) => jNum(i) as J.JExprT);
+    const slots = noRealArgs ? [] : args.map((_a, i) => i);
     const vals = noRealArgs ? [] : args.map((a) => jId(jsIdOf(a.id)) as J.JExprT);
+    const k = (localCompiler.vm as VM.VMModuleCompiler).siteK(vf.idx, 0, -1, slots);
     return clSing<J.JStmt>(jIf1(rtMethod('needsPause', clEmpty),
       jBlock1(jReturn(jMethod(rtField('$vm'), 'bail', clist<J.JExprT>(
-        jId(VM_PROG_NAME), jNum(vf.idx), jNum(0), jNum(-1), rtMethod('checkPause', clEmpty),
-        jList(false, CL.from_list(slots)), jList(false, CL.from_list(vals))))))));
+        jId(VM_PROG_NAME), jNum(k), rtMethod('checkPause', clEmpty),
+        jList(false, CL.from_list(vals))))))));
   };
   const fuelCheck: CList<J.JStmt> =
     isFlat ? clEmpty

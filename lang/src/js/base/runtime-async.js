@@ -6299,7 +6299,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     // =====================================================================
 
     // Must match src/ts-compiler/src/vm/opcodes.ts.
-    var VM_FORMAT_VERSION = 2;
+    var VM_FORMAT_VERSION = 3;
 
     var VM_OPCODE_NAMES = [
       'MOVE', 'BOX', 'UNBOX', 'SETVAR', 'LETREC', 'MODREF', 'MODVARREF', 'ARRSET',
@@ -6676,9 +6676,11 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     var VM_BAIL = { $vmBail: true };
     var vmBailData = null;
 
-    // Called by generated fast forms: R.$vm.bail(mod, idx, pc, dest, thenable, slots, vals).
-    function vmBail(mod, idx, pc, dest, thenable, slots, vals) {
-      vmBailData = { mod: mod, idx: idx, pc: pc, dest: dest, thenable: thenable, slots: slots, vals: vals };
+    // Called by generated fast forms: R.$vm.bail(mod, siteIdx, thenable, vals),
+    // where the program's site table holds [funcIdx, resumePc, destSlot, liveSlots].
+    function vmBail(mod, siteIdx, thenable, vals) {
+      var site = mod.prog.sites[siteIdx];
+      vmBailData = { mod: mod, idx: site[0], pc: site[1], dest: site[2], thenable: thenable, slots: site[3], vals: vals };
       return VM_BAIL;
     }
 

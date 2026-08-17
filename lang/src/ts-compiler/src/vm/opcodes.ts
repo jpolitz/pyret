@@ -53,7 +53,7 @@
 
 // Bump when the bytecode format or opcode numbering changes; compiled
 // modules cached from an older machine are then rejected on load.
-export const FORMAT_VERSION = 2;
+export const FORMAT_VERSION = 3;
 
 // ---------- value sources ----------
 
@@ -214,4 +214,7 @@ export interface VMProgram {
   ncaches: number;
   /** Number of JS thunks; the loader receives them as an array. */
   nthunks: number;
+  /** Bailout sites of the fast forms: [funcIdx, resumePc, destSlot, [live slots]].
+      A fast form's suspend site says `R.$vm.bail($BC, siteIdx, t, [live vals])`. */
+  sites: Array<[number, number, number, number[]]>;
 }
