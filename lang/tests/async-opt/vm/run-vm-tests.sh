@@ -53,6 +53,17 @@ for src in $PROGS; do
   ok "$base"
 done
 
+# The step hook: pause/resume of a bytecode stack from outside the program
+# (tests/async-opt/vm/step-hook-test.js), on a --vm-fast none build so the
+# deep Gen recursion is interpreted from its first instruction.
+sh_src="tests/async-opt/tier/tier-08-gen-deep.arr"; sh_j="$WORK/jarr/step-hook.jarr"
+if $PY --compiled-dir "$WORK/hn" --vm-tiers "$VM_TIERS" --vm-fast none --outfile "$sh_j" --build-runnable "$sh_src" >"$sh_j.build" 2>&1 \
+   && $NODE tests/async-opt/vm/step-hook-test.js "$sh_j" 200000 >"$sh_j.out" 2>&1; then
+  ok "step hook ($(tail -1 "$sh_j.out" | sed 's/ => PASS//' | cut -c1-70)...)"
+else
+  bad "step hook"; tail -3 "$sh_j.out" | sed 's/^/    /'
+fi
+
 # structural verification of every hybrid module built above
 if $NODE src/ts-compiler/tests/vm-tools.js verify "$WORK/h" >"$WORK/verify.out" 2>&1; then
   ok "bytecode verifier ($(tail -1 "$WORK/verify.out"))"

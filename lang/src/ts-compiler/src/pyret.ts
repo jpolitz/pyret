@@ -108,8 +108,8 @@ export function main(args: string[]): number {
       C.flag(C.once, 'Demote TailFlat tier verdicts to Gen (promise backend; disable the sync-with-direct-tail-returns tier, for A/B measurement)')],
     ['no-few-suspend',
       C.flag(C.once, 'Demote FewSuspend tier verdicts to Gen (promise backend; disable the guarded-suspend-site sync tier, for A/B measurement)')],
-    ['no-vm-fast',
-      C.flag(C.once, 'Hybrid machine: interpret every bytecode function from the start instead of running its fast JS form and bailing out to the machine on suspension (for A/B measurement)')],
+    ['vm-fast',
+      C.nextValDefault(C.Str, 'all', undefined, C.once, 'Hybrid machine: which bytecode functions also get a fast JS form (all, loops, none). none = interpret every bytecode function from the start (smallest artifacts; for A/B measurement)')],
     ['vm-tiers',
       C.nextValDefault(C.Str, 'none', undefined, C.once, 'Hybrid bytecode machine (promise backend): comma-separated tier verdicts to compile to bytecode instead of JS (gen, few-suspend, tail-flat; or none / nonflat = all three). Default none.')],
     ['collect-times',
@@ -168,7 +168,10 @@ export function main(args: string[]): number {
     const genResidue = r.has('gen-residue');
     const tailFlat = !r.has('no-tail-flat');
     const fewSuspend = !r.has('no-few-suspend');
-    const vmFast = !r.has('no-vm-fast');
+    const vmFastStr: string = r.get('vm-fast');
+    const vmFast: 'all' | 'loops' | 'none' =
+      vmFastStr === 'all' ? 'all' : vmFastStr === 'loops' ? 'loops' : vmFastStr === 'none' ? 'none'
+      : raise('Unknown vm-fast mode: ' + vmFastStr + ' (expected all, loops, none)');
     const vmTiersStr: string = r.get('vm-tiers');
     const vmTiers: string[] =
       (vmTiersStr === 'none' || vmTiersStr === '') ? []

@@ -6024,12 +6024,20 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         }, function(rendered) {
           if (rendered[0] !== "\"\"")
             prologue += " " + rendered[0];
-          prologue += " (at " + thisRuntime.getField(makeSrcloc(loc), "format").app(true) + ")";
-          theOutsideWorld.stdout(prologue + "\n");
-          for (var i = 1; i < rendered.length; i++) {
-            theOutsideWorld.stdout("  " + names[i - 1] + ": " + rendered[i] + "\n");
-          }
-          return thisRuntime.nothing;
+          // `format` is a Pyret method (srcloc.arr): maybe-promise under the
+          // async backend, so it must be safeCall'd like the toreprs above
+          // -- concatenating its result directly printed "[object Promise]"
+          // whenever it was compiled async.
+          return thisRuntime.safeCall(function() {
+            return thisRuntime.getField(makeSrcloc(loc), "format").app(true);
+          }, function(locStr) {
+            prologue += " (at " + locStr + ")";
+            theOutsideWorld.stdout(prologue + "\n");
+            for (var i = 1; i < rendered.length; i++) {
+              theOutsideWorld.stdout("  " + names[i - 1] + ": " + rendered[i] + "\n");
+            }
+            return thisRuntime.nothing;
+          }, "spy-loc");
         }, "spy");
       }
     }
@@ -6344,13 +6352,62 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     var IC_EMPTY = {};
     var vmHasOwn = Object.prototype.hasOwnProperty;
 
+    // ---- the step hook -------------------------------------------------------
+    // Because a bytecode activation's continuation is a heap object, the
+    // machine can be paused and inspected at ANY instruction boundary from
+    // outside the program: install a hook (R.$vm.setHook, or the global
+    // PYRET_VM_HOOK before the runtime loads) and it is called before every
+    // interpreted instruction with the machine's state; returning a thenable
+    // parks the whole bytecode stack on it and resumes at the same
+    // instruction when it settles. Nothing in a program can observe the pause
+    // (it is the same suspension a fuel pause is). This is the stepper the
+    // design promises: everything that can suspend is bytecode, and bytecode
+    // can always be stopped and looked at. (Fast forms run native; under
+    // --vm-fast none every Gen-tier function is steppable from its first
+    // instruction.) The cost when no hook is installed is one global test
+    // per instruction.
+    var vmHook = null;
+    if (typeof globalThis !== "undefined" && typeof globalThis.PYRET_VM_HOOK === "function") {
+      vmHook = globalThis.PYRET_VM_HOOK;
+    }
+    function vmSetHook(fn) { vmHook = (typeof fn === "function") ? fn : null; }
+
+    // What a hook sees: the top frame (function name, its source location,
+    // the pc and opcode about to execute, the pending call-site location, the
+    // live slot array by reference) and the depth; `frames()` materializes
+    // the whole stack, innermost last, on demand -- lazily, so a hook that
+    // only counts costs O(1) per instruction even 200k frames deep.
+    function vmFrameInfo(fr, pc) {
+      return {
+        name: fr.fdef.n,
+        loc: fr.mod.locs[fr.fdef.l],
+        pc: pc,
+        op: VM_OPCODE_NAMES[fr.code[pc]],
+        callLoc: fr.mod.locs[fr.locK],
+        locals: fr.locals,
+        upvals: fr.upvals
+      };
+    }
+    function vmInspect(st, fp, pc) {
+      var top = vmFrameInfo(st.frames[fp], pc);
+      top.depth = fp + 1;
+      top.frames = function() {
+        var out = [];
+        for (var i = 0; i <= fp; i++) {
+          out.push(vmFrameInfo(st.frames[i], (i === fp) ? pc : st.frames[i].pc));
+        }
+        return out;
+      };
+      return top;
+    }
+
     // Dynamic opcode profile (node only): PYRET_VM_PROFILE=1 counts every
     // executed instruction and prints the histogram at exit. Counting
     // executed instructions -- not emitted ones -- is what says where the
     // machine spends its dispatch.
     var VM_PROFILE = (typeof process !== "undefined" && process.env && process.env.PYRET_VM_PROFILE === "1");
     var vmCounts = [];
-    var vmEntries = 0, vmSuspends = 0, vmPauses = 0, vmJsCalls = 0;
+    var vmEntries = 0, vmSuspends = 0, vmPauses = 0, vmJsCalls = 0, vmClosures = 0, vmFastCalls = 0;
     if (VM_PROFILE) {
       for (var vpi = 0; vpi < 64; vpi++) { vmCounts.push(0); }
       process.on("exit", function() {
@@ -6362,7 +6419,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         }
         rows.sort(function(a, b) { return b[1] - a[1]; });
         var out = "[vm-profile] " + total + " instructions, " + vmEntries + " JS->bytecode entries, "
-          + vmJsCalls + " bytecode->JS calls, " + vmSuspends + " suspensions, " + vmPauses + " pauses\n";
+          + vmJsCalls + " bytecode->JS calls, " + vmSuspends + " suspensions, " + vmPauses + " pauses, "
+          + vmClosures + " closures built, " + vmFastCalls + " fast-form calls\n";
         for (var i = 0; i < rows.length; i++) {
           out += "[vm-profile] " + (rows[i][0] + "           ").slice(0, 11) + String(rows[i][1]).padStart(12)
             + "  " + (100 * rows[i][1] / total).toFixed(1) + "%\n";
@@ -6491,6 +6549,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       // index in the top frame, or -1 to discard it.
       this.resumeDest = -1;
       this.resumeVal = undefined;
+      // Step hook: the next instruction was already presented to the hook.
+      this.hookSkip = false;
     }
 
     // States are pooled: a call from JS into bytecode takes one, and hands
@@ -6503,6 +6563,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       st.fp = 0;
       st.resumeDest = -1;
       st.resumeVal = undefined;
+      st.hookSkip = false;
       return st;
     }
     function vmReleaseState(st) {
@@ -6667,6 +6728,18 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
 
       try {
         for (;;) {
+          if (vmHook !== null) {
+            // The instruction the hook paused on is re-executed on resume;
+            // hookSkip keeps it from being asked twice about the same one.
+            if (st.hookSkip) { st.hookSkip = false; }
+            else {
+              var hr = vmHook(vmInspect(st, fp, pc), st);
+              if (vmIsThenable(hr)) {
+                st.hookSkip = true;
+                return vmSuspendOn(st, f, fp, hr, -1, pc);
+              }
+            }
+          }
           var op = code[pc++];
           if (VM_PROFILE) { vmCounts[op]++; }
           switch (op) {
@@ -7427,36 +7500,42 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         switch (fdef.a) {
           case 0: return function() {
             if (arguments.length !== 0) { return vmEntryArityFail(pvm, arguments); }
+            if (VM_PROFILE) { vmFastCalls++; }
             var r = fast();
             if (r === VM_BAIL) { return vmResumeBailout(pvm, vmBailData); }
             return r;
           };
           case 1: return function(a0) {
             if (arguments.length !== 1) { return vmEntryArityFail(pvm, arguments); }
+            if (VM_PROFILE) { vmFastCalls++; }
             var r = fast(a0);
             if (r === VM_BAIL) { return vmResumeBailout(pvm, vmBailData); }
             return r;
           };
           case 2: return function(a0, a1) {
             if (arguments.length !== 2) { return vmEntryArityFail(pvm, arguments); }
+            if (VM_PROFILE) { vmFastCalls++; }
             var r = fast(a0, a1);
             if (r === VM_BAIL) { return vmResumeBailout(pvm, vmBailData); }
             return r;
           };
           case 3: return function(a0, a1, a2) {
             if (arguments.length !== 3) { return vmEntryArityFail(pvm, arguments); }
+            if (VM_PROFILE) { vmFastCalls++; }
             var r = fast(a0, a1, a2);
             if (r === VM_BAIL) { return vmResumeBailout(pvm, vmBailData); }
             return r;
           };
           case 4: return function(a0, a1, a2, a3) {
             if (arguments.length !== 4) { return vmEntryArityFail(pvm, arguments); }
+            if (VM_PROFILE) { vmFastCalls++; }
             var r = fast(a0, a1, a2, a3);
             if (r === VM_BAIL) { return vmResumeBailout(pvm, vmBailData); }
             return r;
           };
           case 5: return function(a0, a1, a2, a3, a4) {
             if (arguments.length !== 5) { return vmEntryArityFail(pvm, arguments); }
+            if (VM_PROFILE) { vmFastCalls++; }
             var r = fast(a0, a1, a2, a3, a4);
             if (r === VM_BAIL) { return vmResumeBailout(pvm, vmBailData); }
             return r;
@@ -7515,6 +7594,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     // its by-value upvalues, its module, and its fast form (built by the
     // factory thunk over the same upvalues) or null.
     function vmMakePvm(mod, fdef, upvals) {
+      if (VM_PROFILE) { vmClosures++; }
       var fast = null;
       if (fdef.ff >= 0) {
         var factory = mod.thunks[fdef.ff];
@@ -7558,6 +7638,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       'mkFun': vmMkFun,
       'mkMeth': vmMkMeth,
       'bail': vmBail,
+      'setHook': vmSetHook,
       'FORMAT_VERSION': VM_FORMAT_VERSION,
       'OPCODE_NAMES': VM_OPCODE_NAMES,
     };

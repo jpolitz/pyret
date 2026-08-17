@@ -1211,11 +1211,13 @@ export interface CompileOptions {
   // byte). Values: 'gen', 'few-suspend', 'tail-flat'; 'flat' is never on
   // the machine (a flat callee is what CALLFLAT relies on being JS).
   vmTiers: string[];
-  // Fast JS forms for bytecode functions (default on): each VM-tier function
-  // also gets a plain sync JS body that bails out into the machine only on
-  // an actual suspension. -no-vm-fast interprets every VM-tier call from
-  // the start (the pure-machine configuration, for A/B measurement).
-  vmFast: boolean;
+  // Fast JS forms for bytecode functions: 'all' (default) gives each VM-tier
+  // function a plain sync JS body that bails out into the machine only on an
+  // actual suspension; 'loops' only those with an explicit-loop tail self
+  // call (the shape interpretation loses most on); 'none' interprets every
+  // VM-tier call from the start (the pure-machine, smallest-artifact
+  // configuration). For A/B measurement of speed against size.
+  vmFast: 'all' | 'loops' | 'none';
   stackBackend: StackBackend;
   inlineCaseBodyLimit: number;
   moduleEval: boolean;
@@ -1271,7 +1273,7 @@ export const defaultCompileOptions: CompileOptions = {
   tailFlat: true,
   fewSuspend: true,
   vmTiers: [],
-  vmFast: true,
+  vmFast: 'all',
   stackBackend: compiledStackBackend,
   inlineCaseBodyLimit: 5,
   moduleEval: true,

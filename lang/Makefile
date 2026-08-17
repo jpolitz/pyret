@@ -390,7 +390,7 @@ ts-parity-promise-test: ts-compiler $(PHASEA)/pyret.jarr
 #   make examples/foo.ts.p.jarr
 # Uses the async require-config + a SEPARATE compiled-ts-promise/ cache so async
 # and cont compiled modules never mix (the polyglot hazard).
-%.ts.p.jarr: ts-compiler %.arr
+%.ts.p.jarr: ts-compiler $(PHASEA)/js/runtime-async.js %.arr
 	$(TS_PYRET) --outfile $*.ts.p.jarr \
                       --build-runnable $*.arr \
                       --builtin-js-dir src/js/trove/ \
@@ -406,6 +406,7 @@ ts-parity-promise-test: ts-compiler $(PHASEA)/pyret.jarr
 #   make examples/foo.ts.h.jarr
 #   make VM_TIERS=gen,few-suspend examples/foo.ts.h.jarr   (into the same cache: clean first)
 VM_TIERS ?= gen
+VM_FAST ?= all
 %.ts.h.jarr: ts-compiler $(PHASEA)/js/runtime-async.js %.arr
 	$(TS_PYRET) --outfile $*.ts.h.jarr \
                       --build-runnable $*.arr \
@@ -413,7 +414,7 @@ VM_TIERS ?= gen
                       --builtin-arr-dir src/arr/trove/ \
                       --compiled-dir compiled-ts-hybrid/ \
                       --stack-backend promise \
-                      --vm-tiers $(VM_TIERS) \
+                      --vm-tiers $(VM_TIERS) --vm-fast $(VM_FAST) \
                       $(EXTRA_FLAGS) \
                       --require-config src/scripts/standalone-configA-async.json
 
@@ -451,7 +452,7 @@ endef
 $(PHASEBTSP)/pyret.jarr: ts-compiler $(PHASEA)/js/runtime-async.js $(COMPILER_FILES) $(PHASEA)/bundled-node-compile-deps.js
 	$(call TS_COMPILER_BUILD,$(PHASEBTSP),)
 $(PHASEBTSH)/pyret.jarr: ts-compiler $(PHASEA)/js/runtime-async.js $(COMPILER_FILES) $(PHASEA)/bundled-node-compile-deps.js
-	$(call TS_COMPILER_BUILD,$(PHASEBTSH),--vm-tiers $(VM_TIERS))
+	$(call TS_COMPILER_BUILD,$(PHASEBTSH),--vm-tiers $(VM_TIERS) --vm-fast $(VM_FAST))
 # COLD compiled dirs on both sides: the compiler's worklist order (hence
 # the standalone's module order) legitimately depends on which modules were
 # already cached, so a warm-vs-cold pair would differ for a reason that has
@@ -522,7 +523,7 @@ $(TS_HYBRID_SUITE_JARRS): tests/pyret/%-ts-hybrid.jarr: tests/pyret/%.arr ts-com
 			--require-config src/scripts/standalone-configA-async.json \
 			--compiled-dir tests/ts-compiled-hybrid/ \
 			--stack-backend promise \
-			--vm-tiers $(VM_TIERS) \
+			--vm-tiers $(VM_TIERS) --vm-fast $(VM_FAST) \
 		--outfile $@ \
 		--build-runnable $< \
 		-check-all

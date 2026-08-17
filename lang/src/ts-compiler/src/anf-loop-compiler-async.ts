@@ -2908,8 +2908,11 @@ function vmRootExpr(compiler: CompilerVisitor, node: N.ALam | N.AMethod, isMetho
   } finally {
     vm.host = prevHost;
   }
-  if ((compiler.options as any).vmFast && !vm.hasFastForm(root.idx)) {
-    const verdict = TIER.tierVerdictFor(compiler.tierMap as TIER.TierMap, node, node.l.key());
+  const vmFastMode = (compiler.options as any).vmFast;
+  const verdict = TIER.tierVerdictFor(compiler.tierMap as TIER.TierMap, node, node.l.key());
+  const wantFast = vmFastMode === 'all'
+    || (vmFastMode === 'loops' && verdict.suspendSites.tco > 0);
+  if (wantFast && !vm.hasFastForm(root.idx)) {
     const fastThunk = vmThunkFun(compiler, root.captures, (c) => {
       const cf = ext(c, { vmFast: { idx: root.idx, sites: root.sites, slotNames: root.slotNames } });
       return clSing<J.JStmt>(jReturn(compileGenFastFun(cf, node, isMethod, verdict.allowTco)));
