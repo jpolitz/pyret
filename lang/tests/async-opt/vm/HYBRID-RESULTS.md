@@ -231,3 +231,24 @@ machine.
   compiled async (the promise build; the hybrid printed the location because
   its fast form returns synchronously) -- fixed in the runtime; pinned by
   vm-07-spy.
+
+## Against cont (what students run today), measured on this box
+
+The TS compiler's cont backend (`--stack-backend cont`, byte-identical to
+the Pyret-hosted cont compiler's output -- the branch's parity oracle) as
+the p side; three paired N=3 tables in one session (results/table-cont-vs-*.txt).
+Geomeans of medians over the 16 benches:
+
+| vs cont | geomean | notes |
+|---|---:|---|
+| promise (this branch's default) | **0.788** | reproduces the branch's own 0.807 |
+| hybrid, pure machine (`--vm-fast none`) | **0.832** | half-size trove |
+| hybrid, default (fast forms) | **0.769** | |
+
+Per bench (median s), cont / promise / pure machine / default hybrid:
+spell 2.9 / 1.6 / 2.0 / 1.8; car-compute 2.5 / 2.0 / 2.4 / 1.9;
+orbital-compute 2.1 / 1.7 / 1.5 / 1.3; boids-compute-data 2.6 / 1.7 / 1.7 /
+1.8; vec-methods 2.6 / 1.06 / 1.31 / 1.07; matrix 2.9 / 1.96 / 2.10 / 1.78;
+dtree 1.0 / 0.79 / 0.81 / 0.78; the render benches (car-render, lander,
+orbital-render, boids-raster, seam, orbital-ems) sit at 0.9-1.0 for all
+three, being image-library bound.

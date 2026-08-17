@@ -1,0 +1,18 @@
+benchmark                |    p_med    p_min |    h_med    h_min |    h/p  min_r | parity
+bench-spell              |    2.972    2.898 |    1.796    1.687 |  0.604  0.582 | OK
+bench-car-compute        |    2.591    2.550 |    1.937    1.884 |  0.748  0.739 | OK
+bench-car-render         |    2.425    2.376 |    2.425    2.297 |  1.000  0.967 | OK
+bench-lander             |    2.345    2.318 |    2.239    2.210 |  0.955  0.953 | OK
+bench-orbital-compute    |    2.086    2.077 |    1.279    1.239 |  0.613  0.597 | OK
+bench-orbital-ems        |    1.452    1.444 |    1.478    1.448 |  1.018  1.003 | OK
+bench-orbital-render     |    2.598    2.560 |    2.286    2.276 |  0.880  0.889 | OK
+bench-boids-compute      |    2.463    2.430 |    2.057    2.046 |  0.835  0.842 | OK
+bench-boids-compute-data |    2.672    2.652 |    1.756    1.658 |  0.657  0.625 | OK
+bench-boids-raster       |    2.487    2.467 |    2.237    2.209 |  0.899  0.895 | OK
+bench-vec-methods        |    2.634    2.539 |    1.072    0.961 |  0.407  0.378 | OK
+bench-matrix             |    3.071    2.872 |    1.783    1.688 |  0.581  0.588 | OK
+bench-dtree              |    1.029    0.970 |    0.783    0.782 |  0.761  0.806 | OK
+bench-kmeans             |    1.632    1.544 |    1.470    1.405 |  0.901  0.910 | OK
+bench-plagiarism         |    0.976    0.949 |    0.766    0.737 |  0.785  0.777 | OK
+bench-seam               |    1.957    1.953 |    1.954    1.887 |  0.998  0.966 | OK
+geomean h/p (medians): 0.769 over 16 benches
