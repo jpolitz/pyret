@@ -53,7 +53,7 @@
 
 // Bump when the bytecode format or opcode numbering changes; compiled
 // modules cached from an older machine are then rejected on load.
-export const FORMAT_VERSION = 1;
+export const FORMAT_VERSION = 2;
 
 // ---------- value sources ----------
 
@@ -70,13 +70,16 @@ export const vsGlobal = (i: number): number => (i << 2) | VS_GLOBAL;
 // ---------- upvalue descriptors (CLOSURE/METHOD inside bytecode) ----------
 // (index << 2) | 0 captures the enclosing frame's local slot `index`;
 // (index << 2) | 1 captures the enclosing frame's upvalue `index`;
-// (index << 2) | 2 captures program constant `index` -- a name the parent
-// aliased to a constant, which the nested function's FAST form still needs
-// as a plain parameter (its factory receives the upvalues, nothing else).
+// (index << 2) | 2 captures program constant `index`, and
+// (index << 2) | 3 module global `index` -- a name the parent ALIASED to a
+// constant or a global, which the nested function's FAST form still needs
+// as a plain parameter under the alias name (its factory receives exactly
+// the upvalues, nothing else).
 
 export const uvLocal = (i: number): number => i << 2;
 export const uvUpval = (i: number): number => (i << 2) | 1;
 export const uvConst = (i: number): number => (i << 2) | 2;
+export const uvGlobal = (i: number): number => (i << 2) | 3;
 
 // ---------- constant-pool descriptors ----------
 

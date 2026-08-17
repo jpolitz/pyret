@@ -6291,7 +6291,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     // =====================================================================
 
     // Must match src/ts-compiler/src/vm/opcodes.ts.
-    var VM_FORMAT_VERSION = 1;
+    var VM_FORMAT_VERSION = 2;
 
     var VM_OPCODE_NAMES = [
       'MOVE', 'BOX', 'UNBOX', 'SETVAR', 'LETREC', 'MODREF', 'MODVARREF', 'ARRSET',
@@ -7347,7 +7347,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         switch (dsc & 3) {
           case 0: out.push(locals[dsc >> 2]); break;
           case 1: out.push(upvals[dsc >> 2]); break;
-          default: out.push(mod.consts[dsc >> 2]); break;
+          case 2: out.push(mod.consts[dsc >> 2]); break;
+          default: out.push(mod.globals[dsc >> 2]); break;
         }
       }
       return out;

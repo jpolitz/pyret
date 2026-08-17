@@ -452,9 +452,15 @@ $(PHASEBTSP)/pyret.jarr: ts-compiler $(PHASEA)/js/runtime-async.js $(COMPILER_FI
 	$(call TS_COMPILER_BUILD,$(PHASEBTSP),)
 $(PHASEBTSH)/pyret.jarr: ts-compiler $(PHASEA)/js/runtime-async.js $(COMPILER_FILES) $(PHASEA)/bundled-node-compile-deps.js
 	$(call TS_COMPILER_BUILD,$(PHASEBTSH),--vm-tiers $(VM_TIERS))
+# COLD compiled dirs on both sides: the compiler's worklist order (hence
+# the standalone's module order) legitimately depends on which modules were
+# already cached, so a warm-vs-cold pair would differ for a reason that has
+# nothing to do with which compiler ran.
 $(PHASECTSP)/pyret.jarr: $(PHASEBTSP)/pyret.jarr
+	$(call RMDIR,$(PHASECTSP)/compiled)
 	$(call PROMISE_SELFBUILD,$(PHASEBTSP)/pyret.jarr,$(PHASECTSP))
 $(PHASECTSH)/pyret.jarr: $(PHASEBTSH)/pyret.jarr
+	$(call RMDIR,$(PHASECTSH)/compiled)
 	$(call PROMISE_SELFBUILD,$(PHASEBTSH)/pyret.jarr,$(PHASECTSH))
 
 .PHONY : phaseB-tsp phaseB-tsh phaseC-tsp phaseC-tsh hybrid-bootstrap-check
@@ -488,6 +494,19 @@ $(TS_PROMISE_SUITE_JARRS): tests/pyret/%-ts-promise.jarr: tests/pyret/%.arr ts-c
 		--outfile $@ \
 		--build-runnable $< \
 		-check-all
+
+# Machine unit checks: opcode-table/format parity between the emitter and
+# the machine, plus the structural verifier over every hybrid cache present.
+.PHONY : vm-unit-test
+vm-unit-test: ts-compiler
+	$(NODE) $(TS_COMP_DIR)/tests/vm-unit-test.js compiled-ts-hybrid tests/ts-compiled-hybrid
+
+# The hybrid differential harness (tests/async-opt/vm/): every program built
+# promise and hybrid must agree on stdout/stderr/exit; heap-capped stack
+# tests; verifier over the built modules.
+.PHONY : vm-test
+vm-test: ts-compiler $(PHASEA)/js/runtime-async.js
+	bash tests/async-opt/vm/run-vm-tests.sh
 
 # Hybrid analogues of the promise suite jarrs (bytecode machine for VM_TIERS;
 # separate cache tests/ts-compiled-hybrid/). ts-hybrid-exec-test is the fast

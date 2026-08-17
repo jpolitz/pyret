@@ -286,14 +286,20 @@ export class VMModuleCompiler {
       case OP.VS_LOCAL: desc = OP.uvLocal(inParent >> 2); break;
       case OP.VS_UPVAL: desc = OP.uvUpval(inParent >> 2); break;
       case OP.VS_CONST:
-        // A name the parent aliased to a constant: captured anyway, as a
-        // constant upvalue, so this function's fast form (a factory over
-        // exactly the upvalues) sees it as a parameter.
+        // A name the parent aliased to a constant or a global: captured
+        // anyway, as a constant/global upvalue, so this function's fast
+        // form (a factory over exactly the upvalues) sees it under the
+        // alias name as a parameter. (The alias itself is a JS variable of
+        // the PARENT's fast form only.)
         desc = OP.uvConst(inParent >> 2); break;
       default:
-        // A global: module-scope JS variable, visible to every fast form.
-        ctx.aliases.set(key, inParent);
-        return inParent;
+        if (this.isGlobalName(key)) {
+          // The global itself (not a local alias to one): a module-scope
+          // JS variable visible to every fast form -- no capture.
+          ctx.aliases.set(key, inParent);
+          return inParent;
+        }
+        desc = OP.uvGlobal(inParent >> 2); break;
     }
     const idx = ctx.upvals.length;
     ctx.upvals.push(desc);
