@@ -755,11 +755,11 @@
         })();
       }
       if (runtime.isActivationRecord(self)) {
-        var $ar = sekf;
-        $step = $ar.step;
-        $ans = $ar.ans;
-        curIdx = $ar.vars[0];
-        curEq = $ar.vars[1];
+        var $ar = self;
+        var $step = $ar.step;
+        var $ans = $ar.ans;
+        var curIdx = $ar.vars[0];
+        var curEq = $ar.vars[1];
         self = $ar.args[0];
         other = $ar.args[1];
         selfKeys = $ar.args[2];
@@ -783,12 +783,12 @@
           }
           $ans = recEq.app(getValue.full_meth(self, selfKeys[curIdx]), getValue.full_meth(other, selfKeys[curIdx]));
           if (runtime.isContinuation($ans)) {
-            $ans.stack[thisRuntime.EXN_STACKHEIGHT++] = thisRuntime.makeActivationRecord(
-              stackFrameDesc,
-              equalFun,
+            $ans.stack[runtime.EXN_STACKHEIGHT++] = runtime.makeActivationRecord(
+              ["string-dict-equals"],
+              eqHelp,
               $step,
-              [],
-              []);
+              [self, other, selfKeys, hasKey, getValue, recEq],
+              [curIdx, curEq]);
             return $ans;
           }
           break;
