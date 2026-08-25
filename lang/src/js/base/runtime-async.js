@@ -3688,7 +3688,149 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     var BREAK_FLAG = false;
     var NEED_MACRO = false;
 
+    // Pause-schedule mode (PYRET_PAUSE_SCHEDULE): a deterministic schedule of
+    // pause intervals, counted in fuel events, replaces GAS/RUNGAS entirely.
+    // PYRET_PAUSE_TRACE writes one line per pause with the parked stack.
+    // Shared across runtime instances in a process via a global. Node-only.
+    var SCHED = (function() {
+      if (typeof process === "undefined" || !process.env || !process.env.PYRET_PAUSE_SCHEDULE) { return null; }
+      var g = (typeof globalThis !== "undefined") ? globalThis : null;
+      if (g && g.$pyretPauseSched) { return g.$pyretPauseSched; }
+      var spec = process.env.PYRET_PAUSE_SCHEDULE;
+      var next;
+      if (spec.lastIndexOf("fixed:", 0) === 0) {
+        var fixedN = Number(spec.slice(6));
+        next = function() { return fixedN; };
+      } else if (spec.lastIndexOf("list:", 0) === 0) {
+        var xs = spec.slice(5).split(",").map(Number);
+        var xi = 0;
+        next = function() { var v = xs[xi % xs.length]; xi++; return v; };
+      } else if (spec.lastIndexOf("lcg:", 0) === 0) {
+        var ps = spec.slice(4).split(":").map(Number);
+        var lcgState = (ps[0] >>> 0) || 1;
+        var lcgLo = ps[1] || 1;
+        var lcgHi = ps[2] || 1000;
+        next = function() {
+          lcgState = (Math.imul(lcgState, 1664525) + 1013904223) >>> 0;
+          return lcgLo + (lcgState % (lcgHi - lcgLo + 1));
+        };
+      } else {
+        throw new Error("PYRET_PAUSE_SCHEDULE: unrecognized spec: " + spec);
+      }
+      var S = {
+        countdown: 0,
+        events: 0,
+        pauses: 0,
+        skip: false,
+        capturing: false,
+        cap: null,
+        lines: null,
+        next: next,
+        path: process.env.PYRET_PAUSE_TRACE || null,
+        maxFrames: Number(process.env.PYRET_PAUSE_TRACE_FRAMES || 500)
+      };
+      S.countdown = S.next();
+      if (S.path) {
+        S.lines = [];
+        var flushed = false;
+        S.flush = function(fin) {
+          try {
+            var fs = require("fs");
+            if (!flushed) { fs.writeFileSync(S.path, ""); flushed = true; }
+            if (fin) { S.lines.push("T events=" + S.events + " pauses=" + S.pauses); }
+            if (S.lines.length > 0) { fs.appendFileSync(S.path, S.lines.join("\n") + "\n"); S.lines = []; }
+          } catch (e) {}
+        };
+        process.on("exit", function() { S.flush(true); });
+        process.on("SIGTERM", function() { S.flush(false); process.exit(143); });
+        process.on("SIGINT", function() { S.flush(false); process.exit(130); });
+      }
+      S.evlog = (process.env.PYRET_PAUSE_TRACE_EVENTS === "1");
+      S.tick = function(tag) {
+        if (S.skip) {
+          S.skip = false;
+          if (S.evlog && S.lines !== null) { S.lines.push("K - " + (tag || "?")); }
+          return false;
+        }
+        S.events++;
+        if (S.evlog && S.lines !== null) { S.lines.push("E " + S.events + " " + (tag || "?")); }
+        if (--S.countdown <= 0) {
+          S.countdown = S.next();
+          S.pauses++;
+          S.beginCapture();
+          return true;
+        }
+        return false;
+      };
+      // Frames park synchronously as the suspension unwinds; the record
+      // closes on the next microtask, which runs after the unwind completes.
+      S.beginCapture = function() {
+        if (S.lines === null) { return; }
+        var frames = [];
+        S.cap = frames;
+        S.capturing = true;
+        var idx = S.pauses, ev = S.events;
+        Promise.resolve().then(function() {
+          if (S.cap === frames) { S.capturing = false; S.cap = null; }
+          // Cycle-compress the stack: at each position take the period
+          // p <= 4 whose repetition covers the most frames (deep recursion
+          // through k mutually-recursive functions repeats a k-cycle).
+          // A repeated group is joined with " ~ " and suffixed " xN".
+          var rle = [];
+          var n = frames.length;
+          for (var i = 0; i < n; ) {
+            var bestP = 1, bestReps = 1;
+            for (var p = 1; p <= 4 && i + p <= n; p++) {
+              var reps = 1;
+              while (i + (reps + 1) * p <= n) {
+                var same = true;
+                for (var q = 0; q < p; q++) {
+                  if (frames[i + reps * p + q] !== frames[i + q]) { same = false; break; }
+                }
+                if (!same) { break; }
+                reps++;
+              }
+              if (reps * p > bestReps * bestP) { bestP = p; bestReps = reps; }
+            }
+            if (bestReps > 1) {
+              var grp = frames[i];
+              for (var g = 1; g < bestP; g++) { grp += " ~ " + frames[i + g]; }
+              rle.push(grp + " x" + bestReps);
+              i += bestP * bestReps;
+            } else {
+              rle.push(frames[i]);
+              i += 1;
+            }
+          }
+          var shown = rle.length > S.maxFrames
+            ? rle.slice(0, S.maxFrames).concat(["...[" + (rle.length - S.maxFrames) + " more]"])
+            : rle;
+          S.lines.push("P " + idx + " @" + ev + " | " + shown.join(" ; "));
+          if (S.lines.length >= 20000) { S.flush(false); }
+        });
+      };
+      S.depthCap = Number(process.env.PYRET_PAUSE_CAPTURE_DEPTH || 4000);
+      S.frame = function(desc) {
+        if (S.capturing && S.cap.length < S.depthCap) { S.cap.push(desc); }
+      };
+      S.full = function() {
+        return !S.capturing || S.cap.length >= S.depthCap;
+      };
+      S.loc = function(l) {
+        if (l === undefined || l === null) { return "?"; }
+        if (typeof l === "string") { return l.slice(l.lastIndexOf("/") + 1); }
+        if (Array.isArray(l)) {
+          var u = String(l[0]);
+          return u.slice(u.lastIndexOf("/") + 1) + ":" + l.slice(1).join(":");
+        }
+        return String(l);
+      };
+      if (g) { g.$pyretPauseSched = S; }
+      return S;
+    })();
+
     function needsPause() {
+      if (SCHED !== null) { return SCHED.tick(); }
       thisRuntime.GAS -= 1;
       thisRuntime.RUNGAS -= 1;
       if (thisRuntime.GAS <= 0) {
@@ -6333,6 +6475,25 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
     // needsPause().
     var VM_FUEL_QUANTUM = 64;
     var vmFuel = VM_FUEL_QUANTUM;
+
+    // In schedule mode every bytecode call consults the schedule (quantum 1),
+    // so a bytecode call charges exactly one event like a compiled entry does.
+    function vmCallFuel(pvm) {
+      if (SCHED !== null) { return SCHED.tick(SCHED.evlog ? "v:" + pvm.f.n : "v"); }
+      if (--vmFuel <= 0) {
+        vmFuel = VM_FUEL_QUANTUM;
+        return needsPause();
+      }
+      return false;
+    }
+
+    function schedVmFrames(st, fp) {
+      for (var i = fp; i >= 0; i--) {
+        if (SCHED.full()) { return; }
+        var fr = st.frames[i];
+        SCHED.frame(fr.fdef.n + "@" + SCHED.loc(fr.mod.locs[fr.fdef.l]) + "@" + SCHED.loc(fr.mod.locs[fr.locKS]));
+      }
+    }
     // Bytecode->bytecode CALLs run the callee's fast form (native) while the
     // machine's frame stack is shallower than this; deeper calls interpret.
     // MEASURED and left at 0 (never): a fast-form call from bytecode puts
@@ -6520,6 +6681,9 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       this.mod = null;
       this.dest = -1;
       this.locK = 0;
+      // Shadow call-site loc updated only at non-flat call ops, mirroring the
+      // cont backend's apploc (flat calls are "caller optimization" there).
+      this.locKS = 0;
     }
 
     function vmSetFrame(f, fdef, mod, upvals, locals, dest) {
@@ -6531,6 +6695,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       f.mod = mod;
       f.dest = dest;
       f.locK = fdef.l;
+      f.locKS = fdef.l;
       return f;
     }
 
@@ -6619,6 +6784,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       f.pc = resumePc;
       st.fp = fp;
       st.resumeDest = dest;
+      if (SCHED !== null && SCHED.capturing) { schedVmFrames(st, fp); }
       return thenable.then(function(v) {
         st.resumeVal = v;
         return runMachine(st);
@@ -6631,12 +6797,33 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
 
     // The fuel ran out at an instruction boundary: yield, then re-execute
     // the instruction (only pure operand reads have happened).
-    function vmPause(st, f, fp, retryPc) {
+    // isTail: pausing at a TAILCALL, whose top frame is dead (the cont
+    // backend attaches no record for a frame in tail position). A self tail
+    // call reuses the frame, which then IS the callee's record, so the
+    // caller passes calleePvm === undefined and isTail false for it.
+    function vmPause(st, f, fp, retryPc, calleePvm, isTail) {
       if (VM_PROFILE) { vmPauses++; }
       f.pc = retryPc;
       st.fp = fp;
       st.resumeDest = -1;
-      return checkPause().then(function() { return runMachine(st); });
+      if (SCHED !== null && SCHED.capturing) {
+        // A pause at a call instruction fires before the callee's frame is
+        // pushed; the cont backend pauses at the callee's entry check with
+        // the callee's record on the stack, so synthesize it.
+        if (calleePvm !== undefined) {
+          var cl = SCHED.loc(calleePvm.m.locs[calleePvm.f.l]);
+          SCHED.frame(calleePvm.f.n + "@" + cl + "@" + cl);
+        }
+        if (isTail === true) {
+          if (fp > 0) { schedVmFrames(st, fp - 1); }
+        } else {
+          schedVmFrames(st, fp);
+        }
+      }
+      return checkPause().then(function() {
+        if (SCHED !== null) { SCHED.skip = true; }
+        return runMachine(st);
+      });
     }
 
     // Arity mismatch on a call to bytecode. Cold; kept out of the loop.
@@ -6704,6 +6891,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       st.fp = 0;
       st.resumeDest = d.dest;
       if (VM_PROFILE) { vmSuspends++; }
+      if (SCHED !== null && SCHED.capturing) { schedVmFrames(st, 0); }
       return d.thenable.then(function(v) {
         st.resumeVal = v;
         return runMachine(st);
@@ -6839,14 +7027,12 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
               var lk = code[pc++];
               var n = code[pc++];
               f.locK = lk;
+              f.locKS = lk;
               var pvm = (fnv === undefined || fnv === null) ? undefined : fnv.$pvm;
               if (pvm !== undefined) {
                 var callee = pvm.f;
                 if (callee.a !== n) { vmArityFail(pvm, callee, code, pc, n, f); }
-                if (--vmFuel <= 0) {
-                  vmFuel = VM_FUEL_QUANTUM;
-                  if (needsPause()) { return vmPause(st, f, fp, ipc); }
-                }
+                if (vmCallFuel(pvm)) { return vmPause(st, f, fp, ipc, pvm); }
                 if (pvm.fast !== null && fp < VM_FAST_CALL_DEPTH) {
                   // Shallow in the machine (the usual post-bailout remainder
                   // of an activation): run the callee's fast form natively
@@ -6856,6 +7042,9 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
                   var fargs = new Array(n);
                   for (var i = 0; i < n; i++) { fargs[i] = rd(code[pc + i], f); }
                   pc += n;
+                  // The call already charged fuel; the fast form's entry
+                  // check is the same logical event.
+                  if (SCHED !== null) { SCHED.skip = true; }
                   ans = pvm.fast.apply(null, fargs);
                   if (ans === VM_BAIL) {
                     var fbd = vmBailData;
@@ -6920,15 +7109,17 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
               var lk = code[pc++];
               var n = code[pc++];
               f.locK = lk;
+              if (fnv === undefined || fnv === null || fnv.$pvm === undefined || fnv.$pvm.f !== f.fdef) { f.locKS = lk; }
               var pvm = (fnv === undefined || fnv === null) ? undefined : fnv.$pvm;
               if (pvm !== undefined) {
                 var callee = pvm.f;
                 if (callee.a !== n) { vmArityFail(pvm, callee, code, pc, n, f); }
                 // Before anything is written: reusing the frame overwrites
                 // the slots a retried instruction would read from.
-                if (--vmFuel <= 0) {
-                  vmFuel = VM_FUEL_QUANTUM;
-                  if (needsPause()) { return vmPause(st, f, fp, ipc); }
+                if (vmCallFuel(pvm)) {
+                  return (callee === f.fdef)
+                    ? vmPause(st, f, fp, ipc)
+                    : vmPause(st, f, fp, ipc, pvm, true);
                 }
                 if (fp === 0 && pvm.fast !== null) {
                   // Bottom frame tail-calling a function with a fast form:
@@ -6940,6 +7131,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
                   // right here into frame 0.
                   var hargs = new Array(n);
                   for (var i = 0; i < n; i++) { hargs[i] = rd(code[pc + i], f); }
+                  if (SCHED !== null) { SCHED.skip = true; }
                   ans = pvm.fast.apply(null, hargs);
                   if (ans === VM_BAIL) {
                     var bd = vmBailData;
@@ -6984,6 +7176,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
                 if (!reuse) {
                   for (var i = n; i < callee.s; i++) { nlocals.push(undefined); }
                 }
+                if (callee !== f.fdef) { f.locKS = callee.l; }
                 f.fdef = callee;
                 f.code = code = callee.c;
                 f.upvals = upvals = pvm.u;
@@ -7067,10 +7260,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
                   for (var i = 0; i < n; i++) { badArgs[i + off] = rd(code[pc + i], f); }
                   checkArityC(pvm.m.locs[callee.l], callee.a, badArgs, callee.m);
                 }
-                if (--vmFuel <= 0) {
-                  vmFuel = VM_FUEL_QUANTUM;
-                  if (needsPause()) { return vmPause(st, f, fp, ipc); }
-                }
+                if (vmCallFuel(pvm)) { return vmPause(st, f, fp, ipc, pvm); }
                 var nlocals = [];
                 if (isMeth) { nlocals.push(obj); }
                 for (var i = 0; i < n; i++) { nlocals.push(rd(code[pc++], f)); }
@@ -7114,10 +7304,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
                   for (var i = 0; i < n; i++) { badArgs[i + 1] = rd(code[pc + i], f); }
                   checkArityC(pvm.m.locs[callee.l], callee.a, badArgs, callee.m);
                 }
-                if (--vmFuel <= 0) {
-                  vmFuel = VM_FUEL_QUANTUM;
-                  if (needsPause()) { return vmPause(st, f, fp, ipc); }
-                }
+                if (vmCallFuel(pvm)) { return vmPause(st, f, fp, ipc, pvm); }
                 var nlocals = [obj];
                 for (var i = 0; i < n; i++) { nlocals.push(rd(code[pc++], f)); }
                 for (var i = nAll; i < callee.s; i++) { nlocals.push(undefined); }
@@ -7145,6 +7332,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
               var step = code[pc++];
               var n = code[pc++];
               f.locK = lk;
+              f.locKS = lk;
               ans = vmApplyPrim(prim, code, pc, n, f);
               pc += n;
               if (step === 1 && vmIsThenable(ans)) { return vmSuspendOn(st, f, fp, ans, d, pc); }
@@ -7184,6 +7372,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
               var nameK = code[pc++];
               var lk = code[pc++];
               f.locK = lk;
+              f.locKS = lk;
               // getFieldLoc's fast path, inlined: an own/inherited plain field
               // on an object. Anything else (missing, method to curry, ref,
               // non-object) takes the runtime's full path and its errors.
@@ -7260,6 +7449,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
               var lk = code[pc++];
               var elseTarget = code[pc++];
               f.locK = lk;
+              f.locKS = lk;
               var target = mod.dispatches[di][v.$name];
               pc = (target === undefined) ? elseTarget : target;
               continue;
@@ -7329,6 +7519,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
               var v = rd(code[pc++], f);
               var lk = code[pc++];
               var step = code[pc++];
+              f.locKS = lk;
               // A passing check against a runtime-native flat annotation
               // (PPrimAnn: primitives AND data-type branders) needs none of
               // _checkAnn's machinery.
@@ -7479,7 +7670,8 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       if (VM_PROFILE) { vmEntries++; }
       var st = vmNewState();
       vmSetFrame(st.frames[0], pvm.f, pvm.m, pvm.u, locals, -1);
-      if (needsPause()) {
+      if (SCHED !== null ? SCHED.tick(SCHED.evlog ? "e:" + pvm.f.n : "e") : needsPause()) {
+        if (SCHED !== null && SCHED.capturing) { schedVmFrames(st, 0); }
         return checkPause().then(function() { return runMachine(st); });
       }
       return runMachine(st);

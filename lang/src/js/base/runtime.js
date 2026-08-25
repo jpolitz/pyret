@@ -3443,6 +3443,148 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       };
     }
 
+    // Pause-schedule mode (PYRET_PAUSE_SCHEDULE): a deterministic schedule of
+    // pause intervals, counted in fuel events, replaces GAS/RUNGAS entirely.
+    // PYRET_PAUSE_TRACE writes one line per pause with the unwound stack.
+    // Shared across runtime instances in a process via a global. Node-only.
+    // Emitted code's inline --GAS/--RUNGAS checks are intercepted by property
+    // accessors installed on the runtime object (see below the runtime
+    // literal); runtime builtins consult SCHED directly.
+    var SCHED = (function() {
+      if (typeof process === "undefined" || !process.env || !process.env.PYRET_PAUSE_SCHEDULE) { return null; }
+      var g = (typeof globalThis !== "undefined") ? globalThis : null;
+      if (g && g.$pyretPauseSched) { return g.$pyretPauseSched; }
+      var spec = process.env.PYRET_PAUSE_SCHEDULE;
+      var next;
+      if (spec.lastIndexOf("fixed:", 0) === 0) {
+        var fixedN = Number(spec.slice(6));
+        next = function() { return fixedN; };
+      } else if (spec.lastIndexOf("list:", 0) === 0) {
+        var xs = spec.slice(5).split(",").map(Number);
+        var xi = 0;
+        next = function() { var v = xs[xi % xs.length]; xi++; return v; };
+      } else if (spec.lastIndexOf("lcg:", 0) === 0) {
+        var ps = spec.slice(4).split(":").map(Number);
+        var lcgState = (ps[0] >>> 0) || 1;
+        var lcgLo = ps[1] || 1;
+        var lcgHi = ps[2] || 1000;
+        next = function() {
+          lcgState = (Math.imul(lcgState, 1664525) + 1013904223) >>> 0;
+          return lcgLo + (lcgState % (lcgHi - lcgLo + 1));
+        };
+      } else {
+        throw new Error("PYRET_PAUSE_SCHEDULE: unrecognized spec: " + spec);
+      }
+      var S = {
+        countdown: 0,
+        events: 0,
+        pauses: 0,
+        skip: false,
+        capturing: false,
+        cap: null,
+        lines: null,
+        next: next,
+        path: process.env.PYRET_PAUSE_TRACE || null,
+        maxFrames: Number(process.env.PYRET_PAUSE_TRACE_FRAMES || 500)
+      };
+      S.countdown = S.next();
+      if (S.path) {
+        S.lines = [];
+        var flushed = false;
+        S.flush = function(fin) {
+          try {
+            var fs = require("fs");
+            if (!flushed) { fs.writeFileSync(S.path, ""); flushed = true; }
+            if (fin) { S.lines.push("T events=" + S.events + " pauses=" + S.pauses); }
+            if (S.lines.length > 0) { fs.appendFileSync(S.path, S.lines.join("\n") + "\n"); S.lines = []; }
+          } catch (e) {}
+        };
+        process.on("exit", function() { S.flush(true); });
+        process.on("SIGTERM", function() { S.flush(false); process.exit(143); });
+        process.on("SIGINT", function() { S.flush(false); process.exit(130); });
+      }
+      S.evlog = (process.env.PYRET_PAUSE_TRACE_EVENTS === "1");
+      S.tick = function(tag) {
+        if (S.skip) {
+          S.skip = false;
+          if (S.evlog && S.lines !== null) { S.lines.push("K - " + (tag || "?")); }
+          return false;
+        }
+        S.events++;
+        if (S.evlog && S.lines !== null) { S.lines.push("E " + S.events + " " + (tag || "?")); }
+        if (--S.countdown <= 0) {
+          S.countdown = S.next();
+          S.pauses++;
+          S.beginCapture();
+          return true;
+        }
+        return false;
+      };
+      S.beginCapture = function() {
+        if (S.lines === null) { return; }
+        var frames = [];
+        S.cap = frames;
+        S.capturing = true;
+        var idx = S.pauses, ev = S.events;
+        Promise.resolve().then(function() {
+          if (S.cap === frames) { S.capturing = false; S.cap = null; }
+          // Cycle-compress the stack: at each position take the period
+          // p <= 4 whose repetition covers the most frames (deep recursion
+          // through k mutually-recursive functions repeats a k-cycle).
+          // A repeated group is joined with " ~ " and suffixed " xN".
+          var rle = [];
+          var n = frames.length;
+          for (var i = 0; i < n; ) {
+            var bestP = 1, bestReps = 1;
+            for (var p = 1; p <= 4 && i + p <= n; p++) {
+              var reps = 1;
+              while (i + (reps + 1) * p <= n) {
+                var same = true;
+                for (var q = 0; q < p; q++) {
+                  if (frames[i + reps * p + q] !== frames[i + q]) { same = false; break; }
+                }
+                if (!same) { break; }
+                reps++;
+              }
+              if (reps * p > bestReps * bestP) { bestP = p; bestReps = reps; }
+            }
+            if (bestReps > 1) {
+              var grp = frames[i];
+              for (var g = 1; g < bestP; g++) { grp += " ~ " + frames[i + g]; }
+              rle.push(grp + " x" + bestReps);
+              i += bestP * bestReps;
+            } else {
+              rle.push(frames[i]);
+              i += 1;
+            }
+          }
+          var shown = rle.length > S.maxFrames
+            ? rle.slice(0, S.maxFrames).concat(["...[" + (rle.length - S.maxFrames) + " more]"])
+            : rle;
+          S.lines.push("P " + idx + " @" + ev + " | " + shown.join(" ; "));
+          if (S.lines.length >= 20000) { S.flush(false); }
+        });
+      };
+      S.depthCap = Number(process.env.PYRET_PAUSE_CAPTURE_DEPTH || 4000);
+      S.frame = function(desc) {
+        if (S.capturing && S.cap.length < S.depthCap) { S.cap.push(desc); }
+      };
+      S.full = function() {
+        return !S.capturing || S.cap.length >= S.depthCap;
+      };
+      S.loc = function(l) {
+        if (l === undefined || l === null) { return "?"; }
+        if (typeof l === "string") { return l.slice(l.lastIndexOf("/") + 1); }
+        if (Array.isArray(l)) {
+          var u = String(l[0]);
+          return u.slice(u.lastIndexOf("/") + 1) + ":" + l.slice(1).join(":");
+        }
+        return String(l);
+      };
+      if (g) { g.$pyretPauseSched = S; }
+      return S;
+    })();
+
     function safeCall(fun, after, stackFrame) {
       var $ans = undefined;
       var $step = 0;
@@ -3456,7 +3598,9 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         stackFrame = $ar.args[2];
         $fun_ans = $ar.vars[0];
       }
-      if (--thisRuntime.GAS <= 0 || --thisRuntime.RUNGAS <= 0) {
+      // Schedule mode: safeCall charges nothing (the async backend's safeCall
+      // has no fuel check).
+      if (SCHED !== null ? false : (--thisRuntime.GAS <= 0 || --thisRuntime.RUNGAS <= 0)) {
         thisRuntime.EXN_STACKHEIGHT = 0;
         skipLoop = true;
         $ans = thisRuntime.makeCont();
@@ -3493,12 +3637,15 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var i = start;
       function restart(_) {
         var res = thisRuntime.nothing;
-        if (--thisRuntime.GAS <= 0) {
+        // Schedule mode: no entry charge, one event per iteration BEFORE the
+        // end test, matching the async backend's eachLoop (needsPause per
+        // iteration inside `while (i < stop)`).
+        if (SCHED !== null ? false : (--thisRuntime.GAS <= 0)) {
           thisRuntime.EXN_STACKHEIGHT = 0;
           res = thisRuntime.makeCont();
         }
         while(!thisRuntime.isContinuation(res)) {
-          if (--thisRuntime.RUNGAS <= 0) {
+          if (SCHED !== null ? (i < stop && SCHED.tick('eachLoop')) : (--thisRuntime.RUNGAS <= 0)) {
             thisRuntime.EXN_STACKHEIGHT = 0;
             res = thisRuntime.makeCont();
           }
@@ -3667,7 +3814,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
               });
             }
             while(theOneTrueStackHeight > 0) {
-              if(!sync && thisRuntime.RUNGAS <= 1) {
+              if(!sync && SCHED === null && thisRuntime.RUNGAS <= 1) {
                 thisRuntime.RUNGAS = initialRunGas;
                 TOS++;
                 // CONSOLE.log("Setting timeout to resume iter");
@@ -3687,6 +3834,11 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
 
 
               if (next.fun instanceof Function) {
+                // Schedule mode: a resumed compiled frame re-runs its entry
+                // fuel check; the async backend charges nothing on an await
+                // resume, so skip that one check. Builtin records manage
+                // their own re-check parity.
+                if (SCHED !== null && next.$builtin !== true) { SCHED.skip = true; }
                 val = next.fun(next);
               }
               else if (!(next instanceof ActivationRecord)) {
@@ -3703,6 +3855,12 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
                 for(var i = val.stack.length - 1; i >= 0; i--) {
     //              console.error(e.stack[i].vars.length + " width;" + e.stack[i].vars + "; from " + e.stack[i].from + "; frame " + theOneTrueStackHeight);
                   theOneTrueStack[theOneTrueStackHeight++] = val.stack[i];
+                }
+                if (SCHED !== null && SCHED.capturing && thisRuntime.isCont(val)) {
+                  for (var ci = theOneTrueStackHeight - 1; ci >= 0 && !SCHED.full(); ci--) {
+                    var crec = theOneTrueStack[ci];
+                    SCHED.frame((crec.$builtin === true ? "B:" : "") + ((crec.fun && crec.fun.name) || "?") + "@?@" + SCHED.loc(crec.from));
+                  }
                 }
                 // console.log("The new stack height is ", theOneTrueStackHeight);
                 // console.log("theOneTrueStack = ", theOneTrueStack.slice(0, theOneTrueStackHeight).map(function(f) {
@@ -3740,6 +3898,12 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
               for(var i = e.stack.length - 1; i >= 0; i--) {
               // CONSOLE.error(e.stack[i].vars.length + " width;" + e.stack[i].vars + "; from " + e.stack[i].from + "; frame " + theOneTrueStackHeight);
                 theOneTrueStack[theOneTrueStackHeight++] = e.stack[i];
+              }
+              if (SCHED !== null && SCHED.capturing && thisRuntime.isCont(e)) {
+                for (var ci = theOneTrueStackHeight - 1; ci >= 0 && !SCHED.full(); ci--) {
+                  var crec = theOneTrueStack[ci];
+                  SCHED.frame((crec.$builtin === true ? "B:" : "") + ((crec.fun && crec.fun.name) || "?") + "@?@" + SCHED.loc(crec.from));
+                }
               }
               // CONSOLE.log("The new stack height is ", theOneTrueStackHeight);
               // CONSOLE.log("theOneTrueStack = ", theOneTrueStack.slice(0, theOneTrueStackHeight).map(function(f) {
@@ -3841,7 +4005,11 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         + ", vars: " + JSON.stringify(this.vars) + "}";
     }
     function makeActivationRecord(from, fun, step, args, vars) {
-      return new ActivationRecord(from, fun, step, UNINITIALIZED_ANSWER, args, vars);
+      var rec = new ActivationRecord(from, fun, step, UNINITIALIZED_ANSWER, args, vars);
+      // Schedule mode: records made by runtime builtins (5 args) are
+      // distinguished from compiled code's records (6 args, elidedFrames).
+      if (SCHED !== null && arguments.length < 6) { rec.$builtin = true; }
+      return rec;
     }
     function isActivationRecord(obj) {
       return obj instanceof ActivationRecord;
@@ -4261,7 +4429,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         var $step = 0;
       }
       var cleanQuit = true;
-      if (--thisRuntime.GAS <= 0) {
+      if (SCHED !== null ? false : (--thisRuntime.GAS <= 0)) {
         thisRuntime.EXN_STACKHEIGHT = 0;
         cleanQuit = false;
         $ans = thisRuntime.makeCont();
@@ -4270,7 +4438,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       check_array_size("raw-array-build", len);
 
       while (cleanQuit && (curIdx < len)) {
-        if (--thisRuntime.RUNGAS <= 0) {
+        if (SCHED !== null ? SCHED.tick('biter') : (--thisRuntime.RUNGAS <= 0)) {
           thisRuntime.EXN_STACKHEIGHT = 0;
           cleanQuit = false;
           $ans = thisRuntime.makeCont();
@@ -4321,7 +4489,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         var $step = 0;
       }
       var cleanQuit = true;
-      if (--thisRuntime.GAS <= 0) {
+      if (SCHED !== null ? false : (--thisRuntime.GAS <= 0)) {
         thisRuntime.EXN_STACKHEIGHT = 0;
         $ans = thisRuntime.makeCont();
         cleanQuit = false;
@@ -4329,7 +4497,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
 
       check_array_size("raw-array-build-opt", len);
       while (cleanQuit && curIdx < len) {
-        if (--thisRuntime.RUNGAS <= 0) {
+        if (SCHED !== null ? SCHED.tick('biter') : (--thisRuntime.RUNGAS <= 0)) {
           thisRuntime.EXN_STACKHEIGHT = 0;
           $ans = thisRuntime.makeCont();
           cleanQuit = false;
@@ -4472,7 +4640,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var length = arr.length;
       function foldHelp() {
         while(currentIndex < (length - 1)) {
-          if(--thisRuntime.RUNGAS <= 0) {
+          if(SCHED !== null ? SCHED.tick('biter') : (--thisRuntime.RUNGAS <= 0)) {
             thisRuntime.EXN_STACKHEIGHT = 0;
             return thisRuntime.makeCont();
           }
@@ -4510,7 +4678,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         var length = arr.length;
         function foldHelp() {
           while(currentIndex < (length - 1)) {
-            if(--thisRuntime.RUNGAS <= 0) {
+            if(SCHED !== null ? SCHED.tick('biter') : (--thisRuntime.RUNGAS <= 0)) {
               thisRuntime.EXN_STACKHEIGHT = 0;
               return thisRuntime.makeCont();
             }
@@ -4549,7 +4717,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var newArray = new Array(length);
       function mapHelp() {
         while(currentIndex < (length - 1)) {
-          if(--thisRuntime.RUNGAS <= 0) {
+          if(SCHED !== null ? SCHED.tick('biter') : (--thisRuntime.RUNGAS <= 0)) {
             thisRuntime.EXN_STACKHEIGHT = 0;
             return thisRuntime.makeCont();
           }
@@ -4585,7 +4753,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var length = arr.length;
       function eachHelp() {
         while(currentIndex < (length - 1)) {
-          if(--thisRuntime.RUNGAS <= 0) {
+          if(SCHED !== null ? SCHED.tick('biter') : (--thisRuntime.RUNGAS <= 0)) {
             thisRuntime.EXN_STACKHEIGHT = 0;
             return thisRuntime.makeCont();
           }
@@ -4618,7 +4786,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var newArray = new Array(length);
       function mapHelp() {
         while(currentIndex < (length - 1)) {
-          if(--thisRuntime.RUNGAS <= 0) {
+          if(SCHED !== null ? SCHED.tick('biter') : (--thisRuntime.RUNGAS <= 0)) {
             thisRuntime.EXN_STACKHEIGHT = 0;
             return thisRuntime.makeCont();
           }
@@ -4655,7 +4823,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var currentFst;
       function foldHelp() {
         while(thisRuntime.ffi.isLink(currentLst)) {
-          if(--thisRuntime.RUNGAS <= 0) {
+          if(SCHED !== null ? SCHED.tick('biter') : (--thisRuntime.RUNGAS <= 0)) {
             thisRuntime.EXN_STACKHEIGHT = 0;
             return thisRuntime.makeCont();
           }
@@ -4694,7 +4862,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var currentFst;
       function foldHelp() {
         while(thisRuntime.ffi.isLink(currentLst)) {
-          if(--thisRuntime.RUNGAS <= 0) {
+          if(SCHED !== null ? SCHED.tick('biter') : (--thisRuntime.RUNGAS <= 0)) {
             thisRuntime.EXN_STACKHEIGHT = 0;
             return thisRuntime.makeCont();
           }
@@ -4738,7 +4906,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var newArray = new Array(length);
       function mapHelp() {
         while(currentIndex < (length - 1)) {
-          if(--thisRuntime.RUNGAS <= 0) {
+          if(SCHED !== null ? SCHED.tick('biter') : (--thisRuntime.RUNGAS <= 0)) {
             thisRuntime.EXN_STACKHEIGHT = 0;
             return thisRuntime.makeCont();
           }
@@ -4776,7 +4944,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var currentFst;
       function foldHelp() {
         while(thisRuntime.ffi.isLink(currentLst)) {
-          if(--thisRuntime.RUNGAS <= 0) {
+          if(SCHED !== null ? SCHED.tick('biter') : (--thisRuntime.RUNGAS <= 0)) {
             thisRuntime.EXN_STACKHEIGHT = 0;
             return thisRuntime.makeCont();
           }
@@ -4821,7 +4989,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var newArray = new Array();
       function filterHelp() {
         while(currentIndex < (length - 1)) {
-          if(--thisRuntime.RUNGAS <= 0) {
+          if(SCHED !== null ? SCHED.tick('biter') : (--thisRuntime.RUNGAS <= 0)) {
             thisRuntime.EXN_STACKHEIGHT = 0;
             return thisRuntime.makeCont();
           }
@@ -4862,7 +5030,7 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
       var currentLst = lst;
       function foldHelp() {
         while(thisRuntime.ffi.isLink(currentLst)) {
-          if(--thisRuntime.RUNGAS <= 0) {
+          if(SCHED !== null ? SCHED.tick('biter') : (--thisRuntime.RUNGAS <= 0)) {
             thisRuntime.EXN_STACKHEIGHT = 0;
             return thisRuntime.makeCont();
           }
@@ -6530,6 +6698,58 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
 
       'makePrimAnn': makePrimAnn
     };
+
+    // Schedule mode: intercept the raw GAS/RUNGAS accesses compiled code
+    // inlines. Emitted patterns are exactly: the entry check
+    // `(--R.GAS <= 0 || --R.RUNGAS <= 0)`, the exit `++R.GAS`, and the TCO
+    // self-call `(--R.RUNGAS <= 0)`. A GAS decrement is one fuel event (the
+    // paired RUNGAS decrement of the same check is not); a standalone RUNGAS
+    // decrement is one event; increments and assignments are ignored. The
+    // getter returns 1 exactly when the next counted event must pause, so
+    // the inline `<= 0` test fires on schedule.
+    if (SCHED !== null) {
+      (function() {
+        var S = SCHED;
+        var BIGGAS = 1073741824;
+        var gasV = thisRuntime.GAS;
+        var rungasV = INITIAL_GAS * 10;
+        var lastGasGet = null;
+        var lastRunGasGet = null;
+        var pairRG = false;
+        Object.defineProperty(thisRuntime, 'GAS', {
+          get: function() {
+            lastGasGet = (S.skip || S.countdown > 1) ? BIGGAS : 1;
+            return lastGasGet;
+          },
+          set: function(v) {
+            if (lastGasGet !== null && v === lastGasGet - 1) {
+              pairRG = !S.tick('centry');
+            } else {
+              pairRG = false;
+            }
+            lastGasGet = null;
+            gasV = v;
+          }
+        });
+        Object.defineProperty(thisRuntime, 'RUNGAS', {
+          get: function() {
+            if (pairRG) { lastRunGasGet = BIGGAS; return BIGGAS; }
+            lastRunGasGet = (S.skip || S.countdown > 1) ? BIGGAS : 1;
+            return lastRunGasGet;
+          },
+          set: function(v) {
+            if (lastRunGasGet !== null && v === lastRunGasGet - 1) {
+              if (pairRG) { pairRG = false; }
+              else { S.tick('ctco'); }
+            } else {
+              pairRG = false;
+            }
+            lastRunGasGet = null;
+            rungasV = v;
+          }
+        });
+      })();
+    }
 
     makePrimAnn("Number", isNumber);
     makePrimAnn("Exactnum", jsnums.isRational);
