@@ -3520,8 +3520,10 @@ function (Namespace, jsnumslib, codePoint, util, exnStackParser, loader, seedran
         }
         return false;
       };
+      S.sample = Math.max(1, Number(process.env.PYRET_PAUSE_TRACE_SAMPLE || 1));
       S.beginCapture = function() {
         if (S.lines === null) { return; }
+        if (S.pauses % S.sample !== 0) { return; }
         var frames = [];
         S.cap = frames;
         S.capturing = true;

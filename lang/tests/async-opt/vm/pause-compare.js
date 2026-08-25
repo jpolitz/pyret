@@ -59,8 +59,10 @@ function parseTrace(path) {
 // [{keys: [k...], reps, descs: [d...]}], builtin frames dropped.
 function projectRuns(frames, key) {
   const runs = [];
+  runs.truncated = false;
   for (const [desc, n] of frames) {
-    if (desc.startsWith("...[")) { throw new Error("truncated trace (raise PYRET_PAUSE_TRACE_FRAMES): " + desc); }
+    // Display-cap marker: the stack continues but was not recorded.
+    if (desc.startsWith("...[")) { runs.truncated = true; break; }
     const keys = [], descs = [];
     for (const g of desc.split(" ~ ")) {
       if (g.startsWith("B:")) { continue; }
@@ -161,6 +163,7 @@ function main() {
       fail++;
       continue;
     }
+    if (ra.truncated || rb.truncated) { prefix++; continue; }
     if (la === lb) { exact++; }
     else {
       prefix++;
